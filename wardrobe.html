@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Wardrobe</title>
+<style>
+  :root {
+    --bg: #101113;
+    --bg-elev: #17181b;
+    --bg-elev-2: #1e2024;
+    --border: #2a2d32;
+    --text: #e7e8ea;
+    --text-dim: #9a9ca3;
+    --text-faint: #6b6e75;
+    --accent: #5b8def;
+    --accent-dim: #2c3a52;
+    --danger: #e5645a;
+    --danger-dim: #3a2422;
+    --success: #6fbf73;
+    --radius: 8px;
+    --radius-lg: 12px;
+    font-size: 16px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    padding: 16px;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding-bottom: 80px;
+  }
+
+  h1 {
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin: 4px 0 16px;
+    letter-spacing: -0.01em;
+  }
+
+  h2 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 0 0 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  button {
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  /* ---------- Summary bar ---------- */
+  .summary-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .summary-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 12px 16px;
+    flex: 1 1 140px;
+    min-width: 130px;
+  }
+
+  .summary-card .label {
+    font-size: 0.72rem;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+  }
+
+  .summary-card .value {
+    font-size: 1.4rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .summary-card .breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  .summary-card .breakdown span {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    background: var(--bg-elev-2);
+    border-radius: 4px;
+    padding: 2px 6px;
+  }
+
+  /* ---------- Panels ---------- */
+  .panel {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1 1 160px;
+  }
+
+  .field label {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+
+  .field.required label::after {
+    content: " *";
+    color: var(--danger);
+  }
+
+  input, select, textarea {
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 9px 10px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    width: 100%;
+  }
+
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  input.invalid, select.invalid {
+    border-color: var(--danger);
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 60px;
+  }
+
+  .btn {
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 9px 14px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .btn:hover { border-color: #3a3d44; }
+
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #0c1220;
+    font-weight: 600;
+  }
+
+  .btn-primary:hover { filter: brightness(1.08); }
+
+  .btn-danger {
+    background: var(--danger-dim);
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--text-dim);
+  }
+
+  .btn-ghost:hover { color: var(--text); }
+
+  .btn-sm { padding: 6px 10px; font-size: 0.78rem; }
+
+  .form-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    justify-content: flex-end;
+  }
+
+  .error-text {
+    color: var(--danger);
+    font-size: 0.78rem;
+    margin-top: 8px;
+    display: none;
+  }
+  .error-text.show { display: block; }
+
+  /* ---------- Toolbar / filters ---------- */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+    align-items: center;
+  }
+
+  .toolbar .field { flex: 1 1 130px; }
+
+  .toolbar input[type="search"] { min-width: 160px; }
+
+  /* ---------- Garment list ---------- */
+  .garment-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+  }
+
+  .garment-card {
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    cursor: pointer;
+    transition: border-color 0.12s;
+  }
+
+  .garment-card:hover {
+    border-color: var(--accent);
+  }
+
+  .garment-card .g-name {
+    font-weight: 600;
+    font-size: 0.92rem;
+    margin-bottom: 4px;
+  }
+
+  .garment-card .g-meta {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .tag {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    text-transform: capitalize;
+  }
+
+  .g-cost {
+    margin-top: 8px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--success);
+  }
+
+  .g-worn {
+    color: var(--text-faint);
+    font-size: 0.72rem;
+  }
+
+  .empty-state {
+    color: var(--text-faint);
+    text-align: center;
+    padding: 40px 10px;
+    font-size: 0.9rem;
+  }
+
+  .count-line {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    margin-bottom: 10px;
+  }
+
+  /* ---------- Modal ---------- */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 16px;
+    overflow-y: auto;
+    z-index: 100;
+  }
+
+  .modal-overlay.open { display: flex; }
+
+  .modal {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    width: 100%;
+    max-width: 520px;
+    margin-top: 24px;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  .modal-header h3 {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+
+  .confirm-box {
+    max-width: 380px;
+  }
+
+  .confirm-box p {
+    color: var(--text-dim);
+    font-size: 0.88rem;
+    line-height: 1.4;
+  }
+
+  /* ---------- Header / import-export ---------- */
+  .top-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+  }
+
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    font-size: 0.85rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 200;
+  }
+
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  #importFileInput { display: none; }
+
+  @media (max-width: 480px) {
+    body { padding: 12px; padding-bottom: 80px; }
+    .field { flex: 1 1 100%; }
+    .toolbar .field { flex: 1 1 47%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Wardrobe</h1>
+  <div class="top-actions">
+    <button class="btn btn-sm" id="exportBtn">Export JSON</button>
+    <button class="btn btn-sm" id="importBtn">Import JSON</button>
+    <input type="file" id="importFileInput" accept="application/json">
+  </div>
+</header>
+
+<div class="summary-bar" id="summaryBar"></div>
+
+<section class="panel">
+  <h2 id="formTitle">Add Garment</h2>
+  <form id="garmentForm" novalidate>
+    <div class="row">
+      <div class="field required">
+        <label for="f-name">Name</label>
+        <input type="text" id="f-name" placeholder="Charcoal merino crewneck">
+      </div>
+      <div class="field required">
+        <label for="f-category">Category</label>
+        <select id="f-category">
+          <option value="">Select…</option>
+          <option value="base">Base</option>
+          <option value="mid">Mid</option>
+          <option value="outer">Outer</option>
+          <option value="bottom">Bottom</option>
+          <option value="shoe">Shoe</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-subcategory">Subcategory</label>
+        <input type="text" id="f-subcategory" placeholder="tee, knit, jeans…">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field required">
+        <label for="f-color">Color</label>
+        <input type="text" id="f-color" placeholder="charcoal">
+      </div>
+      <div class="field required">
+        <label for="f-colorFamily">Color family</label>
+        <select id="f-colorFamily">
+          <option value="">Select…</option>
+          <option value="neutralDark">Neutral dark</option>
+          <option value="neutralLight">Neutral light</option>
+          <option value="accent">Accent</option>
+        </select>
+      </div>
+      <div class="field required">
+        <label for="f-formality">Formality (1-5)</label>
+        <select id="f-formality">
+          <option value="">Select…</option>
+          <option value="1">1 — sweatpants</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5 — tailored</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field required">
+        <label for="f-season">Season</label>
+        <select id="f-season">
+          <option value="">Select…</option>
+          <option value="hot">Hot</option>
+          <option value="mild">Mild</option>
+          <option value="cold">Cold</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+      <div class="field required">
+        <label for="f-fit">Fit</label>
+        <select id="f-fit">
+          <option value="">Select…</option>
+          <option value="slim">Slim</option>
+          <option value="relaxed">Relaxed</option>
+        </select>
+      </div>
+      <div class="field required">
+        <label for="f-cost">Cost</label>
+        <input type="number" id="f-cost" step="0.01" min="0" placeholder="0.00">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="f-timesWorn">Times worn</label>
+        <input type="number" id="f-timesWorn" step="1" min="0" placeholder="0">
+      </div>
+      <div class="field">
+        <label for="f-notes">Notes</label>
+        <input type="text" id="f-notes" placeholder="optional">
+      </div>
+    </div>
+    <div class="error-text" id="formError">Please fill in all required fields.</div>
+    <div class="form-actions">
+      <button type="button" class="btn btn-ghost" id="cancelEditBtn" style="display:none;">Cancel</button>
+      <button type="submit" class="btn btn-primary" id="submitBtn">Add Garment</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="toolbar">
+    <div class="field">
+      <input type="search" id="searchInput" placeholder="Search by name…">
+    </div>
+    <div class="field">
+      <select id="filterCategory">
+        <option value="">All categories</option>
+        <option value="base">Base</option>
+        <option value="mid">Mid</option>
+        <option value="outer">Outer</option>
+        <option value="bottom">Bottom</option>
+        <option value="shoe">Shoe</option>
+      </select>
+    </div>
+    <div class="field">
+      <select id="filterSeason">
+        <option value="">All seasons</option>
+        <option value="hot">Hot</option>
+        <option value="mild">Mild</option>
+        <option value="cold">Cold</option>
+        <option value="all">All</option>
+      </select>
+    </div>
+    <div class="field">
+      <select id="sortBy">
+        <option value="dateAdded-desc">Newest first</option>
+        <option value="dateAdded-asc">Oldest first</option>
+        <option value="cost-desc">Cost: high to low</option>
+        <option value="cost-asc">Cost: low to high</option>
+        <option value="name-asc">Name: A-Z</option>
+        <option value="name-desc">Name: Z-A</option>
+      </select>
+    </div>
+  </div>
+  <div class="count-line" id="countLine"></div>
+  <div class="garment-grid" id="garmentGrid"></div>
+</section>
+
+<!-- Edit modal -->
+<div class="modal-overlay" id="editModalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Edit Garment</h3>
+      <button class="btn btn-ghost btn-sm" id="closeEditModalBtn">✕</button>
+    </div>
+    <div id="editFormMount"></div>
+  </div>
+</div>
+
+<!-- Delete confirm modal -->
+<div class="modal-overlay" id="deleteModalOverlay">
+  <div class="modal confirm-box">
+    <div class="modal-header">
+      <h3>Delete garment?</h3>
+    </div>
+    <p id="deleteConfirmText">This will permanently remove this item from your wardrobe.</p>
+    <div class="form-actions">
+      <button class="btn btn-ghost" id="cancelDeleteBtn">Cancel</button>
+      <button class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* =========================================================
+     DATA LAYER
+     Storage schema, CRUD, import/export. This is the interface
+     the outfit-combination engine (next session) will build on.
+     ========================================================= */
+
+  var STORAGE_KEY = "wardrobe.garments.v1";
+  var CATEGORIES = ["base", "mid", "outer", "bottom", "shoe"];
+  var COLOR_FAMILIES = ["neutralDark", "neutralLight", "accent"];
+  var SEASONS = ["hot", "mild", "cold", "all"];
+  var FITS = ["slim", "relaxed"];
+
+  var _garments = [];
+
+  function generateId() {
+    return "g_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 9);
+  }
+
+  function loadFromStorage() {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      _garments = [];
+      return _garments;
+    }
+    try {
+      var parsed = JSON.parse(raw);
+      _garments = Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.error("Failed to parse stored wardrobe data:", e);
+      _garments = [];
+    }
+    return _garments;
+  }
+
+  function saveToStorage() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(_garments));
+  }
+
+  function getGarments() {
+    return _garments.slice();
+  }
+
+  function getGarmentById(id) {
+    return _garments.find(function (g) { return g.id === id; }) || null;
+  }
+
+  function addGarment(data) {
+    var garment = {
+      id: generateId(),
+      name: data.name,
+      category: data.category,
+      subcategory: data.subcategory || "",
+      color: data.color,
+      colorFamily: data.colorFamily,
+      formality: Number(data.formality),
+      season: data.season,
+      fit: data.fit,
+      cost: Number(data.cost) || 0,
+      timesWorn: Number(data.timesWorn) || 0,
+      dateAdded: data.dateAdded || new Date().toISOString(),
+      notes: data.notes || ""
+    };
+    _garments.push(garment);
+    saveToStorage();
+    return garment;
+  }
+
+  function updateGarment(id, updates) {
+    var idx = _garments.findIndex(function (g) { return g.id === id; });
+    if (idx === -1) return null;
+    var existing = _garments[idx];
+    var merged = {
+      id: existing.id,
+      name: updates.name !== undefined ? updates.name : existing.name,
+      category: updates.category !== undefined ? updates.category : existing.category,
+      subcategory: updates.subcategory !== undefined ? updates.subcategory : existing.subcategory,
+      color: updates.color !== undefined ? updates.color : existing.color,
+      colorFamily: updates.colorFamily !== undefined ? updates.colorFamily : existing.colorFamily,
+      formality: updates.formality !== undefined ? Number(updates.formality) : existing.formality,
+      season: updates.season !== undefined ? updates.season : existing.season,
+      fit: updates.fit !== undefined ? updates.fit : existing.fit,
+      cost: updates.cost !== undefined ? Number(updates.cost) : existing.cost,
+      timesWorn: updates.timesWorn !== undefined ? Number(updates.timesWorn) : existing.timesWorn,
+      dateAdded: existing.dateAdded,
+      notes: updates.notes !== undefined ? updates.notes : existing.notes
+    };
+    _garments[idx] = merged;
+    saveToStorage();
+    return merged;
+  }
+
+  function deleteGarment(id) {
+    var idx = _garments.findIndex(function (g) { return g.id === id; });
+    if (idx === -1) return false;
+    _garments.splice(idx, 1);
+    saveToStorage();
+    return true;
+  }
+
+  function replaceAllGarments(newList) {
+    _garments = Array.isArray(newList) ? newList : [];
+    saveToStorage();
+  }
+
+  function exportGarments() {
+    return JSON.stringify(_garments, null, 2);
+  }
+
+  /* Validates the shape of a single garment object for import safety. */
+  function isValidGarmentShape(g) {
+    if (!g || typeof g !== "object") return false;
+    if (typeof g.id !== "string" || !g.id) return false;
+    if (typeof g.name !== "string" || !g.name) return false;
+    if (CATEGORIES.indexOf(g.category) === -1) return false;
+    if (COLOR_FAMILIES.indexOf(g.colorFamily) === -1) return false;
+    if (SEASONS.indexOf(g.season) === -1) return false;
+    if (FITS.indexOf(g.fit) === -1) return false;
+    if (typeof g.color !== "string") return false;
+    var formality = Number(g.formality);
+    if (!(formality >= 1 && formality <= 5)) return false;
+    if (isNaN(Number(g.cost))) return false;
+    return true;
+  }
+
+  /* =========================================================
+     UI LAYER
+     ========================================================= */
+
+  var els = {};
+  [
+    "summaryBar", "garmentForm", "formTitle", "formError", "submitBtn", "cancelEditBtn",
+    "searchInput", "filterCategory", "filterSeason", "sortBy", "countLine", "garmentGrid",
+    "editModalOverlay", "editFormMount", "closeEditModalBtn",
+    "deleteModalOverlay", "deleteConfirmText", "cancelDeleteBtn", "confirmDeleteBtn",
+    "exportBtn", "importBtn", "importFileInput", "toast"
+  ].forEach(function (id) { els[id] = document.getElementById(id); });
+
+  var editingId = null;       // id of garment being edited, or null if adding
+  var pendingDeleteId = null;
+
+  var CATEGORY_LABELS = { base: "Base", mid: "Mid", outer: "Outer", bottom: "Bottom", shoe: "Shoe" };
+
+  function showToast(msg) {
+    els.toast.textContent = msg;
+    els.toast.classList.add("show");
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(function () {
+      els.toast.classList.remove("show");
+    }, 2200);
+  }
+
+  function formatCurrency(n) {
+    return "$" + Number(n).toFixed(2);
+  }
+
+  function formatDate(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+
+  /* ---------- Summary bar ---------- */
+  function renderSummary() {
+    var list = getGarments();
+    var total = list.length;
+    var totalSpent = list.reduce(function (sum, g) { return sum + (Number(g.cost) || 0); }, 0);
+    var byCategory = {};
+    CATEGORIES.forEach(function (c) { byCategory[c] = 0; });
+    list.forEach(function (g) { byCategory[g.category] = (byCategory[g.category] || 0) + 1; });
+
+    var breakdownHtml = CATEGORIES.map(function (c) {
+      return '<span>' + CATEGORY_LABELS[c] + ': ' + byCategory[c] + '</span>';
+    }).join("");
+
+    els.summaryBar.innerHTML =
+      '<div class="summary-card"><div class="label">Total garments</div><div class="value">' + total + '</div></div>' +
+      '<div class="summary-card"><div class="label">Total spent</div><div class="value">' + formatCurrency(totalSpent) + '</div></div>' +
+      '<div class="summary-card"><div class="label">By category</div><div class="breakdown">' + breakdownHtml + '</div></div>';
+  }
+
+  /* ---------- Add/Edit form ---------- */
+  var formFieldIds = ["name", "category", "subcategory", "color", "colorFamily", "formality", "season", "fit", "cost", "timesWorn", "notes"];
+  var requiredFieldIds = ["name", "category", "color", "colorFamily", "formality", "season", "fit", "cost"];
+
+  function getFormValues(prefix) {
+    prefix = prefix || "f-";
+    var v = {};
+    formFieldIds.forEach(function (id) {
+      var el = document.getElementById(prefix + id);
+      v[id] = el ? el.value.trim() : "";
+    });
+    return v;
+  }
+
+  function clearInvalidStyles(prefix) {
+    prefix = prefix || "f-";
+    formFieldIds.forEach(function (id) {
+      var el = document.getElementById(prefix + id);
+      if (el) el.classList.remove("invalid");
+    });
+  }
+
+  function validateFormValues(v, prefix) {
+    prefix = prefix || "f-";
+    var missing = [];
+    requiredFieldIds.forEach(function (id) {
+      if (v[id] === "" || v[id] === null || v[id] === undefined) {
+        missing.push(id);
+        var el = document.getElementById(prefix + id);
+        if (el) el.classList.add("invalid");
+      }
+    });
+    if (v.cost !== "" && isNaN(Number(v.cost))) {
+      missing.push("cost");
+      var costEl = document.getElementById(prefix + "cost");
+      if (costEl) costEl.classList.add("invalid");
+    }
+    return missing;
+  }
+
+  function resetAddForm() {
+    els.garmentForm.reset();
+    clearInvalidStyles("f-");
+    els.formError.classList.remove("show");
+  }
+
+  els.garmentForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    clearInvalidStyles("f-");
+    var v = getFormValues("f-");
+    var missing = validateFormValues(v, "f-");
+    if (missing.length > 0) {
+      els.formError.textContent = "Please fill in all required fields correctly.";
+      els.formError.classList.add("show");
+      return;
+    }
+    els.formError.classList.remove("show");
+
+    addGarment({
+      name: v.name,
+      category: v.category,
+      subcategory: v.subcategory,
+      color: v.color,
+      colorFamily: v.colorFamily,
+      formality: v.formality,
+      season: v.season,
+      fit: v.fit,
+      cost: v.cost,
+      timesWorn: v.timesWorn === "" ? 0 : v.timesWorn,
+      notes: v.notes
+    });
+
+    resetAddForm();
+    showToast("Garment added");
+    renderAll();
+  });
+
+  /* ---------- Filters / sort / search state ---------- */
+  function getFilteredSortedGarments() {
+    var list = getGarments();
+    var search = els.searchInput.value.trim().toLowerCase();
+    var catFilter = els.filterCategory.value;
+    var seasonFilter = els.filterSeason.value;
+    var sortVal = els.sortBy.value;
+
+    if (search) {
+      list = list.filter(function (g) { return g.name.toLowerCase().indexOf(search) !== -1; });
+    }
+    if (catFilter) {
+      list = list.filter(function (g) { return g.category === catFilter; });
+    }
+    if (seasonFilter) {
+      list = list.filter(function (g) { return g.season === seasonFilter; });
+    }
+
+    var parts = sortVal.split("-");
+    var field = parts[0], dir = parts[1];
+    list.sort(function (a, b) {
+      var av = a[field], bv = b[field];
+      if (field === "name") {
+        av = av.toLowerCase(); bv = bv.toLowerCase();
+        if (av < bv) return dir === "asc" ? -1 : 1;
+        if (av > bv) return dir === "asc" ? 1 : -1;
+        return 0;
+      }
+      if (field === "dateAdded") {
+        av = new Date(av).getTime(); bv = new Date(bv).getTime();
+      }
+      if (av < bv) return dir === "asc" ? -1 : 1;
+      if (av > bv) return dir === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return list;
+  }
+
+  /* ---------- Garment list rendering ---------- */
+  function renderGrid() {
+    var list = getFilteredSortedGarments();
+    var totalCount = getGarments().length;
+
+    els.countLine.textContent = list.length === totalCount
+      ? (totalCount + (totalCount === 1 ? " garment" : " garments"))
+      : (list.length + " of " + totalCount + " garments");
+
+    if (list.length === 0) {
+      els.garmentGrid.innerHTML = '<div class="empty-state">' +
+        (totalCount === 0 ? "No garments yet. Add your first item above." : "No garments match your filters.") +
+        '</div>';
+      return;
+    }
+
+    els.garmentGrid.innerHTML = list.map(function (g) {
+      return (
+        '<div class="garment-card" data-id="' + g.id + '">' +
+          '<div class="g-name">' + escapeHtml(g.name) + '</div>' +
+          '<div class="g-meta">' +
+            '<span class="tag">' + CATEGORY_LABELS[g.category] + '</span>' +
+            '<span class="tag">' + escapeHtml(g.color) + '</span>' +
+            '<span class="tag">' + escapeHtml(g.season) + '</span>' +
+          '</div>' +
+          '<div class="g-cost">' + formatCurrency(g.cost) + '</div>' +
+          '<div class="g-worn">Worn ' + g.timesWorn + '× · added ' + formatDate(g.dateAdded) + '</div>' +
+        '</div>'
+      );
+    }).join("");
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement("div");
+    div.textContent = str == null ? "" : String(str);
+    return div.innerHTML;
+  }
+
+  els.garmentGrid.addEventListener("click", function (e) {
+    var card = e.target.closest(".garment-card");
+    if (!card) return;
+    openEditModal(card.getAttribute("data-id"));
+  });
+
+  els.searchInput.addEventListener("input", renderGrid);
+  els.filterCategory.addEventListener("change", renderGrid);
+  els.filterSeason.addEventListener("change", renderGrid);
+  els.sortBy.addEventListener("change", renderGrid);
+
+  /* ---------- Edit modal ---------- */
+  function buildEditFormHtml(g) {
+    function opt(value, label, selected) {
+      return '<option value="' + value + '"' + (selected ? " selected" : "") + '>' + label + '</option>';
+    }
+    return (
+      '<div class="row">' +
+        '<div class="field required"><label for="e-name">Name</label><input type="text" id="e-name" value="' + escapeHtml(g.name) + '"></div>' +
+        '<div class="field required"><label for="e-category">Category</label><select id="e-category">' +
+          '<option value="">Select…</option>' +
+          CATEGORIES.map(function (c) { return opt(c, CATEGORY_LABELS[c], g.category === c); }).join("") +
+        '</select></div>' +
+        '<div class="field"><label for="e-subcategory">Subcategory</label><input type="text" id="e-subcategory" value="' + escapeHtml(g.subcategory) + '"></div>' +
+      '</div>' +
+      '<div class="row">' +
+        '<div class="field required"><label for="e-color">Color</label><input type="text" id="e-color" value="' + escapeHtml(g.color) + '"></div>' +
+        '<div class="field required"><label for="e-colorFamily">Color family</label><select id="e-colorFamily">' +
+          '<option value="">Select…</option>' +
+          opt("neutralDark", "Neutral dark", g.colorFamily === "neutralDark") +
+          opt("neutralLight", "Neutral light", g.colorFamily === "neutralLight") +
+          opt("accent", "Accent", g.colorFamily === "accent") +
+        '</select></div>' +
+        '<div class="field required"><label for="e-formality">Formality (1-5)</label><select id="e-formality">' +
+          '<option value="">Select…</option>' +
+          [1,2,3,4,5].map(function (n) { return opt(n, n === 1 ? "1 — sweatpants" : (n === 5 ? "5 — tailored" : n), g.formality === n); }).join("") +
+        '</select></div>' +
+      '</div>' +
+      '<div class="row">' +
+        '<div class="field required"><label for="e-season">Season</label><select id="e-season">' +
+          '<option value="">Select…</option>' +
+          SEASONS.map(function (s) { return opt(s, s.charAt(0).toUpperCase() + s.slice(1), g.season === s); }).join("") +
+        '</select></div>' +
+        '<div class="field required"><label for="e-fit">Fit</label><select id="e-fit">' +
+          '<option value="">Select…</option>' +
+          FITS.map(function (f) { return opt(f, f.charAt(0).toUpperCase() + f.slice(1), g.fit === f); }).join("") +
+        '</select></div>' +
+        '<div class="field required"><label for="e-cost">Cost</label><input type="number" step="0.01" min="0" id="e-cost" value="' + g.cost + '"></div>' +
+      '</div>' +
+      '<div class="row">' +
+        '<div class="field"><label for="e-timesWorn">Times worn</label><input type="number" step="1" min="0" id="e-timesWorn" value="' + g.timesWorn + '"></div>' +
+        '<div class="field"><label for="e-notes">Notes</label><input type="text" id="e-notes" value="' + escapeHtml(g.notes) + '"></div>' +
+      '</div>' +
+      '<div class="error-text" id="editFormError">Please fill in all required fields correctly.</div>' +
+      '<div class="form-actions">' +
+        '<button type="button" class="btn btn-danger" id="deleteFromModalBtn" style="margin-right:auto;">Delete</button>' +
+        '<button type="button" class="btn btn-ghost" id="cancelEditModalBtn">Cancel</button>' +
+        '<button type="button" class="btn btn-primary" id="saveEditBtn">Save Changes</button>' +
+      '</div>'
+    );
+  }
+
+  function openEditModal(id) {
+    var g = getGarmentById(id);
+    if (!g) return;
+    editingId = id;
+    els.editFormMount.innerHTML = buildEditFormHtml(g);
+    els.editModalOverlay.classList.add("open");
+
+    document.getElementById("saveEditBtn").addEventListener("click", handleSaveEdit);
+    document.getElementById("cancelEditModalBtn").addEventListener("click", closeEditModal);
+    document.getElementById("deleteFromModalBtn").addEventListener("click", function () {
+      closeEditModal();
+      openDeleteModal(id, g.name);
+    });
+  }
+
+  function closeEditModal() {
+    els.editModalOverlay.classList.remove("open");
+    els.editFormMount.innerHTML = "";
+    editingId = null;
+  }
+
+  function handleSaveEdit() {
+    var v = getFormValues("e-");
+    var missing = validateFormValues(v, "e-");
+    var errEl = document.getElementById("editFormError");
+    if (missing.length > 0) {
+      errEl.classList.add("show");
+      return;
+    }
+    errEl.classList.remove("show");
+
+    updateGarment(editingId, {
+      name: v.name,
+      category: v.category,
+      subcategory: v.subcategory,
+      color: v.color,
+      colorFamily: v.colorFamily,
+      formality: v.formality,
+      season: v.season,
+      fit: v.fit,
+      cost: v.cost,
+      timesWorn: v.timesWorn === "" ? 0 : v.timesWorn,
+      notes: v.notes
+    });
+
+    closeEditModal();
+    showToast("Garment updated");
+    renderAll();
+  }
+
+  els.closeEditModalBtn.addEventListener("click", closeEditModal);
+  els.editModalOverlay.addEventListener("click", function (e) {
+    if (e.target === els.editModalOverlay) closeEditModal();
+  });
+
+  /* ---------- Delete modal ---------- */
+  function openDeleteModal(id, name) {
+    pendingDeleteId = id;
+    els.deleteConfirmText.textContent = 'This will permanently remove "' + name + '" from your wardrobe.';
+    els.deleteModalOverlay.classList.add("open");
+  }
+
+  function closeDeleteModal() {
+    els.deleteModalOverlay.classList.remove("open");
+    pendingDeleteId = null;
+  }
+
+  els.cancelDeleteBtn.addEventListener("click", closeDeleteModal);
+  els.deleteModalOverlay.addEventListener("click", function (e) {
+    if (e.target === els.deleteModalOverlay) closeDeleteModal();
+  });
+  els.confirmDeleteBtn.addEventListener("click", function () {
+    if (pendingDeleteId) {
+      deleteGarment(pendingDeleteId);
+      showToast("Garment deleted");
+    }
+    closeDeleteModal();
+    renderAll();
+  });
+
+  /* ---------- Export / Import ---------- */
+  els.exportBtn.addEventListener("click", function () {
+    var data = exportGarments();
+    var blob = new Blob([data], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    var dateStr = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = "wardrobe-backup-" + dateStr + ".json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("Exported " + getGarments().length + " garments");
+  });
+
+  els.importBtn.addEventListener("click", function () {
+    els.importFileInput.value = "";
+    els.importFileInput.click();
+  });
+
+  els.importFileInput.addEventListener("change", function (e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function (evt) {
+      var parsed;
+      try {
+        parsed = JSON.parse(evt.target.result);
+      } catch (err) {
+        showToast("Import failed: invalid JSON file");
+        return;
+      }
+      if (!Array.isArray(parsed)) {
+        showToast("Import failed: file must contain a garment array");
+        return;
+      }
+      var invalidCount = parsed.filter(function (g) { return !isValidGarmentShape(g); }).length;
+      if (invalidCount > 0) {
+        showToast("Import failed: " + invalidCount + " item(s) have invalid data");
+        return;
+      }
+      var proceed = window.confirm(
+        "Import " + parsed.length + " garment(s)? This will replace your current wardrobe data (" +
+        getGarments().length + " item(s)). This cannot be undone."
+      );
+      if (!proceed) return;
+
+      replaceAllGarments(parsed);
+      showToast("Imported " + parsed.length + " garments");
+      renderAll();
+    };
+    reader.onerror = function () {
+      showToast("Import failed: could not read file");
+    };
+    reader.readAsText(file);
+  });
+
+  /* ---------- Init ---------- */
+  function renderAll() {
+    renderSummary();
+    renderGrid();
+  }
+
+  loadFromStorage();
+  renderAll();
+})();
+</script>
+</body>
+</html>
