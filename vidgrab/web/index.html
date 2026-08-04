@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VidGrab</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2f3a;
+    --text: #e8eaed;
+    --muted: #9aa3af;
+    --accent: #6c8cff;
+    --accent-text: #0b0d12;
+    --error: #ff6b6b;
+    --ok: #52c97a;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f5f6f8;
+      --panel: #ffffff;
+      --border: #dfe3e8;
+      --text: #16181d;
+      --muted: #5d6673;
+      --accent: #3358e0;
+      --accent-text: #ffffff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 560px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+  }
+  h1 {
+    font-size: 22px;
+    margin: 0 0 4px;
+  }
+  .subtitle {
+    color: var(--muted);
+    font-size: 13px;
+    margin: 0 0 24px;
+  }
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    margin: 18px 0 6px;
+  }
+  input[type="text"], select {
+    width: 100%;
+    padding: 11px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font-size: 14px;
+  }
+  .modes {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+  }
+  .mode-btn {
+    padding: 10px 8px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font-size: 12.5px;
+    cursor: pointer;
+    text-align: center;
+  }
+  .mode-btn.active {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--accent-text);
+  }
+  .row {
+    display: flex;
+    gap: 12px;
+  }
+  .row > div { flex: 1; }
+  button.go {
+    margin-top: 22px;
+    width: 100%;
+    padding: 13px;
+    border-radius: 10px;
+    border: none;
+    background: var(--accent);
+    color: var(--accent-text);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.go:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .status {
+    margin-top: 20px;
+    display: none;
+  }
+  .status.visible { display: block; }
+  .bar-track {
+    height: 8px;
+    border-radius: 6px;
+    background: var(--border);
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width 0.2s ease;
+  }
+  .status-line {
+    margin-top: 8px;
+    font-size: 12.5px;
+    color: var(--muted);
+    word-break: break-all;
+  }
+  .status-line.error { color: var(--error); }
+  .status-line.ok { color: var(--ok); }
+  .folder-btn {
+    margin-top: 12px;
+    display: none;
+    padding: 9px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .folder-btn.visible { display: inline-block; }
+  .hint {
+    color: var(--muted);
+    font-size: 11.5px;
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>VidGrab</h1>
+    <p class="subtitle">Download YouTube, TikTok &amp; Instagram videos — with audio, without audio, or audio only.</p>
+
+    <label for="url">Video URL</label>
+    <input id="url" type="text" placeholder="https://www.youtube.com/watch?v=...">
+
+    <label>Format</label>
+    <div class="modes">
+      <button type="button" class="mode-btn active" data-mode="video_audio">Video + Audio</button>
+      <button type="button" class="mode-btn" data-mode="video_only">Video only</button>
+      <button type="button" class="mode-btn" data-mode="audio_only">Audio only</button>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="quality">Quality</label>
+        <select id="quality">
+          <option value="best">Best available</option>
+          <option value="2160">2160p (4K)</option>
+          <option value="1440">1440p (2K)</option>
+          <option value="1080" selected>1080p</option>
+          <option value="720">720p</option>
+          <option value="480">480p</option>
+        </select>
+      </div>
+    </div>
+    <p class="hint" id="qualityHint"></p>
+
+    <button class="go" id="goBtn">Download</button>
+
+    <div class="status" id="status">
+      <div class="bar-track"><div class="bar-fill" id="barFill"></div></div>
+      <div class="status-line" id="statusLine"></div>
+      <button class="folder-btn" id="folderBtn">Show file</button>
+    </div>
+  </div>
+
+<script>
+  const modeButtons = document.querySelectorAll(".mode-btn");
+  let mode = "video_audio";
+  modeButtons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      modeButtons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      mode = btn.dataset.mode;
+      updateQualityHint();
+    });
+  });
+
+  const qualitySelect = document.getElementById("quality");
+  const qualityHint = document.getElementById("qualityHint");
+  function updateQualityHint() {
+    qualitySelect.parentElement.parentElement.style.display = mode === "audio_only" ? "none" : "flex";
+    qualityHint.textContent = mode === "audio_only"
+      ? "Audio is always extracted at the best available quality (MP3)."
+      : "";
+  }
+  updateQualityHint();
+
+  const urlInput = document.getElementById("url");
+  const goBtn = document.getElementById("goBtn");
+  const statusBox = document.getElementById("status");
+  const barFill = document.getElementById("barFill");
+  const statusLine = document.getElementById("statusLine");
+  const folderBtn = document.getElementById("folderBtn");
+
+  let currentJobId = null;
+
+  goBtn.addEventListener("click", async () => {
+    const url = urlInput.value.trim();
+    if (!url) {
+      urlInput.focus();
+      return;
+    }
+
+    goBtn.disabled = true;
+    goBtn.textContent = "Starting...";
+    statusBox.classList.add("visible");
+    folderBtn.classList.remove("visible");
+    barFill.style.width = "0%";
+    statusLine.className = "status-line";
+    statusLine.textContent = "Starting download...";
+
+    try {
+      const res = await fetch("/api/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, mode, quality: qualitySelect.value }),
+      });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      const data = await res.json();
+      currentJobId = data.id;
+      listen(data.id);
+    } catch (err) {
+      statusLine.className = "status-line error";
+      statusLine.textContent = "Error: " + err.message;
+      resetButton();
+    }
+  });
+
+  function listen(id) {
+    const source = new EventSource("/api/progress?id=" + encodeURIComponent(id));
+    source.onmessage = (evt) => {
+      const job = JSON.parse(evt.data);
+      barFill.style.width = Math.max(0, Math.min(100, job.percent || 0)) + "%";
+
+      if (job.status === "running") {
+        statusLine.className = "status-line";
+        statusLine.textContent = job.message || "Working...";
+      } else if (job.status === "done") {
+        statusLine.className = "status-line ok";
+        statusLine.textContent = "Done — saved to " + (job.filePath || "your Downloads/VidGrab folder");
+        folderBtn.classList.add("visible");
+        source.close();
+        resetButton();
+      } else if (job.status === "error") {
+        statusLine.className = "status-line error";
+        statusLine.textContent = "Failed: " + (job.err || "unknown error");
+        source.close();
+        resetButton();
+      }
+    };
+    source.onerror = () => {
+      source.close();
+    };
+  }
+
+  function resetButton() {
+    goBtn.disabled = false;
+    goBtn.textContent = "Download";
+  }
+
+  folderBtn.addEventListener("click", () => {
+    if (currentJobId) {
+      fetch("/api/open-folder?id=" + encodeURIComponent(currentJobId), { method: "POST" });
+    }
+  });
+</script>
+</body>
+</html>
