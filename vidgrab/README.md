@@ -8,17 +8,30 @@ served as a local web UI.
 ## Using it
 
 1. Run `VidGrab.exe`.
-2. On first run it downloads `yt-dlp.exe` and `ffmpeg.exe` into a `bin/`
-   folder next to itself (one-time, needs internet). Subsequent runs are
-   instant.
+2. On first run it downloads `yt-dlp.exe`, `ffmpeg.exe`, and `aria2c.exe` into
+   a `bin/` folder next to itself (one-time, needs internet, ~80MB mostly for
+   ffmpeg). Subsequent runs are instant.
 3. Your default browser opens to `http://127.0.0.1:8991`. Paste a video URL,
-   pick a format (Video + Audio / Video only / Audio only) and quality, and
-   click Download.
-4. Files are saved to `%USERPROFILE%\Downloads\VidGrab`. Click "Show file"
-   after a download finishes to reveal it in Explorer.
+   pick a format (Video + Audio / Video only / Audio only) and quality
+   (defaults to the best available), and click Download.
+4. When the download finishes, your browser's own download flow kicks in
+   automatically — the file lands wherever your browser is set to save
+   downloads, just like downloading anything else from the web.
 
 Audio-only downloads are extracted as MP3 at the best available quality.
 Video downloads are merged to MP4 via ffmpeg.
+
+## Download speed
+
+Nothing can exceed your actual internet bandwidth, but yt-dlp's default of a
+single connection per stream often falls well short of it — especially
+against CDNs (like YouTube's) that throttle long single-connection transfers.
+To close that gap, VidGrab always sets `--concurrent-fragments 8`, and uses
+`aria2c` as an external multi-connection downloader (16 connections) whenever
+it's available, which is the standard way to get yt-dlp close to your real
+line speed. If `aria2c` can't be fetched on first run (no internet, GitHub
+unreachable), VidGrab falls back to the built-in downloader automatically —
+still faster than default, just not as fast as with aria2c.
 
 ## Building from source
 
@@ -44,12 +57,16 @@ progress-parsing logic).
 ## How it works
 
 - `main.go` — HTTP server, embeds the UI (`web/index.html`), wires up the
-  `/api/download`, `/api/progress` (Server-Sent Events), and
-  `/api/open-folder` endpoints.
-- `jobs.go` — builds `yt-dlp` format-selector arguments per mode/quality and
-  runs/tracks download jobs, parsing progress from `yt-dlp`'s stdout.
-- `setup.go` — downloads `yt-dlp.exe` and `ffmpeg.exe`/`ffprobe.exe` on first
-  run if they're not already present in `bin/`.
+  `/api/download`, `/api/progress` (Server-Sent Events), and `/api/file`
+  endpoints. `/api/file` streams the finished download with a
+  `Content-Disposition: attachment` header so the browser handles it as a
+  normal download rather than VidGrab picking a folder for you.
+- `jobs.go` — builds `yt-dlp` format-selector and speed-related arguments per
+  mode/quality and runs/tracks download jobs, parsing progress from
+  `yt-dlp`'s stdout. yt-dlp writes into a `tmp/` staging folder (wiped on
+  every startup) until the browser has picked it up.
+- `setup.go` — downloads `yt-dlp.exe`, `ffmpeg.exe`/`ffprobe.exe`, and
+  `aria2c.exe` on first run if they're not already present in `bin/`.
 
 ## A note on usage
 

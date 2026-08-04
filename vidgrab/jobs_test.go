@@ -24,7 +24,7 @@ func flagValue(args []string, flag string) (string, bool) {
 }
 
 func TestBuildYtDlpArgs_VideoAudioBest(t *testing.T) {
-	args, err := buildYtDlpArgs("https://youtube.com/watch?v=x", ModeVideoAudio, "best", "C:\\bin", "C:\\out\\%(title)s.%(ext)s")
+	args, err := buildYtDlpArgs("https://youtube.com/watch?v=x", ModeVideoAudio, "best", "C:\\bin", "C:\\out\\%(title)s.%(ext)s", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestBuildYtDlpArgs_VideoAudioBest(t *testing.T) {
 }
 
 func TestBuildYtDlpArgs_VideoAudio1080p(t *testing.T) {
-	args, err := buildYtDlpArgs("https://tiktok.com/@a/video/1", ModeVideoAudio, "1080", "bin", "out")
+	args, err := buildYtDlpArgs("https://tiktok.com/@a/video/1", ModeVideoAudio, "1080", "bin", "out", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestBuildYtDlpArgs_VideoAudio1080p(t *testing.T) {
 }
 
 func TestBuildYtDlpArgs_VideoOnly(t *testing.T) {
-	args, err := buildYtDlpArgs("https://instagram.com/reel/x", ModeVideoOnly, "720", "bin", "out")
+	args, err := buildYtDlpArgs("https://instagram.com/reel/x", ModeVideoOnly, "720", "bin", "out", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestBuildYtDlpArgs_VideoOnly(t *testing.T) {
 }
 
 func TestBuildYtDlpArgs_AudioOnly(t *testing.T) {
-	args, err := buildYtDlpArgs("https://youtu.be/x", ModeAudioOnly, "best", "bin", "out")
+	args, err := buildYtDlpArgs("https://youtu.be/x", ModeAudioOnly, "best", "bin", "out", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -87,31 +87,65 @@ func TestBuildYtDlpArgs_AudioOnly(t *testing.T) {
 }
 
 func TestBuildYtDlpArgs_RejectsEmptyURL(t *testing.T) {
-	if _, err := buildYtDlpArgs("", ModeVideoAudio, "best", "bin", "out"); err == nil {
+	if _, err := buildYtDlpArgs("", ModeVideoAudio, "best", "bin", "out", false); err == nil {
 		t.Errorf("expected error for empty URL")
 	}
 }
 
 func TestBuildYtDlpArgs_RejectsBadQuality(t *testing.T) {
-	if _, err := buildYtDlpArgs("https://youtube.com/x", ModeVideoAudio, "9999", "bin", "out"); err == nil {
+	if _, err := buildYtDlpArgs("https://youtube.com/x", ModeVideoAudio, "9999", "bin", "out", false); err == nil {
 		t.Errorf("expected error for invalid quality")
 	}
 }
 
 func TestBuildYtDlpArgs_RejectsBadMode(t *testing.T) {
-	if _, err := buildYtDlpArgs("https://youtube.com/x", Mode("bogus"), "best", "bin", "out"); err == nil {
+	if _, err := buildYtDlpArgs("https://youtube.com/x", Mode("bogus"), "best", "bin", "out", false); err == nil {
 		t.Errorf("expected error for invalid mode")
 	}
 }
 
 func TestBuildYtDlpArgs_URLIsLastArg(t *testing.T) {
 	url := "https://www.youtube.com/watch?v=abc123"
-	args, err := buildYtDlpArgs(url, ModeVideoAudio, "best", "bin", "out")
+	args, err := buildYtDlpArgs(url, ModeVideoAudio, "best", "bin", "out", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if args[len(args)-1] != url {
 		t.Errorf("expected URL as last argument, got %v", args)
+	}
+}
+
+func TestBuildYtDlpArgs_AlwaysSetsConcurrentFragments(t *testing.T) {
+	for _, useAria2 := range []bool{false, true} {
+		args, err := buildYtDlpArgs("https://youtube.com/x", ModeVideoAudio, "best", "bin", "out", useAria2)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if v, ok := flagValue(args, "--concurrent-fragments"); !ok || v != "8" {
+			t.Errorf("useAria2=%v: expected --concurrent-fragments 8, got %v", useAria2, args)
+		}
+	}
+}
+
+func TestBuildYtDlpArgs_Aria2Toggle(t *testing.T) {
+	withoutAria2, err := buildYtDlpArgs("https://youtube.com/x", ModeVideoAudio, "best", "bin", "out", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if contains(withoutAria2, "--downloader") {
+		t.Errorf("useAria2=false should not set --downloader, got %v", withoutAria2)
+	}
+
+	withAria2, err := buildYtDlpArgs("https://youtube.com/x", ModeVideoAudio, "best", "bin", "out", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	dl, ok := flagValue(withAria2, "--downloader")
+	if !ok || dl != "aria2c" {
+		t.Errorf("useAria2=true: expected --downloader aria2c, got %v", withAria2)
+	}
+	if _, ok := flagValue(withAria2, "--downloader-args"); !ok {
+		t.Errorf("useAria2=true: expected --downloader-args to be set, got %v", withAria2)
 	}
 }
 

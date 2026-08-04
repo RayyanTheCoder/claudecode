@@ -138,7 +138,7 @@
   }
   .status-line.error { color: var(--error); }
   .status-line.ok { color: var(--ok); }
-  .folder-btn {
+  .again-btn {
     margin-top: 12px;
     display: none;
     padding: 9px 14px;
@@ -149,7 +149,7 @@
     font-size: 13px;
     cursor: pointer;
   }
-  .folder-btn.visible { display: inline-block; }
+  .again-btn.visible { display: inline-block; }
   .hint {
     color: var(--muted);
     font-size: 11.5px;
@@ -176,10 +176,10 @@
       <div>
         <label for="quality">Quality</label>
         <select id="quality">
-          <option value="best">Best available</option>
+          <option value="best" selected>Best available</option>
           <option value="2160">2160p (4K)</option>
           <option value="1440">1440p (2K)</option>
-          <option value="1080" selected>1080p</option>
+          <option value="1080">1080p</option>
           <option value="720">720p</option>
           <option value="480">480p</option>
         </select>
@@ -192,7 +192,7 @@
     <div class="status" id="status">
       <div class="bar-track"><div class="bar-fill" id="barFill"></div></div>
       <div class="status-line" id="statusLine"></div>
-      <button class="folder-btn" id="folderBtn">Show file</button>
+      <button class="again-btn" id="againBtn">Download again</button>
     </div>
   </div>
 
@@ -223,9 +223,21 @@
   const statusBox = document.getElementById("status");
   const barFill = document.getElementById("barFill");
   const statusLine = document.getElementById("statusLine");
-  const folderBtn = document.getElementById("folderBtn");
+  const againBtn = document.getElementById("againBtn");
 
   let currentJobId = null;
+
+  // A same-page anchor click (rather than window.open/location.href) is the
+  // most reliable way to trigger a browser's native download flow without
+  // navigating away from the app or hitting popup blockers.
+  function triggerBrowserDownload(id) {
+    const a = document.createElement("a");
+    a.href = "/api/file?id=" + encodeURIComponent(id);
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
 
   goBtn.addEventListener("click", async () => {
     const url = urlInput.value.trim();
@@ -237,7 +249,7 @@
     goBtn.disabled = true;
     goBtn.textContent = "Starting...";
     statusBox.classList.add("visible");
-    folderBtn.classList.remove("visible");
+    againBtn.classList.remove("visible");
     barFill.style.width = "0%";
     statusLine.className = "status-line";
     statusLine.textContent = "Starting download...";
@@ -272,8 +284,9 @@
         statusLine.textContent = job.message || "Working...";
       } else if (job.status === "done") {
         statusLine.className = "status-line ok";
-        statusLine.textContent = "Done — saved to " + (job.filePath || "your Downloads/VidGrab folder");
-        folderBtn.classList.add("visible");
+        statusLine.textContent = "Done — your download should start automatically.";
+        triggerBrowserDownload(job.id);
+        againBtn.classList.add("visible");
         source.close();
         resetButton();
       } else if (job.status === "error") {
@@ -293,9 +306,9 @@
     goBtn.textContent = "Download";
   }
 
-  folderBtn.addEventListener("click", () => {
+  againBtn.addEventListener("click", () => {
     if (currentJobId) {
-      fetch("/api/open-folder?id=" + encodeURIComponent(currentJobId), { method: "POST" });
+      triggerBrowserDownload(currentJobId);
     }
   });
 </script>

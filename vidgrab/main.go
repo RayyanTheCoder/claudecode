@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,9 +27,13 @@ func main() {
 	baseDir := filepath.Dir(exePath)
 	binDir := filepath.Join(baseDir, "bin")
 
-	downloadsDir := defaultDownloadsDir(baseDir)
-	if err := os.MkdirAll(downloadsDir, 0o755); err != nil {
-		log.Fatalf("cannot create downloads folder: %v", err)
+	// yt-dlp writes here temporarily; finished files are served to the browser's
+	// own download manager via /api/file. Wiped on every startup so it never
+	// grows unbounded across runs.
+	stagingDir := filepath.Join(baseDir, "tmp")
+	_ = os.RemoveAll(stagingDir)
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		log.Fatalf("cannot create staging folder: %v", err)
 	}
 
 	ytDlpPath, err := ensureYtDlp(binDir)
@@ -39,10 +44,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("could not set up ffmpeg: %v", err)
 	}
-	fmt.Println("Ready. Downloads will be saved to:", downloadsDir)
+	useAria2, err := ensureAria2(binDir)
+	if err != nil {
+		fmt.Println("Note: faster downloads via aria2 aren't available this run, using standard speed:", err)
+		useAria2 = false
+	}
+	fmt.Println("Ready.")
 
 	store := newJobStore()
-	outputTemplate := filepath.Join(downloadsDir, "%(title).200B [%(id)s].%(ext)s")
+	outputTemplate := filepath.Join(stagingDir, "%(title).200B [%(id)s].%(ext)s")
 
 	mux := http.NewServeMux()
 
@@ -66,14 +76,14 @@ func main() {
 			return
 		}
 
-		args, err := buildYtDlpArgs(req.URL, Mode(req.Mode), req.Quality, ffmpegDir, outputTemplate)
+		args, err := buildYtDlpArgs(req.URL, Mode(req.Mode), req.Quality, ffmpegDir, outputTemplate, useAria2)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		job := store.create()
-		go runJob(job, ytDlpPath, args)
+		go runJob(job, ytDlpPath, args, binDir)
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": job.ID})
@@ -112,7 +122,10 @@ func main() {
 		}
 	})
 
-	mux.HandleFunc("/api/open-folder", func(w http.ResponseWriter, r *http.Request) {
+	// api/file hands a finished download to the browser's own download manager
+	// (Content-Disposition: attachment) so it lands wherever the user's browser
+	// is configured to save files, rather than a fixed folder we pick for them.
+	mux.HandleFunc("/api/file", func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Query().Get("id")
 		job, ok := store.get(id)
 		if !ok {
@@ -120,12 +133,13 @@ func main() {
 			return
 		}
 		snap := job.snapshot()
-		if snap.FilePath != "" {
-			openInFileManager(snap.FilePath)
-		} else {
-			openInFileManager(downloadsDir)
+		if snap.Status != "done" || snap.FilePath == "" {
+			http.Error(w, "file not ready", http.StatusConflict)
+			return
 		}
-		w.WriteHeader(http.StatusNoContent)
+
+		w.Header().Set("Content-Disposition", contentDispositionHeader(filepath.Base(snap.FilePath)))
+		http.ServeFile(w, r, snap.FilePath)
 	})
 
 	addr := "127.0.0.1:" + port
@@ -140,14 +154,23 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
 
-func defaultDownloadsDir(baseDir string) string {
-	if profile := os.Getenv("USERPROFILE"); profile != "" {
-		return filepath.Join(profile, "Downloads", "VidGrab")
+// contentDispositionHeader builds an attachment header that keeps browser
+// compatibility (ASCII fallback filename) while still preserving the real,
+// possibly non-ASCII, video title via the RFC 5987 filename* form.
+func contentDispositionHeader(filename string) string {
+	ascii := make([]rune, 0, len(filename))
+	for _, r := range filename {
+		if r >= 32 && r < 127 && r != '"' && r != '\\' {
+			ascii = append(ascii, r)
+		} else {
+			ascii = append(ascii, '_')
+		}
 	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, "Downloads", "VidGrab")
+	asciiName := string(ascii)
+	if asciiName == "" {
+		asciiName = "download"
 	}
-	return filepath.Join(baseDir, "downloads")
+	return fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, asciiName, url.PathEscape(filename))
 }
 
 func openBrowser(url string) {
@@ -159,19 +182,6 @@ func openBrowser(url string) {
 		cmd = exec.Command("open", url)
 	default:
 		cmd = exec.Command("xdg-open", url)
-	}
-	_ = cmd.Start()
-}
-
-func openInFileManager(path string) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("explorer", "/select,"+path)
-	case "darwin":
-		cmd = exec.Command("open", "-R", path)
-	default:
-		cmd = exec.Command("xdg-open", filepath.Dir(path))
 	}
 	_ = cmd.Start()
 }

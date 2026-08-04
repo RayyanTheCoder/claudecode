@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"sync"
@@ -25,7 +26,11 @@ var validQualities = map[string]bool{
 
 // buildYtDlpArgs turns a user's mode/quality choice into yt-dlp CLI arguments.
 // It is a pure function so it can be unit-tested without invoking yt-dlp.
-func buildYtDlpArgs(rawURL string, mode Mode, quality, ffmpegDir, outputTemplate string) ([]string, error) {
+// useAria2 enables aria2c as an external multi-connection downloader, which is
+// the main lever for approaching a user's real line speed against CDNs that
+// throttle single connections; --concurrent-fragments is always set as a free
+// speedup even when aria2c isn't available.
+func buildYtDlpArgs(rawURL string, mode Mode, quality, ffmpegDir, outputTemplate string, useAria2 bool) ([]string, error) {
 	if rawURL == "" {
 		return nil, fmt.Errorf("url is required")
 	}
@@ -41,9 +46,16 @@ func buildYtDlpArgs(rawURL string, mode Mode, quality, ffmpegDir, outputTemplate
 	args := []string{
 		"--newline",
 		"--no-playlist",
+		"--concurrent-fragments", "8",
 		"--ffmpeg-location", ffmpegDir,
 		"-o", outputTemplate,
 		"--print", "after_move:filepath",
+	}
+	if useAria2 {
+		args = append(args,
+			"--downloader", "aria2c",
+			"--downloader-args", "aria2c:-x 16 -s 16 -k 1M",
+		)
 	}
 
 	switch mode {
@@ -134,13 +146,15 @@ func randomID() string {
 
 var percentRe = regexp.MustCompile(`(\d+(?:\.\d+)?)%`)
 
-// runJob executes yt-dlp for the given job, streaming progress into it as it goes.
 // filePathLine matches non-progress, non-bracketed output lines emitted by
 // --print after_move:filepath, which yt-dlp prints once the final file is in place.
 var filePathLine = regexp.MustCompile(`^[^\[].*\.\w+$`)
 
-func runJob(j *Job, ytDlpPath string, args []string) {
+// runJob executes yt-dlp for the given job. binDir is prepended to PATH so that
+// yt-dlp's shelled-out call to "aria2c" (if used) resolves to our bundled copy.
+func runJob(j *Job, ytDlpPath string, args []string, binDir string) {
 	cmd := exec.Command(ytDlpPath, args...)
+	cmd.Env = append(os.Environ(), "PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		failJob(j, err.Error())
