@@ -86,6 +86,20 @@ func TestBuildYtDlpArgs_AudioOnly(t *testing.T) {
 	}
 }
 
+func TestBuildYtDlpArgs_Frames(t *testing.T) {
+	args, err := buildYtDlpArgs("https://youtube.com/watch?v=x", ModeFrames, "1080", "bin", "out", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	f, _ := flagValue(args, "-f")
+	if f != "bestvideo[height<=1080]" {
+		t.Errorf("unexpected format selector: %q", f)
+	}
+	if contains(args, "bestaudio") {
+		t.Errorf("frames mode should not request an audio stream, got %v", args)
+	}
+}
+
 func TestBuildYtDlpArgs_RejectsEmptyURL(t *testing.T) {
 	if _, err := buildYtDlpArgs("", ModeVideoAudio, "best", "bin", "out", false); err == nil {
 		t.Errorf("expected error for empty URL")

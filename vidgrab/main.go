@@ -44,6 +44,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("could not set up ffmpeg: %v", err)
 	}
+	ffmpegExePath := filepath.Join(ffmpegDir, "ffmpeg.exe")
 	useAria2, err := ensureAria2(binDir)
 	if err != nil {
 		fmt.Println("Note: faster downloads via aria2 aren't available this run, using standard speed:", err)
@@ -53,6 +54,7 @@ func main() {
 
 	store := newJobStore()
 	outputTemplate := filepath.Join(stagingDir, "%(title).200B [%(id)s].%(ext)s")
+	framesBaseDir := filepath.Join(stagingDir, "frames")
 
 	mux := http.NewServeMux()
 
@@ -76,14 +78,20 @@ func main() {
 			return
 		}
 
-		args, err := buildYtDlpArgs(req.URL, Mode(req.Mode), req.Quality, ffmpegDir, outputTemplate, useAria2)
+		mode := Mode(req.Mode)
+		args, err := buildYtDlpArgs(req.URL, mode, req.Quality, ffmpegDir, outputTemplate, useAria2)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		job := store.create()
-		go runJob(job, ytDlpPath, args, binDir)
+		if mode == ModeFrames {
+			frameDir := filepath.Join(framesBaseDir, job.ID)
+			go runFramesJob(job, ytDlpPath, args, binDir, ffmpegExePath, frameDir)
+		} else {
+			go runJob(job, ytDlpPath, args, binDir)
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": job.ID})
@@ -140,6 +148,42 @@ func main() {
 
 		w.Header().Set("Content-Disposition", contentDispositionHeader(filepath.Base(snap.FilePath)))
 		http.ServeFile(w, r, snap.FilePath)
+	})
+
+	// api/frame serves one extracted frame, either inline for the preview grid
+	// or as a browser download when ?download=1 is set. The requested file name
+	// is checked against the job's own Frames list (not just sanitized) so a
+	// request can't read anything outside that job's frame directory.
+	mux.HandleFunc("/api/frame", func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		job, ok := store.get(id)
+		if !ok {
+			http.Error(w, "unknown job", http.StatusNotFound)
+			return
+		}
+		snap := job.snapshot()
+		if snap.Status != "done" || len(snap.Frames) == 0 {
+			http.Error(w, "frames not ready", http.StatusConflict)
+			return
+		}
+
+		requested := filepath.Base(r.URL.Query().Get("file"))
+		known := false
+		for _, f := range snap.Frames {
+			if f == requested {
+				known = true
+				break
+			}
+		}
+		if !known {
+			http.Error(w, "unknown frame", http.StatusNotFound)
+			return
+		}
+
+		if r.URL.Query().Get("download") == "1" {
+			w.Header().Set("Content-Disposition", contentDispositionHeader(requested))
+		}
+		http.ServeFile(w, r, filepath.Join(framesBaseDir, id, requested))
 	})
 
 	addr := "127.0.0.1:" + port

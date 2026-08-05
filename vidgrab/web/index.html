@@ -48,6 +48,7 @@
     border-radius: 16px;
     padding: 28px;
   }
+  .card.wide { max-width: 900px; }
   h1 {
     font-size: 22px;
     margin: 0 0 4px;
@@ -74,7 +75,7 @@
   }
   .modes {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
     gap: 8px;
   }
   .mode-btn {
@@ -155,12 +156,95 @@
     font-size: 11.5px;
     margin-top: 6px;
   }
+  .frames-section {
+    display: none;
+    margin-top: 22px;
+  }
+  .frames-section.visible { display: block; }
+  .frames-heading {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .frames-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+  }
+  .frame-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .frame-card img {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    display: block;
+    cursor: zoom-in;
+    background: var(--border);
+  }
+  .frame-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+  }
+  .frame-footer span {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .frame-download-btn {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    border-radius: 7px;
+    padding: 5px 10px;
+    cursor: pointer;
+    font-size: 11.5px;
+  }
+  .frame-download-btn:hover { border-color: var(--accent); }
+  .lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.86);
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 18px;
+    z-index: 100;
+    padding: 24px;
+  }
+  .lightbox.visible { display: flex; }
+  .lightbox img {
+    max-width: min(90vw, 1100px);
+    max-height: 78vh;
+    border-radius: 10px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  }
+  .lightbox-controls { display: flex; gap: 10px; }
+  .lightbox-controls button {
+    padding: 9px 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .lightbox-controls button.primary {
+    background: var(--accent);
+    color: var(--accent-text);
+    border-color: var(--accent);
+  }
 </style>
 </head>
 <body>
-  <div class="card">
+  <div class="card" id="card">
     <h1>VidGrab</h1>
-    <p class="subtitle">Download YouTube, TikTok &amp; Instagram videos — with audio, without audio, or audio only.</p>
+    <p class="subtitle">Download YouTube, TikTok &amp; Instagram videos — with audio, without audio, audio only, or as one image per second.</p>
 
     <label for="url">Video URL</label>
     <input id="url" type="text" placeholder="https://www.youtube.com/watch?v=...">
@@ -170,6 +254,7 @@
       <button type="button" class="mode-btn active" data-mode="video_audio">Video + Audio</button>
       <button type="button" class="mode-btn" data-mode="video_only">Video only</button>
       <button type="button" class="mode-btn" data-mode="audio_only">Audio only</button>
+      <button type="button" class="mode-btn" data-mode="frames">Frames (1/sec)</button>
     </div>
 
     <div class="row">
@@ -194,6 +279,19 @@
       <div class="status-line" id="statusLine"></div>
       <button class="again-btn" id="againBtn">Download again</button>
     </div>
+
+    <div class="frames-section" id="framesSection">
+      <div class="frames-heading" id="framesHeading"></div>
+      <div class="frames-grid" id="framesGrid"></div>
+    </div>
+  </div>
+
+  <div class="lightbox" id="lightbox">
+    <img id="lightboxImg" alt="Frame preview">
+    <div class="lightbox-controls">
+      <button type="button" id="lightboxDownload" class="primary">Download this frame</button>
+      <button type="button" id="lightboxClose">Close</button>
+    </div>
   </div>
 
 <script>
@@ -212,32 +310,112 @@
   const qualityHint = document.getElementById("qualityHint");
   function updateQualityHint() {
     qualitySelect.parentElement.parentElement.style.display = mode === "audio_only" ? "none" : "flex";
-    qualityHint.textContent = mode === "audio_only"
-      ? "Audio is always extracted at the best available quality (MP3)."
-      : "";
+    if (mode === "audio_only") {
+      qualityHint.textContent = "Audio is always extracted at the best available quality (MP3).";
+    } else if (mode === "frames") {
+      qualityHint.textContent = "Frames are extracted from this quality's video, one image per second.";
+    } else {
+      qualityHint.textContent = "";
+    }
   }
   updateQualityHint();
 
+  const card = document.getElementById("card");
   const urlInput = document.getElementById("url");
   const goBtn = document.getElementById("goBtn");
   const statusBox = document.getElementById("status");
   const barFill = document.getElementById("barFill");
   const statusLine = document.getElementById("statusLine");
   const againBtn = document.getElementById("againBtn");
+  const framesSection = document.getElementById("framesSection");
+  const framesHeading = document.getElementById("framesHeading");
+  const framesGrid = document.getElementById("framesGrid");
+  const lightbox = document.getElementById("lightbox");
+  const lightboxImg = document.getElementById("lightboxImg");
+  const lightboxDownload = document.getElementById("lightboxDownload");
+  const lightboxClose = document.getElementById("lightboxClose");
 
   let currentJobId = null;
 
   // A same-page anchor click (rather than window.open/location.href) is the
   // most reliable way to trigger a browser's native download flow without
   // navigating away from the app or hitting popup blockers.
-  function triggerBrowserDownload(id) {
+  function triggerBrowserDownload(href) {
     const a = document.createElement("a");
-    a.href = "/api/file?id=" + encodeURIComponent(id);
+    a.href = href;
     a.style.display = "none";
     document.body.appendChild(a);
     a.click();
     a.remove();
   }
+
+  function frameURL(jobId, file) {
+    return "/api/frame?id=" + encodeURIComponent(jobId) + "&file=" + encodeURIComponent(file);
+  }
+
+  function formatTimestamp(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return m + ":" + String(s).padStart(2, "0");
+  }
+
+  function renderFrames(jobId, frames) {
+    framesGrid.innerHTML = "";
+    frames.forEach((name, idx) => {
+      const frameCard = document.createElement("div");
+      frameCard.className = "frame-card";
+
+      const img = document.createElement("img");
+      img.src = frameURL(jobId, name);
+      img.loading = "lazy";
+      img.alt = "Frame at " + formatTimestamp(idx);
+      img.addEventListener("click", () => openLightbox(jobId, name, idx));
+      frameCard.appendChild(img);
+
+      const footer = document.createElement("div");
+      footer.className = "frame-footer";
+
+      const label = document.createElement("span");
+      label.textContent = formatTimestamp(idx);
+      footer.appendChild(label);
+
+      const dlBtn = document.createElement("button");
+      dlBtn.type = "button";
+      dlBtn.className = "frame-download-btn";
+      dlBtn.textContent = "Download";
+      dlBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        triggerBrowserDownload(frameURL(jobId, name) + "&download=1");
+      });
+      footer.appendChild(dlBtn);
+
+      frameCard.appendChild(footer);
+      framesGrid.appendChild(frameCard);
+    });
+
+    framesHeading.textContent = frames.length + " frame" + (frames.length === 1 ? "" : "s") +
+      " extracted — click one to preview it larger, or use Download to save it.";
+    framesSection.classList.add("visible");
+    card.classList.add("wide");
+  }
+
+  function openLightbox(jobId, name, idx) {
+    lightboxImg.src = frameURL(jobId, name);
+    lightboxImg.alt = "Frame at " + formatTimestamp(idx);
+    lightboxDownload.onclick = () => triggerBrowserDownload(frameURL(jobId, name) + "&download=1");
+    lightbox.classList.add("visible");
+  }
+
+  function closeLightbox() {
+    lightbox.classList.remove("visible");
+  }
+  lightboxClose.addEventListener("click", closeLightbox);
+  lightbox.addEventListener("click", (e) => {
+    if (e.target === lightbox) closeLightbox();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeLightbox();
+  });
 
   goBtn.addEventListener("click", async () => {
     const url = urlInput.value.trim();
@@ -253,6 +431,9 @@
     barFill.style.width = "0%";
     statusLine.className = "status-line";
     statusLine.textContent = "Starting download...";
+    framesSection.classList.remove("visible");
+    framesGrid.innerHTML = "";
+    card.classList.remove("wide");
 
     try {
       const res = await fetch("/api/download", {
@@ -279,16 +460,22 @@
       const job = JSON.parse(evt.data);
       barFill.style.width = Math.max(0, Math.min(100, job.percent || 0)) + "%";
 
-      if (job.status === "running") {
+      if (job.status === "running" || job.status === "extracting") {
         statusLine.className = "status-line";
         statusLine.textContent = job.message || "Working...";
       } else if (job.status === "done") {
-        statusLine.className = "status-line ok";
-        statusLine.textContent = "Done — your download should start automatically.";
-        triggerBrowserDownload(job.id);
-        againBtn.classList.add("visible");
         source.close();
         resetButton();
+        if (job.frames && job.frames.length) {
+          statusLine.className = "status-line ok";
+          statusLine.textContent = "Done.";
+          renderFrames(job.id, job.frames);
+        } else {
+          statusLine.className = "status-line ok";
+          statusLine.textContent = "Done — your download should start automatically.";
+          triggerBrowserDownload("/api/file?id=" + encodeURIComponent(job.id));
+          againBtn.classList.add("visible");
+        }
       } else if (job.status === "error") {
         statusLine.className = "status-line error";
         statusLine.textContent = "Failed: " + (job.err || "unknown error");
@@ -308,7 +495,7 @@
 
   againBtn.addEventListener("click", () => {
     if (currentJobId) {
-      triggerBrowserDownload(currentJobId);
+      triggerBrowserDownload("/api/file?id=" + encodeURIComponent(currentJobId));
     }
   });
 </script>
