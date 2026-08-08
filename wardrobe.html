@@ -3,9 +3,10 @@
   No build step, no framework, no npm. Data lives in localStorage.
   Open this file in a browser; works fully offline.
 
-  Session 1 scope: data layer, CRUD, list view, outfit engine
-  (structural + color + formality + season + silhouette rules),
-  unlock counter, and a basic outfit browser.
+  Session 1: data layer, CRUD, list view, outfit engine (structural +
+  color + formality + season + silhouette rules), unlock counter, browser.
+  Session 2: gap analysis, wishlist, outfit of the day, occasion filter,
+  manual outfit builder.
 -->
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -73,7 +74,7 @@
   /* bottom tabs (phone) */
   .tabs {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
-    display: grid; grid-template-columns: repeat(4, 1fr);
+    display: grid; grid-template-columns: repeat(5, 1fr);
     background: rgba(16,18,22,.92);
     backdrop-filter: blur(12px);
     border-top: 1px solid var(--border);
@@ -225,6 +226,45 @@
     .stat-grid { grid-template-columns: repeat(4, 1fr); }
   }
   @media (min-width: 1180px) { .grid { grid-template-columns: 1fr 1fr 1fr; } }
+
+  /* ---------- segmented control ---------- */
+  .seg { display: inline-flex; background: var(--bg-raise); border: 1px solid var(--border); border-radius: 11px; padding: 3px; margin-bottom: 16px; gap: 2px; }
+  .seg-btn { appearance: none; background: none; border: 0; color: var(--muted); padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; min-height: 36px; }
+  .seg-btn.on { background: var(--bg-raise2); color: var(--text); box-shadow: inset 0 0 0 1px var(--border-2); }
+
+  /* ---------- occasion chips (interactive) ---------- */
+  .chip.btn-chip { cursor: pointer; }
+  .chip.btn-chip:hover { border-color: var(--muted-2); color: var(--text); }
+
+  /* ---------- outfit of the day ---------- */
+  .ootd {
+    border: 1px solid var(--border-2); border-radius: var(--radius);
+    background: linear-gradient(160deg, rgba(124,141,255,.12), rgba(20,22,27,.4));
+    padding: 16px; margin-bottom: 18px;
+  }
+  .ootd .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); font-weight: 600; }
+
+  /* ---------- gap analysis ---------- */
+  .gap-row { padding: 14px; }
+  .gap-delta { font-size: 22px; font-weight: 700; letter-spacing: -.5px; color: var(--accent); flex: none; min-width: 66px; text-align: right; }
+  .gap-delta.zero { color: var(--muted-2); }
+  .gap-bar { height: 5px; border-radius: 3px; background: var(--bg-raise2); overflow: hidden; margin-top: 8px; }
+  .gap-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+
+  /* ---------- manual builder ---------- */
+  .build-cat { margin-bottom: 14px; }
+  .build-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 7px; }
+  .pick {
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    background: var(--bg-raise); border: 1px solid var(--border); border-radius: 10px;
+    padding: 6px 11px 6px 6px; font-size: 13px; transition: border-color .12s ease, background .12s ease;
+  }
+  .pick .mini { width: 26px; height: 26px; border-radius: 6px; background: var(--bg-raise2); overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 13px; flex: none; }
+  .pick .mini img { width: 100%; height: 100%; object-fit: cover; }
+  .pick.on { border-color: var(--accent); background: rgba(124,141,255,.12); }
+  .validity { padding: 12px 14px; border-radius: 11px; margin: 4px 0 14px; font-size: 13px; }
+  .validity.ok { background: rgba(78,201,138,.1); border: 1px solid #23402f; color: var(--good); }
+  .validity.bad { background: rgba(230,184,75,.09); border: 1px solid #4a3f22; color: var(--warn); }
 </style>
 
 <div class="app">
@@ -234,6 +274,7 @@
     <button class="side-tab" data-nav="wardrobe"><span class="ico">▦</span> Wardrobe</button>
     <button class="side-tab" data-nav="outfits"><span class="ico">◈</span> Outfits</button>
     <button class="side-tab" data-nav="add"><span class="ico">＋</span> Add</button>
+    <button class="side-tab" data-nav="plan"><span class="ico">◇</span> Plan</button>
     <button class="side-tab" data-nav="stats"><span class="ico">◐</span> Stats</button>
   </nav>
 
@@ -254,6 +295,7 @@
   <button class="tab" data-nav="wardrobe"><span class="ico">▦</span>Wardrobe</button>
   <button class="tab" data-nav="outfits"><span class="ico">◈</span>Outfits</button>
   <button class="tab" data-nav="add"><span class="ico">＋</span>Add</button>
+  <button class="tab" data-nav="plan"><span class="ico">◇</span>Plan</button>
   <button class="tab" data-nav="stats"><span class="ico">◐</span>Stats</button>
 </nav>
 
@@ -277,6 +319,33 @@ const rules = {
   },
 };
 
+/*
+  Gap-analysis candidates — hypothetical garments to score against your current
+  wardrobe. Each is a full garment spec; the engine reports how many new outfits
+  each would unlock. Edit this list freely.
+*/
+const gapCandidates = [
+  { name: "Navy quarter-zip",      category: "mid",    subcategory: "quarter-zip", color: "navy",  colorFamily: "neutralDark",  formality: 3, season: "mild", fit: "slim",    weight: "medium", cost: 80 },
+  { name: "White oxford shirt",    category: "mid",    subcategory: "shirt",       color: "white", colorFamily: "neutralLight", formality: 4, season: "all",  fit: "slim",    weight: "light",  cost: 70 },
+  { name: "Brown tee",             category: "base",   subcategory: "tee",         color: "brown", colorFamily: "warmNeutral",  formality: 2, season: "hot",  fit: "slim",    weight: "light",  cost: 25 },
+  { name: "Ecru crewneck sweat",   category: "mid",    subcategory: "sweatshirt",  color: "ecru",  colorFamily: "warmNeutral",  formality: 2, season: "mild", fit: "relaxed", weight: "medium", cost: 60 },
+  { name: "Black slim jeans",      category: "bottom", subcategory: "jeans",       color: "black", colorFamily: "neutralDark",  formality: 3, season: "all",  fit: "slim",    weight: "medium", cost: 90 },
+  { name: "Tan chukka boots",      category: "shoe",   subcategory: "boot",        color: "tan",   colorFamily: "warmNeutral",  formality: 4, season: "all",  fit: "slim",    weight: "medium", cost: 150, visualWeight: "substantial" },
+  { name: "Grey wool overcoat",    category: "outer",  subcategory: "coat",        color: "grey",  colorFamily: "neutralDark",  formality: 4, season: "cold", fit: "slim",    weight: "heavy",  cost: 280 },
+  { name: "Olive cargos",          category: "bottom", subcategory: "cargos",      color: "olive", colorFamily: "warmNeutral",  formality: 2, season: "mild", fit: "relaxed", weight: "medium", cost: 75 },
+];
+
+/*
+  Occasion rules — predicates over an outfit's items. Used to filter the outfit
+  browser by intent. Heuristic and editable; occasions can overlap.
+*/
+const occasionRules = {
+  campus:   items => { const f = items.map(i => i.formality); return Math.min(...f) >= 2 && Math.max(...f) <= 4; },
+  goingOut: items => Math.max(...items.map(i => i.formality)) >= 3 && !items.some(i => /sweatpant/i.test(i.subcategory)),
+  gym:      items => Math.max(...items.map(i => i.formality)) <= 2,
+  lazy:     items => Math.max(...items.map(i => i.formality)) <= 2 && items.some(i => i.fit === "relaxed"),
+};
+
 // Ordering & display maps
 const WEIGHT_VAL   = { light: 1, medium: 2, heavy: 3 };
 const TIER         = { base: 0, mid: 1, outer: 2 };           // layer stack order
@@ -291,15 +360,17 @@ const FITS         = ["slim", "relaxed"];
 const WEIGHTS      = ["light", "medium", "heavy"];
 const VISUAL_WEIGHTS = ["lowProfile", "standard", "substantial"];
 const OCCASIONS    = ["campus", "goingOut", "gym", "lazy"];
+const OCCASION_LBL = { campus: "Campus", goingOut: "Going out", gym: "Gym", lazy: "Lazy" };
 
 const STORAGE_KEY = "wardrobe.v1";
 const MAX_EVAL = 300000;   // safety cap on combinations evaluated per run
 const STALE_DAYS = 60;     // "not worn in N days" flag
+const OOTD_AVOID_DAYS = 14; // downweight outfits worn within this many days
 
 /* ============================================================================
    DATA LAYER
    ============================================================================ */
-let state = { garments: [], outfits: [] };
+let state = { garments: [], outfits: [], wishlist: [] };
 
 function uid() {
   if (crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -314,10 +385,11 @@ function loadFromStorage() {
       const parsed = JSON.parse(raw);
       state.garments = Array.isArray(parsed.garments) ? parsed.garments : [];
       state.outfits  = Array.isArray(parsed.outfits) ? parsed.outfits : [];
+      state.wishlist = Array.isArray(parsed.wishlist) ? parsed.wishlist : [];
     }
   } catch (e) {
     console.error("load failed", e);
-    state = { garments: [], outfits: [] };
+    state = { garments: [], outfits: [], wishlist: [] };
   }
 }
 function saveToStorage() {
@@ -388,6 +460,43 @@ function wearOutfit(items) {
   });
   saveToStorage();
 }
+
+// --- wishlist (hypothetical garments the user is considering buying) ---
+function getWishlist() { return state.wishlist; }
+function addWishlist(data) {
+  const w = normalizeGarment(data);
+  w.isWishlist = true;
+  state.wishlist.push(w);
+  saveToStorage();
+  return w;
+}
+function deleteWishlist(id) {
+  state.wishlist = state.wishlist.filter(w => w.id !== id);
+  saveToStorage();
+}
+// one-tap: move a wishlist item into the real wardrobe as a fresh garment
+function convertWishlist(id) {
+  const w = state.wishlist.find(x => x.id === id);
+  if (!w) return null;
+  const { id: _id, isWishlist, timesWorn, lastWorn, dateAdded, ...spec } = w;
+  const g = addGarment({ ...spec });
+  deleteWishlist(id);
+  return g;
+}
+
+// --- saved outfits ---
+function saveOutfitRecord({ garmentIds, name = null, occasion = null, isManual = false }) {
+  if (state.outfits.some(o => sameSet(o.garmentIds, garmentIds))) return null;
+  const rec = { id: uid(), garmentIds, name, occasion, rating: null, timesWorn: 0, lastWorn: null, isManual };
+  state.outfits.push(rec);
+  saveToStorage();
+  return rec;
+}
+function deleteOutfitRecord(id) {
+  state.outfits = state.outfits.filter(o => o.id !== id);
+  saveToStorage();
+}
+function sameSet(a, b) { return a.length === b.length && [...a].sort().join() === [...b].sort().join(); }
 
 /* ============================================================================
    OUTFIT ENGINE  —  validity, generation, unlock counting
@@ -566,6 +675,53 @@ function calculateUnlock(existingGarments, garment) {
   };
 }
 
+/*
+  Gap analysis: score each hypothetical garment by how many new outfits it
+  unlocks against the current wardrobe. `before` is computed once and reused.
+  Returns rows sorted by unlock delta, richest first.
+*/
+function analyzeGaps(garments, candidates) {
+  const before = generateOutfits(garments, { store: 0 });
+  return candidates.map(c => {
+    const draft = normalizeGarment(c);
+    const withNew = garments.concat(draft);
+    const after = generateOutfits(withNew, { store: 0 });
+    const created = generateOutfits(withNew, { store: 24, requireId: draft.id });
+    const best = created.outfits
+      .map(o => ({ o, s: scoreOutfit(o.items) }))
+      .sort((a, b) => b.s - a.s).slice(0, 3).map(x => x.o);
+    const delta = after.count - before.count;
+    return {
+      spec: c,
+      draft,
+      delta,
+      capped: before.capped || after.capped,
+      costPerUnlock: (c.cost > 0 && delta > 0) ? c.cost / delta : null,
+      best,
+    };
+  }).sort((a, b) => b.delta - a.delta);
+}
+
+/*
+  Outfit of the day: weighted random pick from a pool of valid outfits.
+  Weight = aesthetic score, heavily reduced for outfits whose items were worn
+  within OOTD_AVOID_DAYS. `excludeKey` skips the current pick on reshuffle.
+*/
+function pickOOTD(pool, excludeKey) {
+  const cands = pool.filter(o => o.garmentIds.join() !== excludeKey);
+  if (!cands.length) return pool[0] || null;
+  const weighted = cands.map(o => {
+    let w = Math.max(0.15, scoreOutfit(o.items));
+    const recent = o.items.some(i => { const d = daysSince(i.lastWorn); return d != null && d < OOTD_AVOID_DAYS; });
+    if (recent) w *= 0.15;
+    return { o, w };
+  });
+  const total = weighted.reduce((a, x) => a + x.w, 0);
+  let r = Math.random() * total;
+  for (const x of weighted) { r -= x.w; if (r <= 0) return x.o; }
+  return weighted[weighted.length - 1].o;
+}
+
 /* ============================================================================
    UI  —  rendering. Kept separate from data/engine logic above.
    ============================================================================ */
@@ -581,6 +737,16 @@ let filters = { category: "all", season: "all", sort: "dateAdded", search: "" };
 let outfitPage = 0;
 const OUTFITS_PER_PAGE = 12;
 const OUTFIT_STORE = 1500;       // cap outfits materialized for the browser
+
+// session 2 view state
+let outfitMode = "suggested";    // "suggested" | "build"
+let occasionFilter = "all";      // outfit browser occasion filter
+let ootd = null;                 // current outfit-of-the-day pick
+let ootdDismissed = false;       // hide OOTD for the session once dismissed
+let builderSel = new Set();      // garment ids selected in the manual builder
+let builderName = "";            // preserved across builder re-renders
+let builderOccasion = "";
+let planMode = "gaps";           // "gaps" | "wishlist"
 
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -612,6 +778,7 @@ function render() {
   if (currentTab === "wardrobe") renderWardrobe();
   else if (currentTab === "outfits") renderOutfits();
   else if (currentTab === "add") renderForm();
+  else if (currentTab === "plan") renderPlan();
   else if (currentTab === "stats") renderStats();
   window.scrollTo(0, 0);
 }
@@ -716,6 +883,71 @@ window.confirmDelete = function (id) {
 };
 window.startEdit = function (id) { editingId = id; setTab("add"); };
 
+/* ---------- shared garment-attribute fields (Add form + Wishlist form) ---------- */
+function garmentAttrFieldsHTML(g) {
+  const isShoe = (g.category || "base") === "shoe";
+  const formLbl = ["sweatpants", "casual", "smart-casual", "refined", "tailored"];
+  return `
+    <div class="row wrap" style="gap:12px;">
+      <div class="field grow">
+        <label>Category <span class="req">*</span></label>
+        <select name="category">${CATEGORIES.map(c => opt(c, CATEGORY_LBL[c], g.category || "base")).join("")}</select>
+      </div>
+      <div class="field grow">
+        <label>Subcategory</label>
+        <input type="text" name="subcategory" value="${esc(g.subcategory || "")}" placeholder="tee, hoodie, jeans…" />
+      </div>
+    </div>
+    <div class="row wrap" style="gap:12px;">
+      <div class="field grow">
+        <label>Color</label>
+        <input type="text" name="color" value="${esc(g.color || "")}" placeholder="charcoal" />
+      </div>
+      <div class="field grow">
+        <label>Color family</label>
+        <select name="colorFamily">${COLOR_FAMILIES.map(c => opt(c, FAMILY_LBL[c], g.colorFamily || "neutralDark")).join("")}</select>
+      </div>
+    </div>
+    <div class="row wrap" style="gap:12px;">
+      <div class="field grow">
+        <label>Formality (1–5)</label>
+        <select name="formality">${[1,2,3,4,5].map(n => opt(n, `${n} — ${formLbl[n-1]}`, g.formality || 3)).join("")}</select>
+      </div>
+      <div class="field grow">
+        <label>Season</label>
+        <select name="season">${SEASONS.map(s => opt(s, cap(s), g.season || "all")).join("")}</select>
+      </div>
+    </div>
+    <div class="row wrap" style="gap:12px;">
+      <div class="field grow">
+        <label>Fit</label>
+        <select name="fit">${FITS.map(f => opt(f, cap(f), g.fit || "slim")).join("")}</select>
+      </div>
+      <div class="field grow">
+        <label>Weight (layering)</label>
+        <select name="weight">${WEIGHTS.map(w => opt(w, cap(w), g.weight || "medium")).join("")}</select>
+      </div>
+    </div>
+    <div class="row wrap" style="gap:12px;">
+      <div class="field grow" id="vw-field" ${isShoe ? "" : "hidden"}>
+        <label>Shoe visual weight</label>
+        <select name="visualWeight">${VISUAL_WEIGHTS.map(v => opt(v, ({lowProfile:"Low profile",standard:"Standard",substantial:"Substantial"})[v], g.visualWeight || "standard")).join("")}</select>
+      </div>
+      <div class="field grow">
+        <label>Cost</label>
+        <input type="number" name="cost" min="0" step="1" value="${g.cost != null && g.cost !== "" ? g.cost : ""}" placeholder="0" />
+      </div>
+    </div>`;
+}
+// keep the shoe-only visual-weight field in sync with the category select
+function wireGarmentForm(form) {
+  form.category.addEventListener("change", e => {
+    const vw = form.querySelector("#vw-field");
+    if (vw) vw.hidden = e.target.value !== "shoe";
+  });
+}
+function readGarmentForm(form) { return Object.fromEntries(new FormData(form).entries()); }
+
 /* ---------- Add / Edit form ---------- */
 function renderForm() {
   const editing = editingId ? getGarment(editingId) : null;
@@ -723,7 +955,6 @@ function renderForm() {
   viewSub.textContent = editing ? esc(editing.name) : "New piece";
 
   const g = editing || {};
-  const isShoe = (g.category || "base") === "shoe";
 
   view.innerHTML = `
     ${lastUnlock && !editing ? unlockBanner(lastUnlock) : ""}
@@ -734,64 +965,11 @@ function renderForm() {
         <div class="err" id="err-name" hidden>Name is required.</div>
       </div>
 
-      <div class="row wrap" style="gap:12px;">
-        <div class="field grow">
-          <label>Category <span class="req">*</span></label>
-          <select name="category">${CATEGORIES.map(c => opt(c, CATEGORY_LBL[c], g.category || "base")).join("")}</select>
-        </div>
-        <div class="field grow">
-          <label>Subcategory</label>
-          <input type="text" name="subcategory" value="${esc(g.subcategory || "")}" placeholder="tee, hoodie, jeans…" />
-        </div>
-      </div>
+      ${garmentAttrFieldsHTML(g)}
 
-      <div class="row wrap" style="gap:12px;">
-        <div class="field grow">
-          <label>Color</label>
-          <input type="text" name="color" value="${esc(g.color || "")}" placeholder="charcoal" />
-        </div>
-        <div class="field grow">
-          <label>Color family</label>
-          <select name="colorFamily">${COLOR_FAMILIES.map(c => opt(c, FAMILY_LBL[c], g.colorFamily || "neutralDark")).join("")}</select>
-        </div>
-      </div>
-
-      <div class="row wrap" style="gap:12px;">
-        <div class="field grow">
-          <label>Formality (1–5)</label>
-          <select name="formality">${[1,2,3,4,5].map(n => opt(n, `${n} — ${["sweatpants","casual","smart-casual","refined","tailored"][n-1]}`, g.formality || 3)).join("")}</select>
-        </div>
-        <div class="field grow">
-          <label>Season</label>
-          <select name="season">${SEASONS.map(s => opt(s, cap(s), g.season || "all")).join("")}</select>
-        </div>
-      </div>
-
-      <div class="row wrap" style="gap:12px;">
-        <div class="field grow">
-          <label>Fit</label>
-          <select name="fit">${FITS.map(f => opt(f, cap(f), g.fit || "slim")).join("")}</select>
-        </div>
-        <div class="field grow">
-          <label>Weight (layering)</label>
-          <select name="weight">${WEIGHTS.map(w => opt(w, cap(w), g.weight || "medium")).join("")}</select>
-        </div>
-      </div>
-
-      <div class="field" id="vw-field" ${isShoe ? "" : "hidden"}>
-        <label>Shoe visual weight</label>
-        <select name="visualWeight">${VISUAL_WEIGHTS.map(v => opt(v, ({lowProfile:"Low profile",standard:"Standard",substantial:"Substantial"})[v], g.visualWeight || "standard")).join("")}</select>
-      </div>
-
-      <div class="row wrap" style="gap:12px;">
-        <div class="field grow">
-          <label>Cost</label>
-          <input type="number" name="cost" min="0" step="1" value="${g.cost != null ? g.cost : ""}" placeholder="0" />
-        </div>
-        <div class="field grow">
-          <label>Rating</label>
-          <select name="rating">${["", 1,2,3,4,5].map(n => opt(n, n === "" ? "—" : `${n}★`, g.rating || "")).join("")}</select>
-        </div>
+      <div class="field">
+        <label>Rating</label>
+        <select name="rating">${["", 1,2,3,4,5].map(n => opt(n, n === "" ? "—" : `${n}★`, g.rating || "")).join("")}</select>
       </div>
 
       <div class="field">
@@ -821,10 +999,9 @@ function renderForm() {
   const form = document.getElementById("gform");
   let pendingImage = g.imageData || null;
 
+  wireGarmentForm(form);
   form.category.addEventListener("change", e => {
-    document.getElementById("vw-field").hidden = e.target.value !== "shoe";
-    if (!pendingImage) document.querySelector("#photo-preview span") &&
-      (document.querySelector("#photo-preview").innerHTML = `<span>${CATEGORY_ICO[e.target.value] || "👚"}</span>`);
+    if (!pendingImage) { const pv = document.getElementById("photo-preview"); if (pv) pv.innerHTML = `<span>${CATEGORY_ICO[e.target.value] || "👚"}</span>`; }
   });
 
   document.getElementById("photo-input").addEventListener("change", async e => {
@@ -892,15 +1069,26 @@ function outfitStrip(o) {
   </div>`;
 }
 
-/* ---------- Outfits browser ---------- */
+/* ---------- Outfits (Suggested / Build) ---------- */
 function renderOutfits() {
   viewTitle.textContent = "Outfits";
   const garments = getGarments();
-  const byCat = groupByCategory(garments);
+  const seg = segmented([["suggested", "Suggested"], ["build", "Build"]], outfitMode, "setOutfitMode");
+  if (outfitMode === "build") renderBuilder(garments, seg);
+  else renderSuggested(garments, seg);
+}
+window.setOutfitMode = function (m) { outfitMode = m; renderOutfits(); };
 
+function segmented(opts, cur, fn) {
+  return `<div class="seg">${opts.map(([v, l]) => `<button class="seg-btn ${v === cur ? "on" : ""}" onclick="${fn}('${v}')">${esc(l)}</button>`).join("")}</div>`;
+}
+
+/* ----- Suggested: outfit of the day + occasion filter + ranked browser ----- */
+function renderSuggested(garments, seg) {
+  const byCat = groupByCategory(garments);
   if (!byCat.bottom.length || !byCat.shoe.length || (!byCat.base.length && !byCat.mid.length)) {
     viewSub.textContent = "";
-    view.innerHTML = emptyState("◈", "Not enough to build outfits yet",
+    view.innerHTML = seg + emptyState("◈", "Not enough to build outfits yet",
       "The engine needs at least one bottom, one shoe, and a top layer (base or mid).",
       `<button class="btn primary" onclick="setTab('add')">Add a garment</button>` +
       (garments.length ? "" : `<button class="btn" onclick="loadSample()">Load sample wardrobe</button>`));
@@ -908,21 +1096,31 @@ function renderOutfits() {
   }
 
   const { outfits, count, capped } = generateOutfits(garments, { store: OUTFIT_STORE });
-  // rank by score so the browser leads with the strongest looks
   outfits.sort((a, b) => scoreOutfit(b.items) - scoreOutfit(a.items));
 
-  viewSub.textContent = `${count}${capped ? "+" : ""} valid outfit${count === 1 ? "" : "s"}`;
+  // outfit of the day — picked from the full (unfiltered) pool
+  if (!ootdDismissed && !ootd) ootd = pickOOTD(outfits, "");
+  const ootdHTML = (ootd && !ootdDismissed) ? ootdCard(ootd) : "";
 
-  const pages = Math.max(1, Math.ceil(outfits.length / OUTFITS_PER_PAGE));
-  outfitPage = Math.min(outfitPage, pages - 1);
-  const slice = outfits.slice(outfitPage * OUTFITS_PER_PAGE, (outfitPage + 1) * OUTFITS_PER_PAGE);
+  // occasion filter
+  const filtered = occasionFilter === "all" ? outfits
+    : outfits.filter(o => { try { return occasionRules[occasionFilter](o.items); } catch (e) { return false; } });
+  const occChips = `<div class="row wrap" style="gap:7px; margin-bottom:14px;">
+    ${["all", ...OCCASIONS].map(o => `<span class="chip btn-chip ${occasionFilter === o ? "on" : ""}" onclick="setOccasion('${o}')">${o === "all" ? "All" : OCCASION_LBL[o]}</span>`).join("")}
+  </div>`;
 
-  const banner = capped
-    ? `<div class="banner warn">Showing the first ${OUTFIT_STORE.toLocaleString()} of a very large set — the engine capped generation for performance. Add filters in a later session to narrow this.</div>`
-    : "";
+  viewSub.textContent = `${count}${capped ? "+" : ""} valid · ${filtered.length} shown`;
 
-  view.innerHTML = banner +
-    `<div class="stack">${slice.map((o, i) => outfitCard(o, outfitPage * OUTFITS_PER_PAGE + i)).join("")}</div>` +
+  const pages = Math.max(1, Math.ceil(filtered.length / OUTFITS_PER_PAGE));
+  outfitPage = Math.max(0, Math.min(outfitPage, pages - 1));
+  const slice = filtered.slice(outfitPage * OUTFITS_PER_PAGE, (outfitPage + 1) * OUTFITS_PER_PAGE);
+
+  const cappedBanner = capped ? `<div class="banner warn">Showing the first ${OUTFIT_STORE.toLocaleString()} outfits — generation was capped for performance.</div>` : "";
+  const body = slice.length
+    ? `<div class="stack">${slice.map((o, i) => outfitCard(o, outfitPage * OUTFITS_PER_PAGE + i)).join("")}</div>`
+    : `<div class="empty muted">No ${occasionFilter === "all" ? "" : OCCASION_LBL[occasionFilter] + " "}outfits from your current wardrobe.</div>`;
+
+  view.innerHTML = seg + ootdHTML + occChips + cappedBanner + body +
     (pages > 1 ? `
       <div class="pager">
         <button class="btn sm" ${outfitPage === 0 ? "disabled" : ""} onclick="pageOutfits(-1)">← Prev</button>
@@ -930,8 +1128,35 @@ function renderOutfits() {
         <button class="btn sm" ${outfitPage >= pages - 1 ? "disabled" : ""} onclick="pageOutfits(1)">Next →</button>
       </div>` : "");
 }
+window.setOccasion = function (o) { occasionFilter = o; outfitPage = 0; renderOutfits(); };
 window.pageOutfits = function (d) { outfitPage += d; renderOutfits(); };
 
+function ootdCard(o) {
+  return `
+    <div class="ootd">
+      <div class="eyebrow">Outfit of the day</div>
+      <div class="o-items" style="margin:10px 0;">
+        ${o.items.slice().sort(sortForDisplay).map(itemPill).join("")}
+      </div>
+      <div class="row wrap" style="gap:8px;">
+        <button class="btn sm primary" onclick="acceptOOTD()">Wear today</button>
+        <button class="btn sm" onclick="reshuffleOOTD()">Reshuffle</button>
+        <button class="btn sm ghost" onclick="dismissOOTD()">Dismiss</button>
+      </div>
+    </div>`;
+}
+window.acceptOOTD = function () {
+  if (ootd) wearOutfit(ootd.items);
+  ootd = null; ootdDismissed = true; renderOutfits();
+};
+window.reshuffleOOTD = function () {
+  const { outfits } = generateOutfits(getGarments(), { store: OUTFIT_STORE });
+  ootd = pickOOTD(outfits, ootd ? ootd.garmentIds.join() : "");
+  ootdDismissed = false; renderOutfits();
+};
+window.dismissOOTD = function () { ootd = null; ootdDismissed = true; renderOutfits(); };
+
+/* ----- shared outfit rendering ----- */
 function outfitCard(o, idx) {
   const totalCost = o.items.reduce((a, i) => a + i.cost, 0);
   const fs = o.items.map(i => i.formality);
@@ -974,16 +1199,243 @@ window.woreOutfit = function (ids) {
   renderOutfits();
 };
 window.saveOutfit = function (ids) {
-  const garmentIds = ids.split(",");
-  if (state.outfits.some(o => sameSet(o.garmentIds, garmentIds))) { alert("Already saved."); return; }
-  state.outfits.push({
-    id: uid(), garmentIds, name: null, occasion: null,
-    rating: null, timesWorn: 0, lastWorn: null, isManual: false,
-  });
-  saveToStorage();
-  alert("Saved to your outfits.");
+  const rec = saveOutfitRecord({ garmentIds: ids.split(",") });
+  alert(rec ? "Saved to your outfits (see Build tab)." : "You've already saved this outfit.");
 };
-function sameSet(a, b) { return a.length === b.length && [...a].sort().join() === [...b].sort().join(); }
+
+/* ----- Build: manual outfit builder + saved outfits ----- */
+function renderBuilder(garments, seg) {
+  viewSub.textContent = "";
+  if (!garments.length) {
+    view.innerHTML = seg + emptyState("◈", "Nothing to build with", "Add garments first.",
+      `<button class="btn primary" onclick="setTab('add')">Add a garment</button>`);
+    return;
+  }
+  const selItems = [...builderSel].map(getGarment).filter(Boolean);
+  const validity = selItems.length ? isValidOutfit(selItems) : null;
+
+  const groups = CATEGORIES.map(cat => {
+    const items = garments.filter(g => g.category === cat);
+    if (!items.length) return "";
+    return `<div class="build-cat">
+      <div class="sectitle">${CATEGORY_LBL[cat]}</div>
+      <div class="build-chips">
+        ${items.map(g => `<span class="pick ${builderSel.has(g.id) ? "on" : ""}" onclick="toggleBuilderPick('${g.id}')">
+          <span class="mini">${g.imageData ? `<img src="${g.imageData}">` : (CATEGORY_ICO[cat] || "👚")}</span>${esc(g.name)}</span>`).join("")}
+      </div>
+    </div>`;
+  }).join("");
+
+  const vBox = validity
+    ? `<div class="validity ${validity.valid ? "ok" : "bad"}">
+        ${validity.valid ? "✓ Valid — passes every rule." : "⚠ Breaks: " + validity.reasons.map(esc).join(" · ") + ". You can still save it."}
+      </div>` : `<div class="small muted" style="margin:6px 0 12px;">Tap items to build an outfit. Rule-breaking combos are flagged but still savable.</div>`;
+
+  const saved = state.outfits.slice().reverse();
+  const savedCards = saved.map(savedOutfitCard).filter(Boolean);
+  const savedHTML = savedCards.length ? `
+    <div class="sectitle" style="margin-top:22px;">Saved outfits (${savedCards.length})</div>
+    <div class="stack">${savedCards.join("")}</div>` : "";
+
+  view.innerHTML = seg + `
+    <div class="card" style="padding:14px; margin-bottom:16px;">
+      ${groups}
+      ${vBox}
+      <div class="row wrap" style="gap:10px; margin-top:6px;">
+        <input type="text" id="build-name" class="grow" value="${esc(builderName)}" placeholder="Name this outfit (optional)" style="min-width:160px;" />
+        <select id="build-occasion" style="width:auto;">
+          ${["", ...OCCASIONS].map(o => opt(o, o === "" ? "No occasion" : OCCASION_LBL[o], builderOccasion)).join("")}
+        </select>
+      </div>
+      <div class="row" style="gap:10px; margin-top:12px;">
+        <button class="btn primary grow" onclick="saveManualOutfit()" ${selItems.length ? "" : "disabled"}>Save outfit</button>
+        <button class="btn" onclick="clearBuilder()" ${builderSel.size ? "" : "disabled"}>Clear</button>
+      </div>
+    </div>
+    ${savedHTML}`;
+
+  const nameEl = document.getElementById("build-name");
+  if (nameEl) nameEl.oninput = e => { builderName = e.target.value; };
+  const occEl = document.getElementById("build-occasion");
+  if (occEl) occEl.onchange = e => { builderOccasion = e.target.value; };
+}
+function syncBuilderInputs() {
+  const n = document.getElementById("build-name"); if (n) builderName = n.value;
+  const o = document.getElementById("build-occasion"); if (o) builderOccasion = o.value;
+}
+window.toggleBuilderPick = function (id) {
+  syncBuilderInputs();
+  if (builderSel.has(id)) builderSel.delete(id); else builderSel.add(id);
+  renderOutfits();
+};
+window.clearBuilder = function () { syncBuilderInputs(); builderSel.clear(); renderOutfits(); };
+window.saveManualOutfit = function () {
+  const items = [...builderSel].map(getGarment).filter(Boolean);
+  if (!items.length) return;
+  const v = isValidOutfit(items);
+  if (!v.valid && !confirm("This outfit breaks:\n\n• " + v.reasons.join("\n• ") + "\n\nSave it anyway?")) return;
+  const name = (document.getElementById("build-name").value || "").trim() || null;
+  const occasion = document.getElementById("build-occasion").value || null;
+  const rec = saveOutfitRecord({ garmentIds: items.map(i => i.id), name, occasion, isManual: true });
+  if (!rec) { alert("You've already saved this exact outfit."); return; }
+  builderSel.clear(); builderName = ""; builderOccasion = "";
+  renderOutfits();
+};
+
+function savedOutfitCard(rec) {
+  const items = rec.garmentIds.map(getGarment).filter(Boolean);
+  if (items.length !== rec.garmentIds.length) return ""; // a component garment was deleted
+  const v = isValidOutfit(items);
+  return `
+    <div class="card o-card">
+      <div class="row wrap" style="justify-content:space-between; align-items:flex-start; gap:6px;">
+        <div class="small">${rec.name ? esc(rec.name) : "Untitled outfit"}
+          ${rec.occasion ? `<span class="badge" style="margin-left:6px;">${OCCASION_LBL[rec.occasion]}</span>` : ""}
+          ${rec.isManual ? `<span class="badge" style="margin-left:4px;">Manual</span>` : ""}
+          ${!v.valid ? `<span class="badge warn" style="margin-left:4px;" title="${esc(v.reasons.join(', '))}">Breaks a rule</span>` : ""}
+        </div>
+        <div class="small muted">${rec.timesWorn ? rec.timesWorn + "× worn" : ""}</div>
+      </div>
+      <div class="o-items">${items.slice().sort(sortForDisplay).map(itemPill).join("")}</div>
+      <div class="row" style="gap:8px;">
+        <button class="btn sm primary" onclick="woreSaved('${rec.id}')">Wore this today</button>
+        <button class="btn sm danger" onclick="deleteSaved('${rec.id}')">Delete</button>
+      </div>
+    </div>`;
+}
+window.woreSaved = function (id) {
+  const rec = state.outfits.find(o => o.id === id); if (!rec) return;
+  wearOutfit(rec.garmentIds.map(getGarment).filter(Boolean));
+  rec.timesWorn += 1; rec.lastWorn = todayISO();
+  saveToStorage(); renderOutfits();
+};
+window.deleteSaved = function (id) {
+  if (confirm("Delete this saved outfit?")) { deleteOutfitRecord(id); renderOutfits(); }
+};
+
+/* ---------- Plan (Gap analysis / Wishlist) ---------- */
+function renderPlan() {
+  viewTitle.textContent = "Plan";
+  const garments = getGarments();
+  const seg = segmented([["gaps", "Gap analysis"], ["wishlist", "Wishlist"]], planMode, "setPlanMode");
+  if (planMode === "wishlist") renderWishlist(garments, seg);
+  else renderGaps(garments, seg);
+}
+window.setPlanMode = function (m) { planMode = m; renderPlan(); };
+
+function canBuildOutfits(garments) {
+  const b = groupByCategory(garments);
+  return !!(b.bottom.length && b.shoe.length && (b.base.length || b.mid.length));
+}
+
+/* ----- Gap analysis: rank hypothetical garments by outfits unlocked ----- */
+function renderGaps(garments, seg) {
+  if (!canBuildOutfits(garments)) {
+    viewSub.textContent = "";
+    view.innerHTML = seg + emptyState("◇", "Gap analysis needs a base wardrobe",
+      "Add at least a bottom, a shoe and a top so the engine has outfits to compare against.",
+      `<button class="btn primary" onclick="setTab('add')">Add a garment</button>` +
+      (garments.length ? "" : `<button class="btn" onclick="loadSample()">Load sample wardrobe</button>`));
+    return;
+  }
+  const rows = analyzeGaps(garments, gapCandidates);
+  const maxDelta = Math.max(1, ...rows.map(r => r.delta));
+  viewSub.textContent = `${gapCandidates.length} candidates ranked`;
+  const intro = `<div class="small muted" style="margin-bottom:14px;">New valid outfits each hypothetical piece would unlock, ranked richest-first. Edit the candidate list in the config block at the top of the file.</div>`;
+  view.innerHTML = seg + intro + `<div class="stack">${rows.map(r => gapRow(r, maxDelta)).join("")}</div>`;
+}
+
+function gapRow(r, maxDelta) {
+  const spec = r.spec;
+  const preview = r.best.length
+    ? `<div class="o-items" style="margin-top:10px;">${r.best[0].items.slice().sort(sortForDisplay).map(itemPill).join("")}</div>` : "";
+  const cpu = r.costPerUnlock != null ? `${money(r.costPerUnlock)} per new outfit`
+    : (r.delta > 0 ? "cost not set" : "no new outfits");
+  const specJson = esc(JSON.stringify(spec));
+  return `
+    <div class="card gap-row">
+      <div class="row" style="gap:12px; align-items:flex-start;">
+        <div class="grow" style="min-width:0;">
+          <div class="g-name">${esc(spec.name)}</div>
+          <div class="tiny muted" style="margin-top:2px;">${CATEGORY_LBL[spec.category]} · ${esc(spec.color)} · F${spec.formality} · ${cap(spec.season)} · ${money(spec.cost)}</div>
+          <div class="tiny muted" style="margin-top:4px;">${esc(cpu)}</div>
+        </div>
+        <div class="gap-delta ${r.delta > 0 ? "" : "zero"}">${r.delta > 0 ? "+" : ""}${r.delta}${r.capped ? "+" : ""}</div>
+      </div>
+      <div class="gap-bar"><span style="width:${Math.round(r.delta / maxDelta * 100)}%"></span></div>
+      ${preview}
+      <div class="row wrap" style="gap:8px; margin-top:12px;">
+        <button class="btn sm primary" onclick='addCandidateToWardrobe(${specJson})'>Add to wardrobe</button>
+        <button class="btn sm" onclick='addCandidateToWishlist(${specJson})'>Add to wishlist</button>
+      </div>
+    </div>`;
+}
+window.addCandidateToWardrobe = function (spec) { const g = addGarment(spec); alert(`Added “${g.name}” to your wardrobe.`); renderPlan(); };
+window.addCandidateToWishlist = function (spec) { addWishlist(spec); planMode = "wishlist"; renderPlan(); };
+
+/* ----- Wishlist: hypotheticals with projected unlock + convert-to-real ----- */
+function renderWishlist(garments, seg) {
+  const wl = getWishlist();
+  viewSub.textContent = wl.length ? `${wl.length} item${wl.length === 1 ? "" : "s"}` : "";
+  const canProject = canBuildOutfits(garments);
+
+  const form = `
+    <details class="card" style="padding:14px; margin-bottom:16px;" ${wl.length ? "" : "open"}>
+      <summary style="cursor:pointer; font-weight:600;">Add a wishlist item</summary>
+      <form id="wl-form" class="stack" style="margin-top:12px;">
+        <div class="field">
+          <label>Name <span class="req">*</span></label>
+          <input type="text" name="name" placeholder="Navy quarter-zip" />
+          <div class="err" id="wl-err" hidden>Name is required.</div>
+        </div>
+        ${garmentAttrFieldsHTML({})}
+        <button type="submit" class="btn primary">Add to wishlist</button>
+      </form>
+    </details>`;
+
+  const list = wl.length
+    ? `<div class="stack">${wl.map(w => wishlistCard(w, garments, canProject)).join("")}</div>`
+    : `<div class="empty muted" style="padding:24px;">Nothing on your wishlist yet. Add a piece you're considering to see what it would unlock before you buy.</div>`;
+
+  view.innerHTML = seg + form + list;
+
+  const f = document.getElementById("wl-form");
+  wireGarmentForm(f);
+  f.addEventListener("submit", e => {
+    e.preventDefault();
+    const data = readGarmentForm(f);
+    const err = document.getElementById("wl-err");
+    if (!data.name.trim()) { err.hidden = false; f.name.classList.add("invalid"); f.name.focus(); return; }
+    addWishlist(data);
+    renderPlan();
+  });
+}
+
+function wishlistCard(w, garments, canProject) {
+  let projLine = `<div class="tiny muted" style="margin-top:4px;">Add a base wardrobe to project unlocks.</div>`;
+  if (canProject) {
+    const u = calculateUnlock(garments, w);
+    const cpu = (w.cost > 0 && u.delta > 0) ? `${money(w.cost / u.delta)} / outfit` : (u.delta > 0 ? "cost not set" : "—");
+    projLine = `<div class="row wrap" style="gap:8px; margin-top:6px;">
+      <span class="badge" style="color:var(--accent); border-color:#2f3b6b;">+${u.delta}${u.capped ? "+" : ""} outfits</span>
+      <span class="badge">${esc(cpu)}</span>
+    </div>`;
+  }
+  return `
+    <div class="card gap-row">
+      <div class="grow" style="min-width:0;">
+        <div class="g-name">${esc(w.name)}</div>
+        <div class="tiny muted" style="margin-top:2px;">${CATEGORY_LBL[w.category]} · ${esc(w.color || "—")} · F${w.formality} · ${cap(w.season)} · ${money(w.cost)}</div>
+        ${projLine}
+      </div>
+      <div class="row wrap" style="gap:8px; margin-top:12px;">
+        <button class="btn sm primary" onclick="buyWishlist('${w.id}')">Bought it — add to wardrobe</button>
+        <button class="btn sm danger" onclick="removeWishlist('${w.id}')">Remove</button>
+      </div>
+    </div>`;
+}
+window.buyWishlist = function (id) { const g = convertWishlist(id); if (g) alert(`“${g.name}” moved into your wardrobe.`); renderPlan(); };
+window.removeWishlist = function (id) { if (confirm("Remove from wishlist?")) { deleteWishlist(id); renderPlan(); } };
 
 /* ---------- Stats (basic dashboard) ---------- */
 function renderStats() {
