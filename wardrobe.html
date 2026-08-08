@@ -13,6 +13,12 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Wardrobe</title>
+<meta name="theme-color" content="#0b0c0e" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Wardrobe" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%91%95%3C/text%3E%3C/svg%3E" />
+<link rel="manifest" href="manifest.webmanifest" />
 
 <style>
   /* ---------- design tokens ---------- */
@@ -32,6 +38,7 @@
     --bad:       #e07a6b;
     --radius:    14px;
     --tap:       44px;
+    --bar:       rgba(16,18,22,.9);
     --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
             "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
   }
@@ -66,7 +73,7 @@
     display: flex; align-items: center; justify-content: space-between;
     gap: 12px;
     padding: 14px 16px calc(14px);
-    background: linear-gradient(var(--bg), rgba(11,12,14,.85));
+    background: var(--bar);
     backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--border);
   }
@@ -77,7 +84,7 @@
   .tabs {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
     display: grid; grid-template-columns: repeat(5, 1fr);
-    background: rgba(16,18,22,.92);
+    background: var(--bar);
     backdrop-filter: blur(12px);
     border-top: 1px solid var(--border);
     padding-bottom: env(safe-area-inset-bottom);
@@ -273,6 +280,105 @@
   .star { cursor: pointer; color: var(--muted-2); font-size: 18px; line-height: 1; padding: 2px; transition: color .1s ease; }
   .star.on { color: var(--warn); }
   .star:hover { color: var(--warn); }
+
+  /* ===================== session 4 ===================== */
+  /* ---- light theme (default is dark; toggle sets data-theme) ---- */
+  :root[data-theme="light"] {
+    --bg:        #f5f6f8;
+    --bg-raise:  #ffffff;
+    --bg-raise2: #eef0f4;
+    --border:    #e3e6ec;
+    --border-2:  #d3d8e0;
+    --text:      #1b1e24;
+    --muted:     #5c6470;
+    --muted-2:   #949bab;
+    --accent:    #5566f0;
+    --accent-ink:#ffffff;
+    --good:      #1f9d5e;
+    --warn:      #b4801e;
+    --bad:       #c4483a;
+    --bar:       rgba(255,255,255,.85);
+  }
+  html { transition: background .2s ease; }
+
+  /* ---- top-bar icon buttons (search / theme) ---- */
+  .iconbtn {
+    appearance: none; background: var(--bg-raise); border: 1px solid var(--border);
+    color: var(--text); width: 40px; height: 40px; border-radius: 10px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 17px;
+  }
+  .iconbtn:hover { border-color: var(--muted-2); }
+
+  /* ---- colour dot ---- */
+  .cdot { width: 11px; height: 11px; border-radius: 50%; border: 1px solid rgba(128,128,128,.35); flex: none; display: inline-block; }
+
+  /* ---- filter chip rows ---- */
+  .chiprow { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chiprow.scroll { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+  .chiprow.scroll::-webkit-scrollbar { display: none; }
+  .fchip {
+    appearance: none; cursor: pointer; white-space: nowrap;
+    background: var(--bg-raise); border: 1px solid var(--border); color: var(--muted);
+    border-radius: 999px; padding: 7px 13px; font-size: 13px; min-height: 36px;
+  }
+  .fchip:hover { border-color: var(--muted-2); color: var(--text); }
+  .fchip.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+
+  /* ---- visual outfit stack ---- */
+  .vstack { display: flex; flex-direction: column; gap: 8px; }
+  .vrow { display: flex; align-items: center; gap: 12px; }
+  .vthumb {
+    width: 52px; height: 52px; border-radius: 10px; flex: none; overflow: hidden;
+    background: var(--bg-raise2); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center; font-size: 20px; color: rgba(255,255,255,.85);
+    position: relative;
+  }
+  .vthumb img { width: 100%; height: 100%; object-fit: cover; }
+  .vthumb .catico { text-shadow: 0 1px 3px rgba(0,0,0,.4); }
+  .vmeta { min-width: 0; flex: 1; }
+  .vname { font-weight: 600; font-size: 14px; }
+  .vsub { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .vstack.lg .vthumb { width: 72px; height: 72px; border-radius: 12px; font-size: 26px; }
+  .vstack.lg .vname { font-size: 16px; }
+
+  /* ---- outfit-of-the-day hero + swipe deck ---- */
+  .hero {
+    border: 1px solid var(--border-2); border-radius: 18px;
+    background: linear-gradient(165deg, rgba(124,141,255,.14), var(--bg-raise) 60%);
+    padding: 18px; box-shadow: 0 10px 30px -18px rgba(0,0,0,.6);
+  }
+  .hero .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--accent); font-weight: 700; }
+  .hero .wear { font-size: 16px; padding: 14px; border-radius: 13px; }
+  .deck { position: relative; touch-action: pan-y; }
+  .deck-card { transition: transform .28s cubic-bezier(.22,.61,.36,1), opacity .28s ease; will-change: transform; }
+  .deck-card.dragging { transition: none; }
+  .deck-dots { display: flex; justify-content: center; gap: 5px; margin-top: 12px; }
+  .deck-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border-2); }
+  .deck-dot.on { background: var(--accent); }
+  .deck-hint { text-align: center; color: var(--muted-2); font-size: 11.5px; margin-top: 8px; }
+
+  /* ---- quick add ---- */
+  .qa-photo {
+    width: 100%; aspect-ratio: 1/1; max-height: 260px; border-radius: 16px; cursor: pointer;
+    background: var(--bg-raise2); border: 2px dashed var(--border-2);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    color: var(--muted); overflow: hidden;
+  }
+  .qa-photo img { width: 100%; height: 100%; object-fit: cover; }
+  .qa-photo .big { font-size: 40px; }
+
+  /* ---- skeleton / empty-state preview ---- */
+  .ghost { border-radius: 12px; background: linear-gradient(90deg, var(--bg-raise) 25%, var(--bg-raise2) 37%, var(--bg-raise) 63%); background-size: 400% 100%; animation: shimmer 1.6s ease infinite; }
+  @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+  .preview-cards { display: flex; flex-direction: column; gap: 10px; opacity: .55; margin: 14px 0 22px; pointer-events: none; }
+  .preview-cards .row-g { display: flex; gap: 12px; align-items: center; }
+
+  /* ---- unlock count animation ---- */
+  @keyframes pop { 0% { transform: scale(.8); opacity: 0; } 60% { transform: scale(1.08); } 100% { transform: scale(1); opacity: 1; } }
+  .unlock .big.animate { animation: pop .5s cubic-bezier(.2,.8,.3,1) both; }
+
+  /* ---- search results ---- */
+  .search-input { display: flex; align-items: center; gap: 8px; }
 </style>
 
 <div class="app">
@@ -859,6 +965,15 @@ let packDays = 4;
 let packOccasions = [];
 let packResult = null;
 
+// session 4 view state
+let theme = "dark";              // "dark" | "light"
+let searching = false;           // unified search overlay active
+let searchQuery = "";
+let deckIndex = 0;               // position in the suggested-outfit swipe deck
+let animateUnlock = false;       // trigger the count pop once after an add
+let addMode = "quick";           // "quick" | "detailed" add form
+const THEME_KEY = "wardrobe.theme";
+
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
@@ -876,16 +991,85 @@ function swatchStyle(color) {
   const c = (color || "").trim();
   return c ? `background:${esc(c)};` : "background:transparent;";
 }
+// small colour circle — item 4, swatches throughout
+function colorDot(color) { return `<span class="cdot" style="${swatchStyle(color)}" title="${esc(color || "")}"></span>`; }
+
+function isPhone() { return window.matchMedia("(max-width: 859px)").matches; }
+function haptic(ms) { try { if (navigator.vibrate) navigator.vibrate(ms || 12); } catch (e) {} }
+
+/* ---- theme ---- */
+function applyTheme() { document.documentElement.setAttribute("data-theme", theme); const m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute("content", theme === "light" ? "#f5f6f8" : "#0b0c0e"); }
+function loadTheme() { try { const t = localStorage.getItem(THEME_KEY); if (t === "light" || t === "dark") theme = t; } catch (e) {} }
+window.toggleTheme = function () { theme = theme === "dark" ? "light" : "dark"; try { localStorage.setItem(THEME_KEY, theme); } catch (e) {} applyTheme(); render(); };
+
+/* ---- visual outfit: vertical stack of garment photos / colour blocks (item 1) ---- */
+function visualOutfit(items, size) {
+  const cls = size === "lg" ? "vstack lg" : "vstack";
+  return `<div class="${cls}">${items.slice().sort(sortForDisplay).map(garmentRow).join("")}</div>`;
+}
+function garmentRow(g) {
+  const thumb = g.imageData
+    ? `<div class="vthumb"><img src="${g.imageData}" alt=""></div>`
+    : `<div class="vthumb" style="${swatchStyle(g.color)}"><span class="catico">${CATEGORY_ICO[g.category] || "👚"}</span></div>`;
+  return `<div class="vrow">
+    ${thumb}
+    <div class="vmeta">
+      <div class="vname truncate">${esc(g.name)}</div>
+      <div class="vsub">${colorDot(g.color)}<span class="truncate">${esc(g.color || "")}${g.color ? " · " : ""}${esc(g.subcategory || CATEGORY_LBL[g.category])}</span></div>
+    </div>
+  </div>`;
+}
+
+/* ---- empty states with a preview of what fills them (item 7) ---- */
+function emptyPreview(ico, title, body, actions, preview) {
+  return `<div>${preview || ""}
+    <div class="empty" style="padding:20px 16px 36px;">
+      <div class="ico">${ico}</div>
+      <h2 style="margin:10px 0 4px; font-size:18px; color:var(--text);">${esc(title)}</h2>
+      <p style="max-width:420px; margin:0 auto 18px;">${esc(body)}</p>
+      <div class="row" style="gap:10px; justify-content:center; flex-wrap:wrap;">${actions}</div>
+    </div>
+  </div>`;
+}
+function previewGarmentCards() {
+  return `<div class="preview-cards">${[0, 1, 2].map(() => `
+    <div class="card g-card">
+      <div class="g-thumb ghost" style="border:0;"></div>
+      <div class="g-meta"><div class="ghost" style="height:12px; width:58%; margin-bottom:8px;"></div><div class="ghost" style="height:10px; width:38%;"></div></div>
+    </div>`).join("")}</div>`;
+}
+function previewOutfitCards() {
+  return `<div class="preview-cards">${[0, 1].map(() => `
+    <div class="card o-card"><div class="vstack">${[0, 1, 2, 3].map(() =>
+    `<div class="vrow"><div class="vthumb ghost" style="border:0;"></div><div class="vmeta"><div class="ghost" style="height:12px; width:55%; margin-bottom:6px;"></div><div class="ghost" style="height:9px; width:32%;"></div></div></div>`).join("")}</div></div>`).join("")}</div>`;
+}
+
+/* ---- count-up animation for the unlock counter (item 8) ---- */
+function countUp(el, to, ms) {
+  const from = 0, start = performance.now();
+  const step = t => { const p = Math.min(1, (t - start) / (ms || 600)); el.textContent = Math.round(from + (to - from) * (p * (2 - p))); if (p < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+function maybeAnimateUnlock() {
+  if (!lastUnlock || !animateUnlock) return;
+  const el = document.getElementById("unlock-n");
+  if (el) countUp(el, lastUnlock.delta, 650);
+  animateUnlock = false;
+}
 
 function setTab(tab) {
   currentTab = tab;
+  searching = false;
   document.querySelectorAll("[data-nav]").forEach(el => el.classList.toggle("active", el.dataset.nav === tab));
   if (tab !== "add") { editingId = null; }
   render();
 }
 
 function render() {
-  topActions.innerHTML = "";
+  topActions.innerHTML = `
+    <button class="iconbtn" title="Search" onclick="openSearch()">🔍</button>
+    <button class="iconbtn" title="Toggle theme" onclick="toggleTheme()">${theme === "dark" ? "☀️" : "🌙"}</button>`;
+  if (searching) { renderSearch(); window.scrollTo(0, 0); return; }
   if (currentTab === "wardrobe") renderWardrobe();
   else if (currentTab === "outfits") renderOutfits();
   else if (currentTab === "add") renderForm();
@@ -893,6 +1077,8 @@ function render() {
   else if (currentTab === "stats") renderStats();
   window.scrollTo(0, 0);
 }
+window.openSearch = function () { searching = true; render(); const el = document.getElementById("global-search"); if (el) el.focus(); };
+window.closeSearch = function () { searching = false; searchQuery = ""; render(); };
 
 /* ---------- Wardrobe (list view) ---------- */
 function renderWardrobe() {
@@ -901,39 +1087,33 @@ function renderWardrobe() {
   viewSub.textContent = g.length ? `${g.length} item${g.length === 1 ? "" : "s"}` : "";
 
   if (!g.length) {
-    view.innerHTML = emptyState("👕", "No garments yet",
-      "Add your first piece, or load a sample wardrobe to see the outfit engine at work.",
+    view.innerHTML = emptyPreview("👕", "Your wardrobe is empty",
+      "Add pieces and they'll appear here as photo cards. Add your first, or load a sample to explore.",
       `<button class="btn primary" onclick="setTab('add')">Add a garment</button>
-       <button class="btn" onclick="loadSample()">Load sample wardrobe</button>`);
+       <button class="btn" onclick="loadSample()">Load sample</button>`,
+      previewGarmentCards());
     return;
   }
 
   const cats = ["all", ...CATEGORIES];
   const seasons = ["all", ...SEASONS.filter(s => s !== "all")];
-  const sorts = [
-    ["dateAdded", "Newest"], ["cost", "Cost"], ["timesWorn", "Most worn"], ["cpw", "Cost / wear"],
-  ];
+  const sorts = [["dateAdded", "Newest"], ["cost", "Cost"], ["timesWorn", "Most worn"], ["cpw", "Cost/wear"]];
 
   const toolbar = `
-    <div class="toolbar">
-      <input class="search" id="f-search" type="text" placeholder="Search by name…" value="${esc(filters.search)}" />
-      <select id="f-category">${cats.map(c => opt(c, c === "all" ? "All categories" : CATEGORY_LBL[c], filters.category)).join("")}</select>
-      <select id="f-season">${seasons.map(s => opt(s, s === "all" ? "All seasons" : cap(s), filters.season)).join("")}</select>
-      <select id="f-sort">${sorts.map(([v, l]) => opt(v, l, filters.sort)).join("")}</select>
+    <div class="stack" style="gap:9px; margin-bottom:14px;">
+      <div class="chiprow scroll">${cats.map(c => fchip(c === "all" ? "All" : CATEGORY_LBL[c], filters.category === c, `setWFilter('category','${c}')`)).join("")}</div>
+      <div class="chiprow scroll">${seasons.map(s => fchip(s === "all" ? "All seasons" : cap(s), filters.season === s, `setWFilter('season','${s}')`)).join("")}</div>
+      <div class="chiprow scroll">${sorts.map(([v, l]) => fchip(l, filters.sort === v, `setWFilter('sort','${v}')`)).join("")}</div>
     </div>`;
 
   let list = g.slice();
   if (filters.category !== "all") list = list.filter(x => x.category === filters.category);
   if (filters.season !== "all") list = list.filter(x => x.season === filters.season || x.season === "all");
-  if (filters.search.trim()) {
-    const q = filters.search.trim().toLowerCase();
-    list = list.filter(x => (x.name + " " + x.subcategory + " " + x.color).toLowerCase().includes(q));
-  }
   list.sort((a, b) => {
     switch (filters.sort) {
       case "cost": return b.cost - a.cost;
       case "timesWorn": return b.timesWorn - a.timesWorn;
-      case "cpw": return (cpw(b) ?? Infinity) - (cpw(a) ?? Infinity) === 0 ? 0 : (cpw(b) ?? 1e12) - (cpw(a) ?? 1e12);
+      case "cpw": return (cpw(a) ?? 1e12) - (cpw(b) ?? 1e12);
       default: return (b.dateAdded || "").localeCompare(a.dateAdded || "") || b.id.localeCompare(a.id);
     }
   });
@@ -942,16 +1122,11 @@ function renderWardrobe() {
   view.innerHTML = toolbar + (list.length
     ? `<div class="grid">${cards}</div>`
     : `<div class="empty muted">No garments match those filters.</div>`);
-
-  document.getElementById("f-search").oninput = e => { filters.search = e.target.value; renderWardrobe(); scrollKeep(); };
-  document.getElementById("f-category").onchange = e => { filters.category = e.target.value; renderWardrobe(); };
-  document.getElementById("f-season").onchange = e => { filters.season = e.target.value; renderWardrobe(); };
-  document.getElementById("f-sort").onchange = e => { filters.sort = e.target.value; renderWardrobe(); };
 }
-let _scroll = 0;
-function scrollKeep() { /* keep focus in search box after re-render */
-  const s = document.getElementById("f-search"); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+function fchip(label, on, onclick) {
+  return `<button class="fchip ${on ? "on" : ""}" onclick="${onclick}">${esc(label)}</button>`;
 }
+window.setWFilter = function (kind, value) { filters[kind] = value; renderWardrobe(); };
 
 function garmentCard(g) {
   const worn = g.timesWorn ? `${g.timesWorn}× worn` : "Never worn";
@@ -968,7 +1143,7 @@ function garmentCard(g) {
       <div class="g-meta">
         <div class="g-name truncate">${esc(g.name)}</div>
         <div class="row small muted" style="gap:7px; margin:2px 0 5px;">
-          <span class="swatch" style="${swatchStyle(g.color)}"></span>
+          ${colorDot(g.color)}
           <span class="truncate">${esc(g.color || "—")}</span>
           <span>·</span><span>${esc(g.subcategory || CATEGORY_LBL[g.category])}</span>
         </div>
@@ -1066,8 +1241,10 @@ function renderForm() {
   viewSub.textContent = editing ? esc(editing.name) : "New piece";
 
   const g = editing || {};
+  const modeSeg = editing ? "" : segmented([["quick", "Quick"], ["detailed", "Detailed"]], addMode, "setAddMode");
+  if (!editing && addMode === "quick") { renderQuickAdd(modeSeg); return; }
 
-  view.innerHTML = `
+  view.innerHTML = modeSeg + `
     ${lastUnlock && !editing ? unlockBanner(lastUnlock) : ""}
     <form id="gform" class="stack card" style="padding:16px;">
       <div class="field">
@@ -1144,12 +1321,64 @@ function renderForm() {
       // unlock counter: measure before adding, then add
       const draft = normalizeGarment(data);
       lastUnlock = calculateUnlock(getGarments(), draft);
+      animateUnlock = true;
       addGarment(draft);
+      haptic(14);
       form.reset();
       render(); // re-render Add view with the unlock banner on top
     }
   });
+  maybeAnimateUnlock();
 }
+window.setAddMode = function (m) { addMode = m; renderForm(); };
+
+/* ----- Quick add: photo + name + category, everything else defaulted (item 3) ----- */
+function renderQuickAdd(seg) {
+  view.innerHTML = (lastUnlock ? unlockBanner(lastUnlock) : "") + seg + `
+    <form id="qa-form" class="stack card" style="padding:16px;">
+      <div class="qa-photo" id="qa-photo" onclick="document.getElementById('qa-file').click()">
+        <span class="big">📷</span><span class="small">Tap to add a photo</span>
+      </div>
+      <input type="file" id="qa-file" accept="image/*" hidden>
+      <div class="field">
+        <label>Name <span class="req">*</span></label>
+        <input type="text" name="name" placeholder="Charcoal crewneck" autocomplete="off">
+        <div class="err" id="qa-err" hidden>Name is required.</div>
+      </div>
+      <div class="field">
+        <label>Category <span class="req">*</span></label>
+        <div class="chiprow">${CATEGORIES.map(c => `<button type="button" class="fchip ${c === "base" ? "on" : ""}" data-cat="${c}" onclick="pickQuickCat(this)">${CATEGORY_LBL[c]}</button>`).join("")}</div>
+        <input type="hidden" name="category" value="base">
+      </div>
+      <button type="submit" class="btn primary" style="min-height:52px; font-size:16px;">Add garment</button>
+      <div class="tiny muted" style="text-align:center;">Colour, formality, season and the rest default sensibly — edit anytime from the wardrobe.</div>
+    </form>`;
+
+  const form = document.getElementById("qa-form");
+  let pendingImage = null;
+  document.getElementById("qa-file").addEventListener("change", async e => {
+    const file = e.target.files[0]; if (!file) return;
+    try { pendingImage = await resizeImage(file, 800); document.getElementById("qa-photo").innerHTML = `<img src="${pendingImage}" alt="">`; }
+    catch (err) { alert("Could not read image: " + err.message); }
+  });
+  form.addEventListener("submit", e => {
+    e.preventDefault();
+    const name = form.name.value.trim();
+    if (!name) { document.getElementById("qa-err").hidden = false; form.name.classList.add("invalid"); form.name.focus(); return; }
+    const draft = normalizeGarment({ name, category: form.category.value, imageData: pendingImage });
+    lastUnlock = calculateUnlock(getGarments(), draft);
+    animateUnlock = true;
+    addGarment(draft);
+    haptic(14);
+    renderForm();
+  });
+  maybeAnimateUnlock();
+}
+window.pickQuickCat = function (btn) {
+  document.querySelectorAll("#qa-form [data-cat]").forEach(b => b.classList.remove("on"));
+  btn.classList.add("on");
+  document.querySelector("#qa-form [name=category]").value = btn.dataset.cat;
+};
 
 function unlockBanner(u) {
   const delta = u.delta;
@@ -1161,7 +1390,7 @@ function unlockBanner(u) {
   return `
     <div class="unlock">
       <div class="small muted">Added to your wardrobe</div>
-      <div class="big ${delta > 0 ? "pos" : ""}">${sign}${delta}${u.capped ? "+" : ""} outfits</div>
+      <div class="big ${delta > 0 ? "pos" : ""} ${animateUnlock ? "animate" : ""}">${sign}<span id="unlock-n">${delta}</span>${u.capped ? "+" : ""} outfits</div>
       <div class="small muted">${u.before}${u.capped ? "+" : ""} → ${u.after}${u.capped ? "+" : ""} valid combinations</div>
       ${previews}
       <div class="row" style="gap:8px; margin-top:14px;">
@@ -1194,63 +1423,115 @@ function segmented(opts, cur, fn) {
   return `<div class="seg">${opts.map(([v, l]) => `<button class="seg-btn ${v === cur ? "on" : ""}" onclick="${fn}('${v}')">${esc(l)}</button>`).join("")}</div>`;
 }
 
-/* ----- Suggested: outfit of the day + occasion filter + ranked browser ----- */
+/* ----- Suggested: today's outfit hero + swipe deck (phone) / list (desktop) ----- */
 function renderSuggested(garments, seg) {
-  const byCat = groupByCategory(garments);
-  if (!byCat.bottom.length || !byCat.shoe.length || (!byCat.base.length && !byCat.mid.length)) {
+  if (!canBuildOutfits(garments)) {
     viewSub.textContent = "";
-    view.innerHTML = seg + emptyState("◈", "Not enough to build outfits yet",
-      "The engine needs at least one bottom, one shoe, and a top layer (base or mid).",
+    view.innerHTML = seg + emptyPreview("◈", "No outfits yet",
+      "Add a bottom, a shoe and a top, and today's look shows up right here to wear in one tap.",
       `<button class="btn primary" onclick="setTab('add')">Add a garment</button>` +
-      (garments.length ? "" : `<button class="btn" onclick="loadSample()">Load sample wardrobe</button>`));
+      (garments.length ? "" : `<button class="btn" onclick="loadSample()">Load sample</button>`),
+      previewOutfitCards());
     return;
   }
 
   const { outfits, count, capped } = generateOutfits(garments, { store: OUTFIT_STORE });
   outfits.sort((a, b) => scoreOutfit(b.items) - scoreOutfit(a.items));
 
-  // weather filter — narrow the working pool to outfits that suit the temperature
   const weatherOn = weatherFilter && weather.status === "ok";
-  const pool = weatherOn ? outfits.filter(o => outfitSuitsSeason(o.items, weather.season)) : outfits;
+  let pool = weatherOn ? outfits.filter(o => outfitSuitsSeason(o.items, weather.season)) : outfits;
+  if (occasionFilter !== "all") pool = pool.filter(o => { try { return occasionRules[occasionFilter](o.items); } catch (e) { return false; } });
 
-  // outfit of the day — picked from the (weather-aware) pool; re-pick if stale
-  if (!ootdDismissed) {
-    const inPool = ootd && pool.some(o => o.garmentIds.join() === ootd.garmentIds.join());
-    if (!ootd || !inPool) ootd = pickOOTD(pool, "");
+  // today's pick leads the deck (weighted away from recently-worn)
+  if (!ootd || !pool.some(o => o.garmentIds.join() === ootd.garmentIds.join())) ootd = pickOOTD(pool, "");
+  const deck = ootd ? [ootd, ...pool.filter(o => o.garmentIds.join() !== ootd.garmentIds.join())] : pool.slice();
+  deckCache = deck;
+  deckIndex = Math.max(0, Math.min(deckIndex, deck.length - 1));
+
+  viewSub.textContent = `${count}${capped ? "+" : ""} valid · ${pool.length} shown`;
+
+  const occChips = `<div class="chiprow scroll" style="margin-bottom:14px;">
+    ${["all", ...OCCASIONS].map(o => fchip(o === "all" ? "All" : OCCASION_LBL[o], occasionFilter === o, `setOccasion('${o}')`)).join("")}</div>`;
+  const controls = weatherBar() + occChips;
+
+  if (!deck.length) {
+    const msg = weatherOn ? `No outfits suit ${weather.tempC}°C right now — clear the weather filter to see more.`
+      : `No ${occasionFilter === "all" ? "" : OCCASION_LBL[occasionFilter] + " "}outfits from your current wardrobe.`;
+    view.innerHTML = seg + controls + `<div class="empty muted">${msg}</div>`;
+    return;
   }
-  const ootdHTML = (ootd && !ootdDismissed) ? ootdCard(ootd) : "";
 
-  // occasion filter
-  const filtered = occasionFilter === "all" ? pool
-    : pool.filter(o => { try { return occasionRules[occasionFilter](o.items); } catch (e) { return false; } });
-  const occChips = `<div class="row wrap" style="gap:7px; margin-bottom:14px;">
-    ${["all", ...OCCASIONS].map(o => `<span class="chip btn-chip ${occasionFilter === o ? "on" : ""}" onclick="setOccasion('${o}')">${o === "all" ? "All" : OCCASION_LBL[o]}</span>`).join("")}
-  </div>`;
-
-  viewSub.textContent = `${count}${capped ? "+" : ""} valid · ${filtered.length} shown`;
-
-  const pages = Math.max(1, Math.ceil(filtered.length / OUTFITS_PER_PAGE));
-  outfitPage = Math.max(0, Math.min(outfitPage, pages - 1));
-  const slice = filtered.slice(outfitPage * OUTFITS_PER_PAGE, (outfitPage + 1) * OUTFITS_PER_PAGE);
-
-  const cappedBanner = capped ? `<div class="banner warn">Showing the first ${OUTFIT_STORE.toLocaleString()} outfits — generation was capped for performance.</div>` : "";
-  const emptyMsg = weatherOn && !filtered.length
-    ? `No ${occasionFilter === "all" ? "" : OCCASION_LBL[occasionFilter] + " "}outfits suit ${weather.tempC}°C right now — turn off the weather filter to see more.`
-    : `No ${occasionFilter === "all" ? "" : OCCASION_LBL[occasionFilter] + " "}outfits from your current wardrobe.`;
-  const body = slice.length
-    ? `<div class="stack">${slice.map((o, i) => outfitCard(o, outfitPage * OUTFITS_PER_PAGE + i)).join("")}</div>`
-    : `<div class="empty muted">${emptyMsg}</div>`;
-
-  view.innerHTML = seg + weatherBar() + ootdHTML + occChips + cappedBanner + body +
-    (pages > 1 ? `
-      <div class="pager">
-        <button class="btn sm" ${outfitPage === 0 ? "disabled" : ""} onclick="pageOutfits(-1)">← Prev</button>
-        <span class="small muted">Page ${outfitPage + 1} / ${pages}</span>
-        <button class="btn sm" ${outfitPage >= pages - 1 ? "disabled" : ""} onclick="pageOutfits(1)">Next →</button>
-      </div>` : "");
+  if (isPhone()) {
+    // phone: single big card, swipe to browse (item 5)
+    view.innerHTML = seg + controls + deckView(deck);
+    wireDeck();
+  } else {
+    // desktop: hero + scrolling grid fallback
+    const rest = deck.filter((_, i) => i !== deckIndex);
+    const listCards = rest.slice(0, 60).map((o, i) => outfitCard(o, i)).join("");
+    view.innerHTML = seg + controls + heroCard(deck[deckIndex], deck.length, deckIndex) +
+      `<div class="sectitle" style="margin:22px 0 10px;">Browse all (${deck.length})</div>
+       <div class="grid">${listCards}</div>`;
+  }
 }
-window.setOccasion = function (o) { occasionFilter = o; outfitPage = 0; renderOutfits(); };
-window.pageOutfits = function (d) { outfitPage += d; renderOutfits(); };
+window.setOccasion = function (o) { occasionFilter = o; deckIndex = 0; renderOutfits(); };
+
+/* deck of suggested outfits */
+let deckCache = [];
+function deckView(deck) {
+  const dots = deck.length <= 14 ? `<div class="deck-dots">${deck.map((_, i) => `<span class="deck-dot ${i === deckIndex ? "on" : ""}"></span>`).join("")}</div>` : "";
+  return `<div class="deck">
+    <div class="deck-card" style="touch-action:none;">${heroCard(deck[deckIndex], deck.length, deckIndex)}</div>
+    ${dots}
+    <div class="deck-hint">Swipe ← → to browse · up to wear · down to skip</div>
+  </div>`;
+}
+function heroCard(o, total, idx) {
+  const totalCost = o.items.reduce((a, i) => a + i.cost, 0);
+  const fs = o.items.map(i => i.formality);
+  const label = idx === 0 ? "Today's outfit" : `Outfit ${idx + 1} of ${total}`;
+  return `<div class="hero">
+    <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:14px;">
+      <div class="eyebrow">${label}</div>
+      <div class="row wrap tiny muted" style="gap:5px; justify-content:flex-end;">
+        <span class="badge">F${Math.min(...fs)}–${Math.max(...fs)}</span>
+        <span class="badge">${money(totalCost)}</span>
+      </div>
+    </div>
+    ${visualOutfit(o.items, "lg")}
+    <button class="btn primary wear" style="width:100%; margin-top:16px;" onclick="deckWear()">Wear this</button>
+    <div class="row wrap" style="gap:8px; margin-top:10px; align-items:center;">
+      <button class="btn sm" onclick="deckPrev()">←</button>
+      <button class="btn sm" onclick="deckReshuffle()">⟳ Shuffle</button>
+      <button class="btn sm" onclick="deckNext()">→</button>
+      <button class="btn sm" onclick="saveOutfit('${o.garmentIds.join(",")}')">Save</button>
+      <button class="btn sm ghost" onclick="deckDismiss()">Skip</button>
+      ${ratingStars(o.garmentIds)}
+    </div>
+  </div>`;
+}
+window.deckNext = function () { if (!deckCache.length) return; deckIndex = (deckIndex + 1) % deckCache.length; renderOutfits(); };
+window.deckPrev = function () { if (!deckCache.length) return; deckIndex = (deckIndex - 1 + deckCache.length) % deckCache.length; renderOutfits(); };
+window.deckReshuffle = function () { if (deckCache.length < 2) return; let n; do { n = Math.floor(Math.random() * deckCache.length); } while (n === deckIndex); deckIndex = n; renderOutfits(); };
+window.deckWear = function () { const o = deckCache[deckIndex]; if (o) { wearOutfit(o.items); haptic(18); } window.deckNext(); };
+window.deckDismiss = function () { window.deckNext(); };
+
+function wireDeck() {
+  const card = document.querySelector(".deck-card");
+  if (!card) return;
+  let x0 = 0, y0 = 0, drag = false;
+  card.addEventListener("pointerdown", e => { drag = true; x0 = e.clientX; y0 = e.clientY; card.classList.add("dragging"); try { card.setPointerCapture(e.pointerId); } catch (x) {} });
+  card.addEventListener("pointermove", e => { if (!drag) return; const dx = e.clientX - x0, dy = e.clientY - y0; card.style.transform = `translate(${dx}px, ${dy}px) rotate(${dx * 0.03}deg)`; });
+  const end = e => {
+    if (!drag) return; drag = false; card.classList.remove("dragging");
+    const dx = e.clientX - x0, dy = e.clientY - y0; card.style.transform = "";
+    const T = 55;
+    if (Math.abs(dx) > Math.abs(dy)) { if (dx < -T) window.deckNext(); else if (dx > T) window.deckPrev(); }
+    else { if (dy < -T) window.deckWear(); else if (dy > T) window.deckDismiss(); }
+  };
+  card.addEventListener("pointerup", end);
+  card.addEventListener("pointercancel", () => { drag = false; card.classList.remove("dragging"); card.style.transform = ""; });
+}
 
 /* ----- weather (Open-Meteo, no key; fails gracefully to no filtering) ----- */
 function weatherBar() {
@@ -1303,31 +1584,6 @@ window.applyManualTemp = function () {
 window.toggleWeatherFilter = function () { weatherFilter = !weatherFilter; renderOutfits(); };
 window.clearWeather = function () { weather = { status: "idle", tempC: null, season: null }; weatherFilter = false; renderOutfits(); };
 
-function ootdCard(o) {
-  return `
-    <div class="ootd">
-      <div class="eyebrow">Outfit of the day</div>
-      <div class="o-items" style="margin:10px 0;">
-        ${o.items.slice().sort(sortForDisplay).map(itemPill).join("")}
-      </div>
-      <div class="row wrap" style="gap:8px;">
-        <button class="btn sm primary" onclick="acceptOOTD()">Wear today</button>
-        <button class="btn sm" onclick="reshuffleOOTD()">Reshuffle</button>
-        <button class="btn sm ghost" onclick="dismissOOTD()">Dismiss</button>
-      </div>
-    </div>`;
-}
-window.acceptOOTD = function () {
-  if (ootd) wearOutfit(ootd.items);
-  ootd = null; ootdDismissed = true; renderOutfits();
-};
-window.reshuffleOOTD = function () {
-  const { outfits } = generateOutfits(getGarments(), { store: OUTFIT_STORE });
-  ootd = pickOOTD(outfits, ootd ? ootd.garmentIds.join() : "");
-  ootdDismissed = false; renderOutfits();
-};
-window.dismissOOTD = function () { ootd = null; ootdDismissed = true; renderOutfits(); };
-
 /* ----- shared outfit rendering ----- */
 function outfitCard(o, idx) {
   const totalCost = o.items.reduce((a, i) => a + i.cost, 0);
@@ -1343,10 +1599,8 @@ function outfitCard(o, idx) {
           <span class="badge">${money(totalCost)}</span>
         </div>
       </div>
-      <div class="o-items">
-        ${o.items.slice().sort(sortForDisplay).map(itemPill).join("")}
-      </div>
-      <div class="row wrap" style="gap:8px; align-items:center;">
+      ${visualOutfit(o.items)}
+      <div class="row wrap" style="gap:8px; align-items:center; margin-top:12px;">
         <button class="btn sm primary" onclick="woreOutfit('${o.garmentIds.join(",")}')">Wore this today</button>
         <button class="btn sm" onclick="saveOutfit('${o.garmentIds.join(",")}')">Save</button>
         ${ratingStars(o.garmentIds)}
@@ -1381,6 +1635,7 @@ function itemPill(it) {
 window.woreOutfit = function (ids) {
   const items = ids.split(",").map(getGarment).filter(Boolean);
   wearOutfit(items);
+  haptic(18);
   renderOutfits();
 };
 window.saveOutfit = function (ids) {
@@ -1406,7 +1661,7 @@ function renderBuilder(garments, seg) {
       <div class="sectitle">${CATEGORY_LBL[cat]}</div>
       <div class="build-chips">
         ${items.map(g => `<span class="pick ${builderSel.has(g.id) ? "on" : ""}" onclick="toggleBuilderPick('${g.id}')">
-          <span class="mini">${g.imageData ? `<img src="${g.imageData}">` : (CATEGORY_ICO[cat] || "👚")}</span>${esc(g.name)}</span>`).join("")}
+          <span class="mini">${g.imageData ? `<img src="${g.imageData}">` : (CATEGORY_ICO[cat] || "👚")}</span>${esc(g.name)} ${colorDot(g.color)}</span>`).join("")}
       </div>
     </div>`;
   }).join("");
@@ -1481,8 +1736,8 @@ function savedOutfitCard(rec) {
         </div>
         <div class="small muted">${rec.timesWorn ? rec.timesWorn + "× worn" : ""}</div>
       </div>
-      <div class="o-items">${items.slice().sort(sortForDisplay).map(itemPill).join("")}</div>
-      <div class="row wrap" style="gap:8px; align-items:center;">
+      ${visualOutfit(items)}
+      <div class="row wrap" style="gap:8px; align-items:center; margin-top:12px;">
         <button class="btn sm primary" onclick="woreSaved('${rec.id}')">Wore this today</button>
         <button class="btn sm danger" onclick="deleteSaved('${rec.id}')">Delete</button>
         ${ratingStars(rec.garmentIds)}
@@ -1493,7 +1748,7 @@ window.woreSaved = function (id) {
   const rec = state.outfits.find(o => o.id === id); if (!rec) return;
   wearOutfit(rec.garmentIds.map(getGarment).filter(Boolean));
   rec.timesWorn += 1; rec.lastWorn = todayISO();
-  saveToStorage(); renderOutfits();
+  saveToStorage(); haptic(18); renderOutfits();
 };
 window.deleteSaved = function (id) {
   if (confirm("Delete this saved outfit?")) { deleteOutfitRecord(id); renderOutfits(); }
@@ -1535,7 +1790,7 @@ function renderGaps(garments, seg) {
 function gapRow(r, maxDelta) {
   const spec = r.spec;
   const preview = r.best.length
-    ? `<div class="o-items" style="margin-top:10px;">${r.best[0].items.slice().sort(sortForDisplay).map(itemPill).join("")}</div>` : "";
+    ? `<div style="margin-top:12px;">${visualOutfit(r.best[0].items)}</div>` : "";
   const cpu = r.costPerUnlock != null ? `${money(r.costPerUnlock)} per new outfit`
     : (r.delta > 0 ? "cost not set" : "no new outfits");
   const specJson = esc(JSON.stringify(spec));
@@ -1666,13 +1921,13 @@ function renderPacking(garments, seg) {
         if (!items.length) return "";
         return `<div style="margin-bottom:10px;">
           <div class="tiny muted" style="margin-bottom:5px;">${CATEGORY_LBL[cat]}</div>
-          <div class="build-chips">${items.map(g => `<span class="pick"><span class="mini">${g.imageData ? `<img src="${g.imageData}">` : (CATEGORY_ICO[cat] || "👚")}</span>${esc(g.name)}</span>`).join("")}</div>
+          <div class="build-chips">${items.map(g => `<span class="pick"><span class="mini">${g.imageData ? `<img src="${g.imageData}">` : (CATEGORY_ICO[cat] || "👚")}</span>${esc(g.name)} ${colorDot(g.color)}</span>`).join("")}</div>
         </div>`;
       }).join("");
       const daysHTML = r.chosen.map((o, i) => `
         <div class="card o-card">
-          <div class="small muted">Day ${i + 1}</div>
-          <div class="o-items">${o.items.slice().sort(sortForDisplay).map(itemPill).join("")}</div>
+          <div class="small muted" style="margin-bottom:8px;">Day ${i + 1}</div>
+          ${visualOutfit(o.items)}
         </div>`).join("");
       result = `
         ${shortfall}
@@ -1834,6 +2089,39 @@ window.importData = function (input) {
   reader.readAsText(file);
 };
 
+/* ---------- unified search: garments + saved outfits + colours (item 10) ---------- */
+function renderSearch() {
+  viewTitle.textContent = "Search";
+  viewSub.textContent = "";
+  const q = searchQuery.trim().toLowerCase();
+  const input = `<div class="search-input" style="margin-bottom:16px;">
+    <input id="global-search" type="text" placeholder="Search garments, outfits, colours…" value="${esc(searchQuery)}" oninput="onSearchInput(this.value)" autocomplete="off" style="flex:1;">
+    <button class="btn sm" onclick="closeSearch()">Close</button>
+  </div>`;
+
+  if (!q) {
+    view.innerHTML = input + `<div class="empty muted">Search across your wardrobe, saved outfits and colours.</div>`;
+    focusSearch();
+    return;
+  }
+
+  const gars = getGarments().filter(g =>
+    (g.name + " " + g.subcategory + " " + g.color + " " + g.colorFamily + " " + g.category).toLowerCase().includes(q));
+  const saved = state.outfits.filter(o => {
+    const items = o.garmentIds.map(getGarment).filter(Boolean);
+    return (o.name || "").toLowerCase().includes(q) || items.some(g => (g.name + " " + g.color).toLowerCase().includes(q));
+  });
+
+  const gSec = gars.length ? `<div class="sectitle">Garments (${gars.length})</div><div class="grid" style="margin:8px 0 18px;">${gars.map(garmentCard).join("")}</div>` : "";
+  const sSec = saved.length ? `<div class="sectitle">Saved outfits (${saved.length})</div><div class="stack" style="margin-top:8px;">${saved.map(savedOutfitCard).filter(Boolean).join("")}</div>` : "";
+  const none = (!gars.length && !saved.length) ? `<div class="empty muted">No matches for “${esc(searchQuery)}”.</div>` : "";
+
+  view.innerHTML = input + gSec + sSec + none;
+  focusSearch();
+}
+function focusSearch() { const el = document.getElementById("global-search"); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
+window.onSearchInput = function (v) { searchQuery = v; renderSearch(); };
+
 /* ---------- shared UI helpers ---------- */
 function emptyState(ico, title, body, actions) {
   return `<div class="empty">
@@ -1900,7 +2188,19 @@ function loadSample() {
 document.querySelectorAll("[data-nav]").forEach(el => {
   el.addEventListener("click", () => setTab(el.dataset.nav));
 });
+loadTheme();
+applyTheme();
 loadFromStorage();
 rebuildRatingContext();
-setTab("wardrobe");
+setTab("outfits");   // open directly to today's suggested outfit (item 2)
+
+// re-render when crossing the phone/desktop breakpoint so the deck/list swap
+let _wasPhone = isPhone();
+window.addEventListener("resize", () => { const p = isPhone(); if (p !== _wasPhone) { _wasPhone = p; render(); } });
+
+// PWA: register the service worker only when served over http(s). On file:// this
+// is a no-op — the app still works, it just can't be installed/offline-cached there.
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
+}
 </script>
