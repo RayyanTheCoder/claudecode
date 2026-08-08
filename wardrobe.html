@@ -1756,8 +1756,11 @@ function renderDetailedForm(g, editing, prefix) {
 
 /* ---------- Guided add flow (item: step-by-step wizard) ---------- */
 function wizardSteps() {
-  const s = ["category", "subcategory", "color", "fit", "formality", "season", "weight"];
-  if (wizardState.data.category === "shoe") s.push("visualWeight");
+  const isShoe = wizardState.data.category === "shoe";
+  const s = ["category", "subcategory", "color"];
+  if (!isShoe) s.push("fit");   // fit doesn't apply to shoes; it defaults to slim at save
+  s.push("formality", "season", "weight");
+  if (isShoe) s.push("visualWeight");
   s.push("name", "cost", "summary");
   return s;
 }
@@ -1883,11 +1886,13 @@ function wizSummary() {
     ["category", CATEGORY_LBL[d.category] || "—"],
     ["subcategory", sub ? cap(sub) : "—"],
     ["color", col ? cap(col) : "—"],
-    ["fit", d.fit ? cap(d.fit) : "—"],
+  ];
+  if (d.category !== "shoe") chips.push(["fit", d.fit ? cap(d.fit) : "—"]);
+  chips.push(
     ["formality", "F" + (d.formality || 3) + " · " + WIZ_FORM[(d.formality || 3) - 1]],
     ["season", d.season ? cap(d.season) : "—"],
     ["weight", d.weight ? cap(d.weight) : "—"],
-  ];
+  );
   if (d.category === "shoe") chips.push(["visualWeight", d.visualWeight ? VW_LBL[d.visualWeight] : "—"]);
   chips.push(["name", d.name || wizSuggestName() || "—"]);
   chips.push(["cost", d.cost ? money(d.cost) : "No cost"]);
