@@ -178,7 +178,7 @@
     display: flex; align-items: center; justify-content: center;
     font-size: 22px; color: var(--muted-2); overflow: hidden;
   }
-  .g-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .g-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: center; }
   .g-meta { min-width: 0; flex: 1; }
   .g-name { font-weight: 600; }
   .g-actions { display: flex; gap: 6px; flex: none; }
@@ -386,21 +386,21 @@
   .fchip:hover { border-color: var(--muted-2); color: var(--text); }
   .fchip.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
 
-  /* ---- visual outfit stack ---- */
+  /* ---- visual outfit stack (4:5 portrait thumbnails) ---- */
   .vstack { display: flex; flex-direction: column; gap: 8px; }
   .vrow { display: flex; align-items: center; gap: 12px; }
   .vthumb {
-    width: 52px; height: 52px; border-radius: 10px; flex: none; overflow: hidden;
+    width: 48px; aspect-ratio: 4 / 5; border-radius: 10px; flex: none; overflow: hidden;
     background: var(--bg-raise2); border: 1px solid var(--border);
     display: flex; align-items: center; justify-content: center; font-size: 20px; color: rgba(255,255,255,.85);
     position: relative;
   }
-  .vthumb img { width: 100%; height: 100%; object-fit: cover; }
+  .vthumb img { width: 100%; height: 100%; object-fit: cover; object-position: center; }
   .vthumb .catico { text-shadow: 0 1px 3px rgba(0,0,0,.4); }
   .vmeta { min-width: 0; flex: 1; }
   .vname { font-weight: 600; font-size: 14px; }
   .vsub { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 2px; }
-  .vstack.lg .vthumb { width: 72px; height: 72px; border-radius: 12px; font-size: 26px; }
+  .vstack.lg .vthumb { width: 66px; border-radius: 12px; font-size: 26px; }
   .vstack.lg .vname { font-size: 16px; }
 
   /* ---- outfit-of-the-day hero + swipe deck ---- */
@@ -488,8 +488,22 @@
   .mi-chip { display: inline-flex; align-items: center; gap: 6px; background: color-mix(in srgb, var(--accent) 14%, var(--bg-raise)); border: 1px solid var(--accent); color: var(--text); border-radius: 999px; padding: 5px 6px 5px 10px; font-size: 12.5px; }
   .mi-chip .x { cursor: pointer; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: var(--accent-ink); font-size: 12px; }
 
-  .batch-photo { width: 100%; aspect-ratio: 4/3; max-height: 300px; border-radius: 16px; background: var(--bg-raise2); border: 1px solid var(--border); overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 48px; color: var(--muted-2); }
-  .batch-photo img { width: 100%; height: 100%; object-fit: cover; }
+  .batch-photo { position: relative; width: 100%; aspect-ratio: 4/5; max-height: 320px; border-radius: 16px; background: var(--bg-raise2); border: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 48px; color: var(--muted-2); }
+  .batch-photo img { width: 100%; height: 100%; object-fit: cover; object-position: center; }
+
+  /* ---- drag & drop + paste ---- */
+  .dropzone { position: relative; }
+  .dropzone.dragover { border-color: var(--accent) !important; background: color-mix(in srgb, var(--accent) 12%, var(--bg-raise2)) !important; }
+  .drop-hint { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; color: var(--accent); font-weight: 700; font-size: 15px; background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: inherit; z-index: 2; }
+  .dropzone.dragover .drop-hint { display: flex; }
+
+  /* ---- crop modal ---- */
+  .crop-frame { position: relative; width: 260px; max-width: 78vw; aspect-ratio: 4 / 5; margin: 12px auto 0; border-radius: 12px; overflow: hidden; background: #000; touch-action: none; user-select: none; cursor: grab; }
+  .crop-frame:active { cursor: grabbing; }
+  .crop-frame img { position: absolute; left: 0; top: 0; -webkit-user-drag: none; user-drag: none; pointer-events: none; }
+  .crop-grid { position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(rgba(255,255,255,.22) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.22) 1px, transparent 1px); background-size: 33.33% 33.33%; }
+  .bg-swatch { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border-2); cursor: pointer; flex: none; }
+  .bg-swatch.on { box-shadow: 0 0 0 2px var(--accent); }
 </style>
 
 <div class="app">
@@ -1169,6 +1183,7 @@ let selectMode = false;          // wardrobe multi-select
 let selected = new Set();         // selected garment ids
 let mustInclude = new Set();      // constrained-shuffle garment ids
 let batchPhoto = null;            // { ids:[], index } when in batch photo mode
+let batchAssignPreview = null;    // pending multi-drop assignment awaiting confirmation
 let deleteHistory = [];           // last few deletes for undo (in-memory)
 
 function esc(s) {
@@ -1389,6 +1404,7 @@ function setTab(tab) {
 }
 
 function render() {
+  activePasteHandler = null;   // only the active photo screen handles paste
   topActions.innerHTML = `
     <button class="iconbtn" title="Search" onclick="openSearch()">🔍</button>
     <button class="iconbtn" title="Theme" onclick="openThemePicker()">🎨</button>`;
@@ -1693,16 +1709,17 @@ function renderDetailedForm(g, editing, prefix) {
 
       <div class="field">
         <label>Photo</label>
-        <div class="row wrap" style="gap:10px; align-items:flex-start;">
-          <div class="g-thumb" id="photo-preview" style="width:72px;height:72px;">
+        <div class="row wrap" style="gap:12px; align-items:flex-start;">
+          <div class="g-thumb dropzone" id="photo-preview" style="width:112px; height:140px; border-radius:12px;">
             ${g.imageData ? `<img src="${g.imageData}" alt="" />` : `<span>${CATEGORY_ICO[g.category] || "👚"}</span>`}
+            <div class="drop-hint">Drop</div>
           </div>
           <div class="grow">
             <div class="row wrap" style="gap:8px;">
               <label class="btn sm" style="cursor:pointer;">📷 Take photo<input type="file" id="photo-cam" accept="image/*" capture="environment" hidden></label>
               <label class="btn sm" style="cursor:pointer;">Choose file<input type="file" id="photo-input" accept="image/*" hidden></label>
             </div>
-            <div class="tiny muted" style="margin-top:6px;">Resized to 800px max, stored on-device.</div>
+            <div class="tiny muted" style="margin-top:6px;">Drag, paste, camera or file. Cropped to 4:5, up to 1000px.</div>
           </div>
         </div>
       </div>
@@ -1723,15 +1740,16 @@ function renderDetailedForm(g, editing, prefix) {
   let pendingImage = g.imageData || null;
   wireGarmentForm(form);
   form.category.addEventListener("change", e => {
-    if (!pendingImage) { const pv = document.getElementById("photo-preview"); if (pv) pv.innerHTML = `<span>${CATEGORY_ICO[e.target.value] || "👚"}</span>`; }
+    if (!pendingImage) { const pv = document.getElementById("photo-preview"); if (pv) pv.innerHTML = `<span>${CATEGORY_ICO[e.target.value] || "👚"}</span><div class="drop-hint">Drop</div>`; }
   });
-  const onPhoto = async e => {
-    const file = e.target.files[0]; if (!file) return;
-    try { pendingImage = await resizeImage(file, 800); document.getElementById("photo-preview").innerHTML = `<img src="${pendingImage}" alt="" />`; }
-    catch (err) { alert("Could not read image: " + err.message); }
-  };
-  document.getElementById("photo-input").addEventListener("change", onPhoto);
-  document.getElementById("photo-cam").addEventListener("change", onPhoto);
+  const setPhoto = url => { pendingImage = url; const p = document.getElementById("photo-preview"); if (p) p.innerHTML = `<img src="${url}" alt=""><div class="drop-hint">Drop</div>`; };
+  const handlePhoto = files => pickAndCrop(files[0], setPhoto);
+  document.getElementById("photo-input").addEventListener("change", e => { const f = e.target.files[0]; if (f) handlePhoto([f]); });
+  document.getElementById("photo-cam").addEventListener("change", e => { const f = e.target.files[0]; if (f) handlePhoto([f]); });
+  const dz = document.getElementById("photo-preview");
+  wireDropZone(dz, handlePhoto);
+  if (dz) dz.addEventListener("click", e => { if (!e.target.closest("img")) document.getElementById("photo-input").click(); });
+  activePasteHandler = handlePhoto;
 
   form.addEventListener("submit", e => {
     e.preventDefault();
@@ -1866,7 +1884,10 @@ function stepContent(id) {
       <div class="wiz-cards stagger">${WIZ_VW.map(([v, t, desc], i) => `<button class="wiz-card ${d.visualWeight === v ? "sel" : ""}" style="animation-delay:${i * 30}ms" onclick="wizPick('visualWeight','${v}',this)"><span class="grow"><span class="t">${t}</span><div class="d">${desc}</div></span></button>`).join("")}</div>`;
     case "name": { const suggested = wizSuggestName(); return `
       <div class="wiz-q">Name it</div><div class="wiz-sub">Suggested from your answers — edit freely. Photo optional.</div>
-      <div class="batch-photo" id="wiz-photo" style="max-height:220px; margin-bottom:12px;">${d.imageData ? `<img src="${d.imageData}">` : "📷"}</div>
+      <div class="batch-photo dropzone" id="wiz-photo" style="margin-bottom:12px;">
+        ${d.imageData ? `<img src="${d.imageData}">` : `<span class="big">📷</span><span class="small">Drop or paste an image, or use a button</span>`}
+        <div class="drop-hint">Drop to upload</div>
+      </div>
       <div class="row wrap" style="gap:8px; margin-bottom:14px;">
         <label class="btn sm" style="cursor:pointer;">📷 Take photo<input type="file" id="wiz-cam" accept="image/*" capture="environment" hidden></label>
         <label class="btn sm" style="cursor:pointer;">Choose file<input type="file" id="wiz-file" accept="image/*" hidden></label>
@@ -1908,14 +1929,13 @@ function wizSummary() {
 }
 function wireStep(id) {
   if (id === "name") {
-    ["wiz-file", "wiz-cam"].forEach(fid => {
-      const f = document.getElementById(fid);
-      if (f) f.addEventListener("change", async e => {
-        const file = e.target.files[0]; if (!file) return;
-        try { wizardState.data.imageData = await resizeImage(file, 800); saveWizard(); const p = document.getElementById("wiz-photo"); if (p) p.innerHTML = `<img src="${wizardState.data.imageData}">`; }
-        catch (err) { alert("Could not read image: " + err.message); }
-      });
-    });
+    const setImg = url => { wizardState.data.imageData = url; saveWizard(); const p = document.getElementById("wiz-photo"); if (p) p.innerHTML = `<img src="${url}"><div class="drop-hint">Drop to upload</div>`; };
+    const handle = files => pickAndCrop(files[0], setImg);
+    ["wiz-file", "wiz-cam"].forEach(fid => { const f = document.getElementById(fid); if (f) f.addEventListener("change", e => { const file = e.target.files[0]; if (file) handle([file]); }); });
+    const zone = document.getElementById("wiz-photo");
+    wireDropZone(zone, handle);
+    if (zone) zone.addEventListener("click", e => { if (!e.target.closest("img")) document.getElementById("wiz-file").click(); });
+    activePasteHandler = handle;
   }
   if (wizardState.showOtherSub) { const el = document.getElementById("wiz-othersub"); if (el) el.focus(); }
   if (wizardState.showOtherColor) { const el = document.getElementById("wiz-colorname"); if (el) el.focus(); }
@@ -2024,7 +2044,7 @@ function renderQuickAdd(seg) {
   let pendingImage = null;
   document.getElementById("qa-file").addEventListener("change", async e => {
     const file = e.target.files[0]; if (!file) return;
-    try { pendingImage = await resizeImage(file, 800); document.getElementById("qa-photo").innerHTML = `<img src="${pendingImage}" alt="">`; }
+    try { pendingImage = await resizeImage(file); document.getElementById("qa-photo").innerHTML = `<img src="${pendingImage}" alt="">`; }
     catch (err) { alert("Could not read image: " + err.message); }
   });
   form.addEventListener("submit", e => {
@@ -2283,21 +2303,62 @@ function renderBatch() {
     <div class="wiz-progress"><span style="width:${pct}%"></span></div>
     <div class="wiz-q" style="margin-top:8px;">${esc(g.name)}</div>
     <div class="wiz-sub">${CATEGORY_LBL[g.category]}${g.color ? " · " + esc(g.color) : ""}${g.subcategory ? " · " + esc(g.subcategory) : ""}</div>
-    <div class="batch-photo" id="batch-preview">${CATEGORY_ICO[g.category] || "📷"}</div>
+    <div class="batch-photo dropzone" id="batch-preview">
+      <span class="big">${CATEGORY_ICO[g.category] || "📷"}</span>
+      <span class="small">Drop one or several images here</span>
+      <div class="drop-hint">Drop to upload</div>
+    </div>
     <div class="row wrap" style="gap:10px; margin-top:14px;">
       <label class="btn primary grow" style="cursor:pointer;">📷 Take photo<input type="file" id="batch-cam" accept="image/*" capture="environment" hidden></label>
       <label class="btn grow" style="cursor:pointer;">Choose file<input type="file" id="batch-file" accept="image/*" hidden></label>
       <button class="btn ghost" onclick="batchSkip()">Skip</button>
-    </div>`;
+    </div>
+    <div class="tiny muted" style="margin-top:8px; text-align:center;">Drop several at once to assign them in order down the queue.</div>`;
   ["batch-cam", "batch-file"].forEach(fid => {
     const f = document.getElementById(fid);
     if (f) f.addEventListener("change", async e => {
       const file = e.target.files[0]; if (!file) return;
-      try { const img = await resizeImage(file, 800); updateGarment(g.id, { imageData: img }); haptic(14); batchPhoto.index++; renderBatch(); }
+      try { const img = await resizeImage(file); updateGarment(g.id, { imageData: img }); haptic(14); batchPhoto.index++; renderBatch(); }
       catch (err) { alert("Could not read image: " + err.message); }
     });
   });
+  const zone = document.getElementById("batch-preview");
+  wireDropZone(zone, onBatchDrop);
+  activePasteHandler = onBatchDrop;
 }
+// batch: a single drop assigns to the current garment; multiple opens an ordered-assignment confirmation
+function onBatchDrop(files) {
+  if (files.length === 1) {
+    const g = getGarment(batchPhoto.ids[batchPhoto.index]); if (!g) return;
+    resizeImage(files[0]).then(img => { updateGarment(g.id, { imageData: img }); haptic(14); batchPhoto.index++; renderBatch(); });
+    return;
+  }
+  const queue = batchPhoto.ids.slice(batchPhoto.index).map(getGarment).filter(Boolean);
+  const pairs = files.slice(0, queue.length).map((file, i) => ({ file, garment: queue[i] }));
+  if (!pairs.length) return;
+  Promise.all(pairs.map(p => resizeImage(p.file))).then(imgs => {
+    batchAssignPreview = pairs.map((p, i) => ({ garment: p.garment, img: imgs[i] }));
+    renderBatchAssign();
+  });
+}
+function renderBatchAssign() {
+  const el = document.createElement("div"); el.className = "overlay"; el.id = "ba-overlay";
+  el.innerHTML = `<div class="sheet" style="max-height:82vh; overflow:auto;">
+    <div class="row" style="justify-content:space-between; align-items:center;"><b>Assign ${batchAssignPreview.length} photos</b><button class="btn sm ghost" onclick="cancelBatchAssign()">Cancel</button></div>
+    <div class="tiny muted" style="margin:4px 0 12px;">Matched in the order you dropped them. Confirm to save.</div>
+    <div class="stack" style="gap:8px;">${batchAssignPreview.map(p => `<div class="row" style="gap:10px; align-items:center;"><div class="vthumb" style="width:40px;"><img src="${p.img}"></div><div class="grow truncate">${esc(p.garment.name)}</div></div>`).join("")}</div>
+    <button class="btn primary" style="width:100%; margin-top:14px;" onclick="confirmBatchAssign()">Save all</button>
+  </div>`;
+  document.body.appendChild(el);
+}
+window.confirmBatchAssign = function () {
+  batchAssignPreview.forEach(p => updateGarment(p.garment.id, { imageData: p.img }));
+  batchPhoto.index += batchAssignPreview.length;
+  batchAssignPreview = null;
+  const o = document.getElementById("ba-overlay"); if (o) o.remove();
+  haptic(16); renderBatch();
+};
+window.cancelBatchAssign = function () { batchAssignPreview = null; const o = document.getElementById("ba-overlay"); if (o) o.remove(); };
 
 /* ----- shake for a random outfit (item 1) ----- */
 let shakeReady = false, lastShake = 0, lastAccel = null;
@@ -3018,27 +3079,115 @@ function opt(v, label, selected) {
 }
 function cap(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; }
 
-// image resize → base64 jpeg, max longest side `max`
+/* ---------- photo helpers ---------- */
+const PHOTO_MAX = 1000;                 // longest side (bumped from 800 to survive cropping)
+const PHOTO_BG_DEFAULT = "#eceae6";     // neutral fill behind transparent/letterboxed images
+const PHOTO_BGS = ["#eceae6", "#ffffff", "#1a1c20"];
+
+function fileToDataURL(file) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onerror = () => rej(new Error("read error")); r.onload = e => res(e.target.result); r.readAsDataURL(file); });
+}
+function loadImage(src) {
+  return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error("decode error")); im.src = src; });
+}
+// resize keeping aspect (used by the fast paths: quick add, batch). Fills a neutral bg first.
 function resizeImage(file, max) {
-  return new Promise((res, rej) => {
-    const reader = new FileReader();
-    reader.onerror = () => rej(new Error("read error"));
-    reader.onload = e => {
-      const img = new Image();
-      img.onerror = () => rej(new Error("decode error"));
-      img.onload = () => {
-        let { width, height } = img;
-        if (width > height && width > max) { height = Math.round(height * max / width); width = max; }
-        else if (height > max) { width = Math.round(width * max / height); height = max; }
-        const c = document.createElement("canvas");
-        c.width = width; c.height = height;
-        c.getContext("2d").drawImage(img, 0, 0, width, height);
-        res(c.toDataURL("image/jpeg", 0.82));
-      };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
+  max = max || PHOTO_MAX;
+  return fileToDataURL(file).then(loadImage).then(img => {
+    let { width, height } = img;
+    if (width > height && width > max) { height = Math.round(height * max / width); width = max; }
+    else if (height > max) { width = Math.round(width * max / height); height = max; }
+    const c = document.createElement("canvas"); c.width = width; c.height = height;
+    const ctx = c.getContext("2d"); ctx.fillStyle = PHOTO_BG_DEFAULT; ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+    return c.toDataURL("image/jpeg", 0.85);
   });
+}
+
+/* ---- drag & drop wiring (item: drop zones) ---- */
+function wireDropZone(el, onFiles) {
+  if (!el) return;
+  el.classList.add("dropzone");
+  if (!el.querySelector(".drop-hint")) el.insertAdjacentHTML("beforeend", `<div class="drop-hint">Drop to upload</div>`);
+  const over = e => { e.preventDefault(); el.classList.add("dragover"); };
+  el.addEventListener("dragenter", over);
+  el.addEventListener("dragover", over);
+  el.addEventListener("dragleave", e => { if (!el.contains(e.relatedTarget)) el.classList.remove("dragover"); });
+  el.addEventListener("drop", e => {
+    e.preventDefault(); el.classList.remove("dragover");
+    const files = [...(e.dataTransfer.files || [])].filter(f => f.type.startsWith("image/"));
+    if (files.length) onFiles(files);
+  });
+}
+// paste: one document-level handler, driven by whatever photo screen is active (cleared each render)
+let activePasteHandler = null;
+document.addEventListener("paste", e => {
+  if (!activePasteHandler) return;
+  const items = e.clipboardData && e.clipboardData.items; if (!items) return;
+  for (const it of items) {
+    if (it.type && it.type.startsWith("image/")) { const f = it.getAsFile(); if (f) { e.preventDefault(); activePasteHandler([f]); return; } }
+  }
+});
+
+/* ---- crop modal: pan + pinch/zoom into a 4:5 frame, neutral bg, → cropped JPEG ---- */
+function openCropper(srcDataURL, onDone) {
+  loadImage(srcDataURL).then(img => {
+    const overlay = document.createElement("div"); overlay.className = "overlay"; overlay.id = "crop-overlay";
+    overlay.innerHTML = `<div class="sheet">
+      <div class="row" style="justify-content:space-between; align-items:center;"><b>Crop photo</b><button class="btn sm ghost" id="crop-cancel">Cancel</button></div>
+      <div class="tiny muted" style="margin:4px 0 0;">Drag to reposition · pinch or use the slider to zoom.</div>
+      <div class="crop-frame" id="crop-frame"><img id="crop-img"><div class="crop-grid"></div></div>
+      <input id="crop-zoom" type="range" min="1" max="4" step="0.01" value="1" style="width:100%; margin-top:14px;">
+      <div class="row" style="gap:8px; align-items:center; margin-top:8px;"><span class="tiny muted">Background</span>
+        ${PHOTO_BGS.map((c, i) => `<span class="bg-swatch ${i === 0 ? "on" : ""}" data-bg="${c}" style="background:${c}"></span>`).join("")}
+      </div>
+      <button class="btn primary" id="crop-done" style="width:100%; margin-top:14px;">Use photo</button>
+    </div>`;
+    document.body.appendChild(overlay);
+
+    const frame = document.getElementById("crop-frame"), imel = document.getElementById("crop-img");
+    const FW = frame.clientWidth, FH = frame.clientHeight;
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    const cover = Math.max(FW / nw, FH / nh);
+    let scale = 1, tx = 0, ty = 0, bg = PHOTO_BGS[0];
+    const size = () => ({ w: nw * cover * scale, h: nh * cover * scale });
+    const apply = () => {
+      const { w, h } = size();
+      tx = Math.min(0, Math.max(FW - w, tx)); ty = Math.min(0, Math.max(FH - h, ty));
+      imel.style.width = w + "px"; imel.style.height = h + "px"; imel.style.left = tx + "px"; imel.style.top = ty + "px";
+    };
+    imel.src = srcDataURL;
+    (() => { const { w, h } = size(); tx = (FW - w) / 2; ty = (FH - h) / 2; apply(); })();
+
+    const pts = new Map(); let startDist = 0, startScale = 1;
+    const d2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+    frame.addEventListener("pointerdown", e => { frame.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (pts.size === 2) { const p = [...pts.values()]; startDist = d2(p[0], p[1]); startScale = scale; } });
+    frame.addEventListener("pointermove", e => {
+      if (!pts.has(e.pointerId)) return;
+      const prev = pts.get(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 1) { tx += e.clientX - prev.x; ty += e.clientY - prev.y; apply(); }
+      else if (pts.size === 2) { const p = [...pts.values()]; scale = Math.min(4, Math.max(1, startScale * (d2(p[0], p[1]) / startDist))); document.getElementById("crop-zoom").value = scale; apply(); }
+    });
+    const up = e => pts.delete(e.pointerId);
+    frame.addEventListener("pointerup", up); frame.addEventListener("pointercancel", up);
+    frame.addEventListener("wheel", e => { e.preventDefault(); scale = Math.min(4, Math.max(1, scale * (e.deltaY < 0 ? 1.08 : 0.92))); document.getElementById("crop-zoom").value = scale; apply(); }, { passive: false });
+    document.getElementById("crop-zoom").addEventListener("input", e => { scale = parseFloat(e.target.value); apply(); });
+    overlay.querySelectorAll(".bg-swatch").forEach(s => s.addEventListener("click", () => { overlay.querySelectorAll(".bg-swatch").forEach(x => x.classList.remove("on")); s.classList.add("on"); bg = s.dataset.bg; }));
+    document.getElementById("crop-cancel").onclick = () => overlay.remove();
+    document.getElementById("crop-done").onclick = () => {
+      const { w } = size(); const ratio = nw / w;   // natural px per displayed px
+      const sx = (-tx) * ratio, sy = (-ty) * ratio, sW = FW * ratio, sH = FH * ratio;
+      const OW = 800, OH = 1000;                     // 4:5, longest side 1000
+      const c = document.createElement("canvas"); c.width = OW; c.height = OH;
+      const ctx = c.getContext("2d"); ctx.fillStyle = bg; ctx.fillRect(0, 0, OW, OH);
+      ctx.drawImage(img, sx, sy, sW, sH, 0, 0, OW, OH);
+      overlay.remove(); haptic(12); onDone(c.toDataURL("image/jpeg", 0.85));
+    };
+  }).catch(err => alert("Could not read image: " + err.message));
+}
+// select-or-drop-or-paste a single file → crop → done(dataURL)
+function pickAndCrop(file, onDone) {
+  fileToDataURL(file).then(src => openCropper(src, onDone)).catch(err => alert("Could not read image: " + err.message));
 }
 
 /* ---------- sample wardrobe (reflects the pieces you mentioned) ---------- */

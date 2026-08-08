@@ -1,6 +1,6 @@
 /* Wardrobe service worker — cache-first app shell for offline use.
    Only active when the app is served over http(s); ignored on file://. */
-const CACHE = "wardrobe-v11";
+const CACHE = "wardrobe-v12";
 const ASSETS = ["./", "./index.html", "./wardrobe.html", "./manifest.webmanifest",
   "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
