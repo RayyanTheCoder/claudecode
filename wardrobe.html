@@ -21,6 +21,10 @@
   Session 7: photo drag/drop + paste + crop step; 1:1 / 4:5 display normalize.
   Session 8: one guided wizard for add + edit of garments AND wishlist items
   (mode-aware), wishlist cost required + projection shown on the summary.
+  Session 9: essential vs secondary fields (secondary defaulted, "Add more
+  detail" on summary); progressive detail + once-per-session Refine prompt;
+  learn-from-corrections reason picker + Stats pattern with confirm-to-apply
+  config change (persisted overrides); bulk-add-by-category. Engine untouched.
 -->
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -686,7 +690,7 @@ function tempToSeason(t) {
 /* ============================================================================
    DATA LAYER
    ============================================================================ */
-let state = { garments: [], outfits: [], wishlist: [], ratings: {} };
+let state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {} };
 
 function uid() {
   if (crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -703,11 +707,14 @@ function loadFromStorage() {
       state.outfits  = Array.isArray(parsed.outfits) ? parsed.outfits : [];
       state.wishlist = Array.isArray(parsed.wishlist) ? parsed.wishlist : [];
       state.ratings  = (parsed.ratings && typeof parsed.ratings === "object") ? parsed.ratings : {};
+      state.rejections = Array.isArray(parsed.rejections) ? parsed.rejections : [];
+      state.ruleOverrides = (parsed.ruleOverrides && typeof parsed.ruleOverrides === "object") ? parsed.ruleOverrides : {};
     }
   } catch (e) {
     console.error("load failed", e);
-    state = { garments: [], outfits: [], wishlist: [], ratings: {} };
+    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {} };
   }
+  Object.assign(rules, state.ruleOverrides);   // apply any confirmed config changes
 }
 function saveToStorage() {
   try {
@@ -740,6 +747,8 @@ function normalizeGarment(g) {
     imageData: g.imageData || null,
     rating: g.rating ? clampInt(g.rating, 1, 5, null) : null,
     notes: (g.notes || "").trim(),
+    // fields that took a silent default and haven't been confirmed by the user (item 2)
+    unconfirmed: Array.isArray(g.unconfirmed) ? g.unconfirmed : [],
   };
 }
 function clampInt(v, lo, hi, dflt) {
@@ -799,6 +808,84 @@ function updateWishlistItem(id, data) {
   state.wishlist[i] = w;
   saveToStorage();
   return w;
+}
+
+// --- confirm a silently-defaulted field on a garment (item 2) ---
+function confirmGarmentField(id, field, value) {
+  const g = getGarment(id); if (!g) return;
+  if (value !== undefined) g[field] = field === "formality" ? clampInt(value, 1, 5, g.formality) : value;
+  g.unconfirmed = (g.unconfirmed || []).filter(f => f !== field);
+  saveToStorage();
+}
+
+// --- rejection log + pattern analysis (item 3) ---
+const REJECT_REASONS = [
+  ["too casual", "Too casual"], ["too dressy", "Too dressy"], ["colours clash", "Colours clash"],
+  ["wrong for weather", "Wrong for weather"], ["just not feeling it", "Just not feeling it"],
+];
+function logRejection(reason, items) {
+  const fs = items.map(i => i.formality);
+  state.rejections.push({
+    reason, formalityMin: Math.min(...fs), formalityMax: Math.max(...fs),
+    subcategories: items.map(i => (i.subcategory || "").toLowerCase()).filter(Boolean),
+    hasSweatpants: items.some(i => /sweatpant/i.test(i.subcategory)),
+    colors: items.map(i => (i.color || "").toLowerCase()).filter(Boolean),
+    colorFamilies: items.map(i => i.colorFamily),
+    seasons: [...new Set(items.map(i => i.season))],
+  });
+  if (state.rejections.length > 200) state.rejections.shift();
+  saveToStorage();
+}
+function applyRuleOverride(key, value) {
+  state.ruleOverrides[key] = value;
+  Object.assign(rules, { [key]: value });
+  saveToStorage();
+}
+// suggest a config change for a reason if a pattern is strong enough; never applies it
+function suggestionFor(reason, list) {
+  if (reason === "too casual" || reason === "too dressy") {
+    if (rules.formalitySpread <= 1) return null;
+    const nv = rules.formalitySpread - 1;
+    const loungey = list.filter(r => r.hasSweatpants).length;
+    return {
+      message: `You've rejected ${list.length} outfits as “${reason}”${loungey >= Math.ceil(list.length / 2) ? ", most mixing loungewear with smarter pieces" : ""}. Tighten the formality spread from ${rules.formalitySpread} to ${nv}?`,
+      suggestion: { key: "formalitySpread", value: nv, label: `Set formality spread to ${nv}` },
+    };
+  }
+  if (reason === "colours clash") {
+    const pc = {};
+    list.forEach(r => { const cols = [...new Set(r.colors)]; for (let i = 0; i < cols.length; i++) for (let j = i + 1; j < cols.length; j++) { const k = [cols[i], cols[j]].sort().join("|"); pc[k] = (pc[k] || 0) + 1; } });
+    const best = Object.entries(pc).sort((a, b) => b[1] - a[1])[0];
+    if (!best || best[1] < 2) return null;
+    const [c1, c2] = best[0].split("|");
+    if (rules.blockedPairs.some(p => p.map(x => x.toLowerCase()).sort().join("|") === best[0])) return null;
+    return {
+      message: `${list.length} “colours clash” rejections often pair ${c1} + ${c2}. Flag that pair as requires-intent?`,
+      suggestion: { key: "blockedPairs", value: [...rules.blockedPairs, [c1, c2]], label: `Block ${c1} + ${c2}` },
+    };
+  }
+  if (reason === "wrong for weather") {
+    const strict = { hot: ["hot", "all"], mild: ["mild", "all"], cold: ["cold", "all"], all: ["hot", "mild", "cold", "all"] };
+    if (JSON.stringify(rules.seasonCompatibility) === JSON.stringify(strict)) return null;
+    return {
+      message: `${list.length} “wrong for weather” rejections. Match seasons strictly, so hot and cold pieces stop mixing with mild?`,
+      suggestion: { key: "seasonCompatibility", value: strict, label: "Strict season matching" },
+    };
+  }
+  return null;
+}
+function analyzeRejections() {
+  const rj = state.rejections; if (!rj.length) return null;
+  const byReason = {}; rj.forEach(r => byReason[r.reason] = (byReason[r.reason] || 0) + 1);
+  let top = null;
+  for (const reason of ["too casual", "too dressy", "colours clash", "wrong for weather"]) {
+    const list = rj.filter(r => r.reason === reason);
+    if (list.length < 3) continue;
+    if (top && list.length <= top.count) continue;
+    const s = suggestionFor(reason, list);
+    if (s) top = { reason, count: list.length, message: s.message, suggestion: s.suggestion };
+  }
+  return { total: rj.length, byReason, top };
 }
 // one-tap: move a wishlist item into the real wardrobe as a fresh garment
 function convertWishlist(id) {
@@ -1197,6 +1284,10 @@ let mustInclude = new Set();      // constrained-shuffle garment ids
 let batchPhoto = null;            // { ids:[], index } when in batch photo mode
 let batchAssignPreview = null;    // pending multi-drop assignment awaiting confirmation
 let deleteHistory = [];           // last few deletes for undo (in-memory)
+let bulkAdd = { category: null, subcategory: null, color: null, added: [] };  // bulk-add-by-category (item 4)
+let refineShown = false;          // "Refine" prompt shown at most once per session (item 2)
+let reasonItems = null;           // outfit items awaiting a rejection reason (item 3)
+let pendingSuggestion = null;     // config change surfaced in Stats, applied on confirm (item 3)
 
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -1398,11 +1489,11 @@ const WIZ_KEYS = { "add-garment": "wardrobe.wizard.garment.v1", "add-wishlist": 
 function isWishlistMode() { return wizardState.mode === "add-wishlist" || wizardState.mode === "edit-wishlist"; }
 function isEditMode() { return wizardState.mode === "edit-garment" || wizardState.mode === "edit-wishlist"; }
 function freshWizard(mode) {
-  return { mode: mode || "add-garment", editId: null, step: 0, dir: 1, showOtherSub: false, showOtherColor: false, data: {
+  return { mode: mode || "add-garment", editId: null, step: 0, dir: 1, showOtherSub: false, showOtherColor: false, showDetail: false, confirmed: [], data: {
     category: null, subcategory: null, subcategoryCustom: "",
     color: null, colorFamily: null, colorCustom: "", colorHex: "",
     fit: null, formality: 3, season: null, weight: null, visualWeight: null,
-    name: "", imageData: null, cost: "",
+    name: "", imageData: null, cost: "", notes: "",
   } };
 }
 function loadWizardFor(mode) {
@@ -1426,7 +1517,7 @@ function wizardFromItem(mode, item) {
   else if (item.color) { d.color = "custom"; d.colorCustom = item.color; d.colorFamily = item.colorFamily; }
   else d.colorFamily = item.colorFamily;
   d.fit = item.fit; d.formality = item.formality; d.season = item.season; d.weight = item.weight;
-  d.visualWeight = item.visualWeight; d.name = item.name; d.imageData = item.imageData; d.cost = item.cost || "";
+  d.visualWeight = item.visualWeight; d.name = item.name; d.imageData = item.imageData; d.cost = item.cost || ""; d.notes = item.notes || "";
   return w;
 }
 
@@ -1727,14 +1818,71 @@ function renderForm() {
   viewSub.textContent = isEditMode() ? esc(wizardState.data.name || "") : (isWishlistMode() ? "New wishlist item" : "New piece");
 
   if (mode === "add-garment") {
-    const seg = segmented([["guided", "Guided"], ["quick", "Quick"]], addMode === "detailed" ? "" : addMode, "setAddMode");
+    const seg = segmented([["guided", "Guided"], ["quick", "Quick"], ["bulk", "Bulk"]], addMode === "detailed" ? "" : addMode, "setAddMode");
     if (addMode === "quick") { renderQuickAdd(seg); return; }
+    if (addMode === "bulk") { renderBulkAdd(seg); return; }
     if (addMode === "detailed") { renderDetailedForm({}, null, seg + `<div class="tiny muted" style="margin-bottom:12px;">Advanced form — every field at once.</div>`); return; }
     renderWizard(seg);   // guided
     return;
   }
   renderWizard("");      // wishlist add + all edits: wizard only
 }
+/* ----- Bulk add by category (item 4) ----- */
+function renderBulkAdd(seg) {
+  if (!bulkAdd.subcategory) {
+    const cat = bulkAdd.category;
+    view.innerHTML = seg + `
+      <div class="wiz-q">Add multiple</div>
+      <div class="wiz-sub">Pick a type once, then add items fast — colour + name.</div>
+      ${!cat
+        ? `<div class="wiz-cards stagger">${WIZ_CAT.map(([v, ic, t, desc], i) => `<button class="wiz-card" style="animation-delay:${i * 30}ms" onclick="bulkPickCat('${v}')"><span class="ic">${ic}</span><span class="grow"><span class="t">${t}</span><div class="d">${desc}</div></span></button>`).join("")}</div>`
+        : `<div class="sectitle" style="margin-bottom:8px;">${CATEGORY_LBL[cat]} · pick a subcategory</div>
+           <div class="wiz-opts stagger">${(WIZ_SUB[cat] || []).map((s, i) => `<button class="wiz-opt" style="animation-delay:${i * 30}ms" onclick="bulkPickSub('${s}')">${cap(s)}</button>`).join("")}</div>
+           <button class="btn sm ghost" style="margin-top:14px;" onclick="bulkResetType()">← Change category</button>`}`;
+    return;
+  }
+  const sub = bulkAdd.subcategory, cat = bulkAdd.category;
+  view.innerHTML = seg + `
+    <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <div><b>${cap(sub)}</b> <span class="tiny muted">(${CATEGORY_LBL[cat]})</span></div>
+      <button class="btn sm ghost" onclick="bulkResetType()">Change type</button>
+    </div>
+    <div class="tiny muted" style="margin-bottom:10px;">Tap a colour, type a name, Add. Everything else is pre-filled.</div>
+    <div class="swatch-grid" style="margin-bottom:12px;">
+      ${WIZ_COLORS.map(c => `<button class="swatch-opt ${bulkAdd.color === c.name ? "sel" : ""}" onclick="bulkPickColor('${c.name}',this)"><div class="sw" style="background:${c.hex}"></div>${cap(c.name)}</button>`).join("")}
+    </div>
+    <div class="row" style="gap:8px;">
+      <input id="bulk-name" class="grow" type="text" placeholder="Name (e.g. ${bulkAdd.color ? bulkAdd.color + " " : ""}${sub})" onkeydown="if(event.key==='Enter')bulkAddItem()">
+      <button class="btn primary" onclick="bulkAddItem()">Add</button>
+    </div>
+    ${bulkAdd.added.length ? `<div class="sectitle" style="margin:18px 0 8px;">Added ${bulkAdd.added.length}</div>
+      <div class="stack" style="gap:6px;">${bulkAdd.added.slice().reverse().map(a => `<div class="card" style="padding:8px 12px;"><div class="row"><span class="cdot" style="${swatchStyle(a.color)}"></span><span class="grow truncate">${esc(a.name)}</span><span class="tiny muted">${cap(sub)}</span></div></div>`).join("")}</div>` : ""}
+    <button class="btn ghost" style="margin-top:16px; width:100%;" onclick="bulkExit()">Done</button>`;
+  const n = document.getElementById("bulk-name"); if (n) n.focus();
+}
+window.bulkPickCat = function (v) { bulkAdd.category = v; haptic(8); renderForm(); };
+window.bulkPickSub = function (s) { bulkAdd.subcategory = s; haptic(8); renderForm(); };
+window.bulkResetType = function () { bulkAdd = { category: null, subcategory: null, color: null, added: bulkAdd.added }; renderForm(); };
+window.bulkPickColor = function (name, el) { bulkAdd.color = name; document.querySelectorAll("#view .swatch-opt").forEach(x => x.classList.remove("sel")); if (el) el.classList.add("sel"); haptic(6); };  // no re-render → keeps the typed name
+window.bulkAddItem = function () {
+  const el = document.getElementById("bulk-name"); const name = (el ? el.value : "").trim();
+  if (!name) { if (el) el.focus(); return; }
+  const c = WIZ_COLORS.find(x => x.name === bulkAdd.color);
+  const dflt = SUBCATEGORY_DEFAULTS[bulkAdd.subcategory] || {};
+  const g = addGarment({
+    name, category: bulkAdd.category, subcategory: bulkAdd.subcategory,
+    color: c ? c.name : "", colorFamily: c ? c.family : "neutralDark",
+    formality: dflt.formality, weight: dflt.weight, season: dflt.season, fit: dflt.fit, visualWeight: dflt.visualWeight,
+    unconfirmed: ["season", "formality", "weight", "fit"],
+  });
+  bulkAdd.added.push({ id: g.id, name: g.name, color: c ? c.hex : "" });
+  bulkAdd.color = null; haptic(12); renderForm();
+};
+window.bulkExit = function () {
+  const n = bulkAdd.added.length; bulkAdd = { category: null, subcategory: null, color: null, added: [] };
+  if (n) showToast(`Added ${n} garment${n === 1 ? "" : "s"}`, null, null, 2500);
+  setTab("wardrobe");
+};
 window.setAddMode = function (m) { addMode = m; haptic(8); renderForm(); };
 window.openAdvancedAdd = function () { enterAddGarment(); addMode = "detailed"; setTab("add"); };
 
@@ -1823,14 +1971,16 @@ function renderDetailedForm(g, editing, prefix) {
 }
 
 /* ---------- Guided add flow (item: step-by-step wizard) ---------- */
+// Essential steps only (item 1): fit / weight / season are secondary — defaulted
+// silently and editable via "Add more detail" on the summary. Cost is essential
+// only for wishlist items, where the cost-per-outfit estimate needs it.
 function wizardSteps() {
   const isShoe = wizardState.data.category === "shoe";
-  const s = ["category", "subcategory", "color"];
-  if (!isShoe) s.push("fit");      // fit doesn't apply to shoes; defaults to slim at save
-  s.push("formality", "season");
-  if (!isShoe) s.push("weight");   // fabric weight is a garment concept; defaults to medium
-  else s.push("visualWeight");
-  s.push("name", "cost", "summary");
+  const s = ["category", "subcategory", "color", "formality"];
+  if (isShoe) s.push("visualWeight");
+  s.push("name");
+  if (isWishlistMode()) s.push("cost");
+  s.push("summary");
   return s;
 }
 function renderWizard(seg) {
@@ -1963,20 +2113,32 @@ function wizSummary() {
   const d = wizardState.data;
   const col = d.color === "custom" ? d.colorCustom : d.color;
   const sub = d.subcategory === "__custom__" ? d.subcategoryCustom : d.subcategory;
+  // essential answers (tap to jump back to that step)
   const chips = [
     ["category", CATEGORY_LBL[d.category] || "—"],
     ["subcategory", sub ? cap(sub) : "—"],
     ["color", col ? cap(col) : "—"],
-  ];
-  if (d.category !== "shoe") chips.push(["fit", d.fit ? cap(d.fit) : "—"]);
-  chips.push(
     ["formality", "F" + (d.formality || 3) + " · " + WIZ_FORM[(d.formality || 3) - 1]],
-    ["season", d.season ? cap(d.season) : "—"],
-  );
+  ];
   if (d.category === "shoe") chips.push(["visualWeight", d.visualWeight ? VW_LBL[d.visualWeight] : "—"]);
-  else chips.push(["weight", d.weight ? cap(d.weight) : "—"]);
   chips.push(["name", d.name || wizSuggestName() || "—"]);
-  chips.push(["cost", d.cost ? money(d.cost) : (isWishlistMode() ? "—" : "No cost")]);
+  if (isWishlistMode()) chips.push(["cost", d.cost ? money(d.cost) : "—"]);
+
+  // secondary fields — defaulted silently, revealed on "Add more detail"
+  const shoe = d.category === "shoe";
+  const detail = wizardState.showDetail ? `
+    <div class="card" style="padding:14px; margin-top:14px;">
+      <div class="sectitle" style="margin-bottom:10px;">More detail</div>
+      <div class="row wrap" style="gap:12px;">
+        ${shoe ? "" : `<div class="field grow"><label>Fit</label><select onchange="wizSecondary('fit',this.value)">${FITS.map(f => opt(f, cap(f), d.fit || "slim")).join("")}</select></div>`}
+        ${shoe ? "" : `<div class="field grow"><label>Weight</label><select onchange="wizSecondary('weight',this.value)">${WEIGHTS.map(w => opt(w, cap(w), d.weight || "medium")).join("")}</select></div>`}
+        <div class="field grow"><label>Season</label><select onchange="wizSecondary('season',this.value)">${SEASONS.map(sn => opt(sn, cap(sn), d.season || "all")).join("")}</select></div>
+        ${isWishlistMode() ? "" : `<div class="field grow"><label>Cost</label><input type="number" min="0" value="${d.cost || ""}" oninput="wizSecondaryText('cost',this.value)" placeholder="0"></div>`}
+      </div>
+      <div class="field" style="margin-top:10px;"><label>Notes</label><textarea oninput="wizSecondaryText('notes',this.value)" placeholder="Optional">${esc(d.notes || "")}</textarea></div>
+    </div>`
+    : `<button class="btn" style="margin-top:14px; width:100%;" onclick="wizToggleDetail()">Add more detail</button>
+       <div class="tiny muted" style="text-align:center; margin-top:6px;">Defaulted: ${cap(d.fit || "slim")} fit · ${cap(d.weight || "medium")} · ${cap(d.season || "all")}${isWishlistMode() ? "" : ` · ${d.cost ? money(d.cost) : "no cost"}`}</div>`;
 
   // wishlist: show the projected unlock + cost-per-outfit at the point of decision
   let projection = "";
@@ -2004,9 +2166,14 @@ function wizSummary() {
     <div class="row wrap stagger" style="gap:8px;">
       ${chips.map(([sid, label], i) => `<button class="chip btn-chip" style="animation-delay:${i * 40}ms" onclick="wizGoto('${sid}')">${esc(label)}</button>`).join("")}
     </div>
-    <button class="btn primary" style="margin-top:20px; width:100%; min-height:52px;" onclick="wizConfirm()">${confirmLabel}</button>
+    ${detail}
+    <button class="btn primary" style="margin-top:18px; width:100%; min-height:52px;" onclick="wizConfirm()">${confirmLabel}</button>
     ${secondary}`;
 }
+window.wizToggleDetail = function () { wizardState.showDetail = !wizardState.showDetail; haptic(6); renderForm(); };
+function wizMarkConfirmed(field) { if (!wizardState.confirmed) wizardState.confirmed = []; if (!wizardState.confirmed.includes(field)) wizardState.confirmed.push(field); }
+window.wizSecondary = function (field, value) { wizardState.data[field] = value; wizMarkConfirmed(field); saveWizard(); renderForm(); };       // selects: re-render, detail stays open
+window.wizSecondaryText = function (field, value) { wizardState.data[field] = value; wizMarkConfirmed(field); saveWizard(); };                    // text: no re-render
 function wireStep(id) {
   if (id === "name") {
     const setImg = url => { wizardState.data.imageData = url; saveWizard(); const p = document.getElementById("wiz-photo"); if (p) p.innerHTML = `<img src="${url}"><div class="drop-hint">Drop to upload</div>`; };
@@ -2101,8 +2268,13 @@ function wizSpec() {
     colorFamily: d.colorFamily || "neutralDark", formality: d.formality || 3,
     season: d.season || "all", fit: d.fit || "slim", weight: d.weight || "medium",
     visualWeight: d.category === "shoe" ? (d.visualWeight || "standard") : null,
-    cost: Number(d.cost) || 0, imageData: d.imageData || null,
+    cost: Number(d.cost) || 0, imageData: d.imageData || null, notes: (d.notes || "").trim(),
   };
+}
+// which validity-affecting fields were left at their silent default (item 2)
+function wizUnconfirmed() {
+  const confirmed = wizardState.confirmed || [];
+  return ["season", "weight", "fit"].filter(f => !confirmed.includes(f));  // formality is essential → confirmed
 }
 window.wizConfirm = function () {
   const spec = wizSpec();
@@ -2111,14 +2283,17 @@ window.wizConfirm = function () {
       addWishlist(spec); haptic(20);
       clearWizardStorage("add-wishlist"); resetWizardToAdd();
       planMode = "wishlist"; setTab("plan"); break;
-    case "edit-garment":
-      updateGarment(wizardState.editId, spec); haptic(16);
+    case "edit-garment": {
+      const ex = getGarment(wizardState.editId);
+      const unconfirmed = (ex ? ex.unconfirmed || [] : []).filter(f => !(wizardState.confirmed || []).includes(f));
+      updateGarment(wizardState.editId, { ...spec, unconfirmed }); haptic(16);
       resetWizardToAdd(); setTab("wardrobe"); break;
+    }
     case "edit-wishlist":
       updateWishlistItem(wizardState.editId, spec); haptic(16);
       resetWizardToAdd(); planMode = "wishlist"; setTab("plan"); break;
     default: {  // add-garment
-      const draft = normalizeGarment(spec);
+      const draft = normalizeGarment({ ...spec, unconfirmed: wizUnconfirmed() });
       lastUnlock = calculateUnlock(getGarments(), draft);
       animateUnlock = true; addGarment(draft); haptic(20);
       clearWizardStorage("add-garment"); wizardState = freshWizard("add-garment");
@@ -2170,7 +2345,7 @@ function renderQuickAdd(seg) {
     e.preventDefault();
     const name = form.name.value.trim();
     if (!name) { document.getElementById("qa-err").hidden = false; form.name.classList.add("invalid"); form.name.focus(); return; }
-    const draft = normalizeGarment({ name, category: form.category.value, imageData: pendingImage });
+    const draft = normalizeGarment({ name, category: form.category.value, imageData: pendingImage, unconfirmed: ["season", "formality", "weight", "fit"] });
     lastUnlock = calculateUnlock(getGarments(), draft);
     animateUnlock = true;
     addGarment(draft);
@@ -2272,21 +2447,54 @@ function renderSuggested(garments, seg) {
 
   const current = deck[deckIndex];
   const similar = similarSection(current, pool);
+  const refine = refineCard();
   if (isPhone()) {
     // phone: single big card, swipe to browse
-    view.innerHTML = seg + controls + deckView(deck) + similar;
+    view.innerHTML = seg + refine + controls + deckView(deck) + similar;
     wireDeck();
     wirePullRefresh();
   } else {
     // desktop: hero + similar + scrolling grid fallback
     const rest = deck.filter((_, i) => i !== deckIndex);
     const listCards = rest.slice(0, 60).map((o, i) => outfitCard(o, i)).join("");
-    view.innerHTML = seg + controls + heroCard(current, deck.length, deckIndex) + similar +
+    view.innerHTML = seg + refine + controls + heroCard(current, deck.length, deckIndex) + similar +
       `<div class="sectitle" style="margin:22px 0 10px;">Browse all (${deck.length})</div>
        <div class="grid">${listCards}</div>`;
   }
 }
 window.setOccasion = function (o) { occasionFilter = o; deckIndex = 0; renderOutfits(); };
+
+/* ---- "Refine" prompt: one question about one incomplete garment, once/session (item 2) ---- */
+function refineTarget() {
+  for (const field of ["season", "formality", "weight", "fit"]) {   // most validity-affecting first
+    const g = getGarments().find(x => (x.unconfirmed || []).includes(field));
+    if (g) return { garment: g, field };
+  }
+  return null;
+}
+function refineCard() {
+  if (refineShown) return "";
+  const t = refineTarget(); if (!t) return "";
+  const { garment: g, field } = t;
+  const opts = field === "season" ? WIZ_SEASON
+    : field === "weight" ? WIZ_WEIGHT
+    : field === "fit" ? WIZ_FIT.map(f => [f[0], f[1]])
+    : [1, 2, 3, 4, 5].map(n => [String(n), WIZ_FORM[n - 1]]);
+  const q = field === "season" ? `Is the ${g.name} for hot, mild, cold, or all-year weather?`
+    : field === "weight" ? `How heavy is the ${g.name}?`
+    : field === "fit" ? `How does the ${g.name} fit?`
+    : `How dressy is the ${g.name}?`;
+  return `<div class="card" style="padding:14px; margin-bottom:14px; border-color:var(--accent);">
+    <div class="row" style="justify-content:space-between; align-items:flex-start;">
+      <div class="eyebrow" style="color:var(--accent); font-size:11px; text-transform:uppercase; letter-spacing:1px; font-weight:700;">Quick refine</div>
+      <button class="iconbtn" style="width:28px; height:28px; font-size:15px;" onclick="dismissRefine()">×</button>
+    </div>
+    <div class="small" style="margin:6px 0 10px;">${esc(q)}</div>
+    <div class="row wrap" style="gap:7px;">${opts.map(([v, l]) => `<button class="fchip" onclick="answerRefine('${g.id}','${field}','${v}')">${esc(l)}</button>`).join("")}</div>
+  </div>`;
+}
+window.answerRefine = function (id, field, value) { confirmGarmentField(id, field, value); refineShown = true; haptic(10); ootd = null; renderOutfits(); };
+window.dismissRefine = function () { refineShown = true; haptic(6); renderOutfits(); };
 
 /* ---- constrained shuffle: must-include garments (item 7) ---- */
 function mustIncludeBar() {
@@ -2548,7 +2756,21 @@ window.deckWear = function () {
     setTimeout(() => window.deckNext(), 470);                  // then advance
   } else window.deckNext();
 };
-window.deckDismiss = function () { window.deckNext(); };
+window.deckDismiss = function () { const o = deckCache[deckIndex]; window.deckNext(); if (o) showReasonPicker(o.items); };
+
+/* ---- learn from corrections: reason picker + logging (item 3) ---- */
+function showReasonPicker(items) {
+  clearToast();
+  reasonItems = items;
+  const wrap = document.createElement("div"); wrap.className = "toast-wrap"; wrap.id = "toast";
+  wrap.innerHTML = `<div class="toast" style="flex-wrap:wrap;">
+    <span class="msg" style="flex-basis:100%; margin-bottom:2px;">Why not this one? <span class="muted">(optional)</span></span>
+    ${REJECT_REASONS.map(([v, l]) => `<button class="fchip" onclick="pickReason('${v}')">${l}</button>`).join("")}
+  </div>`;
+  document.body.appendChild(wrap);
+  toastTimer = setTimeout(clearToast, 6000);
+}
+window.pickReason = function (v) { if (reasonItems) { logRejection(v, reasonItems); haptic(8); } reasonItems = null; clearToast(); };
 
 function wireDeck() {
   const card = document.querySelector(".deck-card");
@@ -2660,8 +2882,10 @@ function ratingStars(ids) {
 window.rateOutfitUI = function (csv, n) {
   const ids = csv.split(",");
   const cur = getOutfitRating(ids);
-  rateOutfit(ids, cur === n ? 0 : n);
+  const nv = cur === n ? 0 : n;
+  rateOutfit(ids, nv);
   renderOutfits();
+  if (nv && nv <= 2) showReasonPicker(ids.map(getGarment).filter(Boolean));  // low rating → ask why
 };
 function sortForDisplay(a, b) {
   const order = { base: 0, mid: 1, outer: 2, bottom: 3, shoe: 4 };
@@ -3049,6 +3273,7 @@ function renderStats() {
         <div class="sectitle">Outfit ratings</div>
         <div class="small">${ratings.length} rated · ${avgRating.toFixed(1)}★ average</div>
       </div>` : ""}
+      ${rejectionsCard()}
       ${neverWorn.length ? `<div class="card" style="padding:14px;">
         <div class="sectitle">Never worn (${neverWorn.length})</div>
         <div class="row wrap" style="gap:6px;">${neverWorn.map(x => `<span class="badge">${esc(x.name)}</span>`).join("")}</div>
@@ -3085,10 +3310,36 @@ function renderStats() {
       </div>
     </div>`;
 }
+/* ---- rejection patterns + one-tap config suggestion (item 3) ---- */
+function rejectionsCard() {
+  const a = analyzeRejections();
+  if (!a) { pendingSuggestion = null; return ""; }
+  const lbl = r => (REJECT_REASONS.find(x => x[0] === r) || [r, r])[1];
+  const list = Object.entries(a.byReason).sort((x, y) => y[1] - x[1]).map(([r, c]) => `<span class="badge">${esc(lbl(r))} · ${c}</span>`).join("");
+  pendingSuggestion = a.top ? a.top.suggestion : null;
+  const suggestion = a.top ? `
+    <div class="small" style="margin-top:10px;">${esc(a.top.message)}</div>
+    <button class="btn sm primary" style="margin-top:10px;" onclick="applySuggestion()">${esc(a.top.suggestion.label)}</button>
+    <div class="tiny muted" style="margin-top:6px;">Applied only after you confirm — nothing changes automatically.</div>` : "";
+  return `<div class="card" style="padding:14px;">
+    <div class="sectitle">What you've turned down (${a.total})</div>
+    <div class="row wrap" style="gap:6px; margin-top:6px;">${list}</div>
+    ${suggestion}
+  </div>`;
+}
+window.applySuggestion = function () {
+  if (!pendingSuggestion) return;
+  const s = pendingSuggestion;
+  if (!confirm(`Apply “${s.label}”? You can change it back later in the config block.`)) return;
+  applyRuleOverride(s.key, s.value); haptic(14);
+  showToast(`Applied · ${s.label}`, null, null, 2600);
+  renderStats();
+};
+
 window.wipeAll = function () {
   if (confirm("Erase ALL garments, outfits, wishlist and ratings from this device? This can't be undone.")) {
     haptic(30);
-    state = { garments: [], outfits: [], wishlist: [], ratings: {} };
+    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {} };
     saveToStorage(); rebuildRatingContext(); lastUnlock = null; ootd = null; render();
   }
 };
@@ -3116,7 +3367,10 @@ window.importData = function (input) {
         outfits: Array.isArray(parsed.outfits) ? parsed.outfits : [],
         wishlist: Array.isArray(parsed.wishlist) ? parsed.wishlist.map(x => { const w = normalizeGarment(x); w.isWishlist = true; return w; }) : [],
         ratings: (parsed.ratings && typeof parsed.ratings === "object") ? parsed.ratings : {},
+        rejections: Array.isArray(parsed.rejections) ? parsed.rejections : [],
+        ruleOverrides: (parsed.ruleOverrides && typeof parsed.ruleOverrides === "object") ? parsed.ruleOverrides : {},
       };
+      Object.assign(rules, state.ruleOverrides);
       saveToStorage(); rebuildRatingContext();
       lastUnlock = null; ootd = null; ootdDismissed = false; packResult = null;
       alert(`Imported ${state.garments.length} garments.`);
