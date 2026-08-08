@@ -9,6 +9,12 @@
   manual outfit builder.
   Session 3: weather-aware suggestions (Open-Meteo), outfit rating +
   suggestion weighting, packing mode, JSON export/import, full stats.
+  Session 4: UI polish + PWA (visual outfits, quick add, swipe deck, chips,
+  unified search, service worker + manifest).
+  Session 5: 6-theme system (swatch picker, persisted, status-bar match),
+  shake-for-random, expanded haptics, tap a garment to see its outfits,
+  similar outfits, wear animation, pull-to-refresh, hover/press states.
+  Note: theming + interactions are presentation-only; engine untouched.
 -->
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -41,6 +47,7 @@
     --radius:    14px;
     --tap:       44px;
     --bar:       rgba(16,18,22,.9);
+    --shadow:    rgba(0,0,0,.6);
     --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
             "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
   }
@@ -284,24 +291,74 @@
   .star:hover { color: var(--warn); }
 
   /* ===================== session 4 ===================== */
-  /* ---- light theme (default is dark; toggle sets data-theme) ---- */
-  :root[data-theme="light"] {
-    --bg:        #f5f6f8;
-    --bg-raise:  #ffffff;
-    --bg-raise2: #eef0f4;
-    --border:    #e3e6ec;
-    --border-2:  #d3d8e0;
-    --text:      #1b1e24;
-    --muted:     #5c6470;
-    --muted-2:   #949bab;
-    --accent:    #5566f0;
-    --accent-ink:#ffffff;
-    --good:      #1f9d5e;
-    --warn:      #b4801e;
-    --bad:       #c4483a;
-    --bar:       rgba(255,255,255,.85);
+  /* ===== theme palettes — :root is Charcoal; data-theme swaps the rest ===== */
+  :root[data-theme="paper"] {
+    --bg:#f5f4f0; --bg-raise:#ffffff; --bg-raise2:#ece9e1; --border:#e4e1d8; --border-2:#d5d1c6;
+    --text:#22201c; --muted:#5f5b52; --muted-2:#948f83; --accent:#4f57e8; --accent-ink:#ffffff;
+    --good:#2f8f52; --warn:#a9761d; --bad:#b8442f; --bar:rgba(255,255,255,.85); --shadow:rgba(80,66,40,.18);
   }
-  html { transition: background .2s ease; }
+  :root[data-theme="ink"] {
+    --bg:#0c1020; --bg-raise:#141a2e; --bg-raise2:#1a2138; --border:#26304a; --border-2:#34405f;
+    --text:#e7eaf3; --muted:#8b94ad; --muted-2:#697391; --accent:#8b7bff; --accent-ink:#0c1020;
+    --good:#4ec98a; --warn:#e6b84b; --bad:#e07a6b; --bar:rgba(18,24,44,.9); --shadow:rgba(0,0,8,.6);
+  }
+  :root[data-theme="sand"] {
+    --bg:#efe7d8; --bg-raise:#faf6ec; --bg-raise2:#e7ddca; --border:#ddd1b9; --border-2:#ccbb9c;
+    --text:#3a2e20; --muted:#6b5c46; --muted-2:#9a8a70; --accent:#b45f3a; --accent-ink:#ffffff;
+    --good:#2f8f52; --warn:#a9761d; --bad:#b8442f; --bar:rgba(250,246,236,.85); --shadow:rgba(90,70,40,.2);
+  }
+  :root[data-theme="slate"] {
+    --bg:#1a2029; --bg-raise:#232b36; --bg-raise2:#2a333f; --border:#354150; --border-2:#45525f;
+    --text:#dfe4ea; --muted:#93a0af; --muted-2:#6f7c8b; --accent:#6fa0d6; --accent-ink:#10151b;
+    --good:#4ec98a; --warn:#e6b84b; --bad:#e07a6b; --bar:rgba(28,36,46,.9); --shadow:rgba(0,6,16,.55);
+  }
+  :root[data-theme="noir"] {
+    --bg:#000000; --bg-raise:#0c0c0c; --bg-raise2:#151515; --border:#262626; --border-2:#3a3a3a;
+    --text:#ffffff; --muted:#a0a0a0; --muted-2:#6e6e6e; --accent:#22d3ee; --accent-ink:#00181c;
+    --good:#3ddc84; --warn:#ffcc4d; --bad:#ff6b5e; --bar:rgba(0,0,0,.92); --shadow:rgba(0,0,0,.85);
+  }
+  /* 300ms cross-fade applied only while a theme switch is in flight */
+  html.theming, html.theming * {
+    transition: background-color .3s ease, border-color .3s ease, color .3s ease, box-shadow .3s ease, fill .3s ease !important;
+  }
+
+  /* ---- hover / press: subtle accent border on interactive surfaces (item 7) ---- */
+  .card, .g-card, .o-card, .gap-row, .stat, .hero { transition: border-color .15s ease, box-shadow .15s ease; }
+  .card:hover, .g-card:hover, .o-card:hover, .gap-row:hover, .stat:hover, .hero:hover,
+  .btn:hover, .fchip:hover, .iconbtn:hover, .pick:hover, .seg-btn:hover, .theme-card:hover,
+  .card:active, .o-card:active, .g-card:active, .btn:active, .fchip:active, .pick:active, .iconbtn:active {
+    border-color: var(--accent);
+  }
+  .vrow { cursor: pointer; border-radius: 10px; padding: 2px; margin: -2px; transition: background .12s ease; }
+  .vrow:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .vrow:hover .vname { color: var(--accent); }
+
+  /* ---- theme picker sheet ---- */
+  .overlay { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; animation: fade .15s ease; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .sheet { background: var(--bg-raise); border: 1px solid var(--border); border-radius: 18px 18px 0 0; width: 100%; max-width: 520px; padding: 18px 16px calc(20px + env(safe-area-inset-bottom)); }
+  @media (min-width: 560px) { .overlay { align-items: center; } .sheet { border-radius: 18px; } }
+  .theme-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+  .theme-card { border: 1px solid var(--border); border-radius: 14px; padding: 10px; cursor: pointer; text-align: left; background: var(--bg); }
+  .theme-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .theme-prev { height: 46px; border-radius: 9px; overflow: hidden; display: flex; margin-bottom: 8px; border: 1px solid var(--border); }
+  .theme-prev span { flex: 1; }
+  .theme-prev .a { flex: 0 0 34%; }
+
+  /* ---- pull-to-refresh indicator (item 6) ---- */
+  .ptr { height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); font-size: 12.5px; opacity: 0; }
+  .ptr .spin { display: inline-block; }
+  .ptr.armed .spin { transform: rotate(180deg); }
+
+  /* ---- wear animation (item 5) ---- */
+  .deck-card { position: relative; }
+  .deck-card.worn { transform: translateX(115%) rotate(6deg) !important; opacity: 0 !important; }
+  .wear-check { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 5; }
+  .wear-check .disc { width: 96px; height: 96px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: flex; align-items: center; justify-content: center; font-size: 50px; box-shadow: 0 12px 34px -10px var(--shadow); animation: checkpop .42s cubic-bezier(.2,.8,.3,1) both; }
+  @keyframes checkpop { 0% { transform: scale(.3); opacity: 0; } 55% { transform: scale(1.12); } 100% { transform: scale(1); opacity: 1; } }
+
+  /* ---- similar / garment-focus ---- */
+  .focus-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
 
   /* ---- top-bar icon buttons (search / theme) ---- */
   .iconbtn {
@@ -346,8 +403,8 @@
   /* ---- outfit-of-the-day hero + swipe deck ---- */
   .hero {
     border: 1px solid var(--border-2); border-radius: 18px;
-    background: linear-gradient(165deg, rgba(124,141,255,.14), var(--bg-raise) 60%);
-    padding: 18px; box-shadow: 0 10px 30px -18px rgba(0,0,0,.6);
+    background: linear-gradient(165deg, color-mix(in srgb, var(--accent) 14%, transparent), var(--bg-raise) 60%);
+    padding: 18px; box-shadow: 0 10px 30px -18px var(--shadow);
   }
   .hero .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--accent); font-weight: 700; }
   .hero .wear { font-size: 16px; padding: 14px; border-radius: 13px; }
@@ -982,9 +1039,10 @@ let packOccasions = [];
 let packResult = null;
 
 // session 4 view state
-let theme = "dark";              // "dark" | "light"
+let theme = "charcoal";          // one of THEMES ids
 let searching = false;           // unified search overlay active
 let searchQuery = "";
+let focusGarment = null;         // garment id whose outfits are being viewed (item 3)
 let deckIndex = 0;               // position in the suggested-outfit swipe deck
 let animateUnlock = false;       // trigger the count pop once after an add
 let addMode = "quick";           // "quick" | "detailed" add form
@@ -1011,12 +1069,75 @@ function swatchStyle(color) {
 function colorDot(color) { return `<span class="cdot" style="${swatchStyle(color)}" title="${esc(color || "")}"></span>`; }
 
 function isPhone() { return window.matchMedia("(max-width: 859px)").matches; }
-function haptic(ms) { try { if (navigator.vibrate) navigator.vibrate(ms || 12); } catch (e) {} }
+function haptic(ms) {
+  try {
+    // only buzz after the user has interacted, else the browser logs a blocked-call warning
+    if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(ms || 12);
+  } catch (e) {}
+}
 
 /* ---- theme ---- */
-function applyTheme() { document.documentElement.setAttribute("data-theme", theme); const m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute("content", theme === "light" ? "#f5f6f8" : "#0b0c0e"); }
-function loadTheme() { try { const t = localStorage.getItem(THEME_KEY); if (t === "light" || t === "dark") theme = t; } catch (e) {} }
-window.toggleTheme = function () { theme = theme === "dark" ? "light" : "dark"; try { localStorage.setItem(THEME_KEY, theme); } catch (e) {} applyTheme(); render(); };
+// bg + surface + accent are for the swatch preview and status-bar colour; the
+// full palette lives in CSS under :root[data-theme="…"].
+const THEMES = [
+  { id: "charcoal", name: "Charcoal", bg: "#0b0c0e", surface: "#14161b", accent: "#7c8dff" },
+  { id: "paper",    name: "Paper",    bg: "#f5f4f0", surface: "#ffffff", accent: "#4f57e8" },
+  { id: "ink",      name: "Ink",      bg: "#0c1020", surface: "#141a2e", accent: "#8b7bff" },
+  { id: "sand",     name: "Sand",     bg: "#efe7d8", surface: "#faf6ec", accent: "#b45f3a" },
+  { id: "slate",    name: "Slate",    bg: "#1a2029", surface: "#232b36", accent: "#6fa0d6" },
+  { id: "noir",     name: "Noir",     bg: "#000000", surface: "#0c0c0c", accent: "#22d3ee" },
+];
+const THEME_BG = Object.fromEntries(THEMES.map(t => [t.id, t.bg]));
+
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", theme);
+  const m = document.querySelector('meta[name=theme-color]');
+  if (m) m.setAttribute("content", THEME_BG[theme] || "#0b0c0e"); // status bar matches
+}
+function loadTheme() {
+  try {
+    let t = localStorage.getItem(THEME_KEY);
+    if (t === "dark") t = "charcoal";              // migrate session-4 values
+    if (t === "light") t = "paper";
+    if (THEME_BG[t]) theme = t;
+  } catch (e) {}
+}
+window.setTheme = function (id) {
+  if (!THEME_BG[id]) return;
+  theme = id;
+  try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+  const root = document.documentElement;
+  root.classList.add("theming");                    // 300ms cross-fade window
+  applyTheme();
+  setTimeout(() => root.classList.remove("theming"), 320);
+  closeThemePicker();
+  render();
+};
+window.openThemePicker = function () {
+  closeThemePicker();
+  const el = document.createElement("div");
+  el.className = "overlay";
+  el.id = "theme-overlay";
+  el.onclick = e => { if (e.target === el) closeThemePicker(); };
+  el.innerHTML = `<div class="sheet">
+    <div class="row" style="justify-content:space-between; align-items:center;">
+      <b style="font-size:16px;">Theme</b>
+      <button class="btn sm ghost" onclick="closeThemePicker()">Done</button>
+    </div>
+    <div class="tiny muted" style="margin-top:4px;">One accent per theme — your garment photos and colours are the rest.</div>
+    <div class="theme-grid">
+      ${THEMES.map(t => `<button class="theme-card ${t.id === theme ? "on" : ""}" onclick="setTheme('${t.id}')">
+        <div class="theme-prev"><span style="background:${t.bg}"></span><span style="background:${t.surface}"></span><span class="a" style="background:${t.accent}"></span></div>
+        <div class="row" style="justify-content:space-between; align-items:center;">
+          <span style="font-weight:600; font-size:13px;">${t.name}</span>
+          ${t.id === theme ? '<span style="color:var(--accent); font-size:13px;">✓</span>' : ""}
+        </div>
+      </button>`).join("")}
+    </div>
+  </div>`;
+  document.body.appendChild(el);
+};
+window.closeThemePicker = function () { const el = document.getElementById("theme-overlay"); if (el) el.remove(); };
 
 /* ---- visual outfit: vertical stack of garment photos / colour blocks (item 1) ---- */
 function visualOutfit(items, size) {
@@ -1027,7 +1148,7 @@ function garmentRow(g) {
   const thumb = g.imageData
     ? `<div class="vthumb"><img src="${g.imageData}" alt=""></div>`
     : `<div class="vthumb" style="${swatchStyle(g.color)}"><span class="catico">${CATEGORY_ICO[g.category] || "👚"}</span></div>`;
-  return `<div class="vrow">
+  return `<div class="vrow" onclick="showGarmentOutfits('${g.id}')" title="See outfits with this piece">
     ${thumb}
     <div class="vmeta">
       <div class="vname truncate">${esc(g.name)}</div>
@@ -1076,6 +1197,8 @@ function maybeAnimateUnlock() {
 function setTab(tab) {
   currentTab = tab;
   searching = false;
+  focusGarment = null;
+  haptic(8);                         // tab-switch feedback (item 2)
   document.querySelectorAll("[data-nav]").forEach(el => el.classList.toggle("active", el.dataset.nav === tab));
   if (tab !== "add") { editingId = null; }
   render();
@@ -1084,8 +1207,9 @@ function setTab(tab) {
 function render() {
   topActions.innerHTML = `
     <button class="iconbtn" title="Search" onclick="openSearch()">🔍</button>
-    <button class="iconbtn" title="Toggle theme" onclick="toggleTheme()">${theme === "dark" ? "☀️" : "🌙"}</button>`;
+    <button class="iconbtn" title="Theme" onclick="openThemePicker()">🎨</button>`;
   if (searching) { renderSearch(); window.scrollTo(0, 0); return; }
+  if (focusGarment) { renderGarmentOutfits(focusGarment); window.scrollTo(0, 0); return; }
   if (currentTab === "wardrobe") renderWardrobe();
   else if (currentTab === "outfits") renderOutfits();
   else if (currentTab === "add") renderForm();
@@ -1181,7 +1305,7 @@ function garmentCard(g) {
 
 window.confirmDelete = function (id) {
   const g = getGarment(id);
-  if (g && confirm(`Delete “${g.name}”?`)) { deleteGarment(id); render(); }
+  if (g && confirm(`Delete “${g.name}”?`)) { haptic(30); deleteGarment(id); render(); }
 };
 window.startEdit = function (id) { editingId = id; setTab("add"); };
 
@@ -1477,15 +1601,18 @@ function renderSuggested(garments, seg) {
     return;
   }
 
+  const current = deck[deckIndex];
+  const similar = similarSection(current, pool);
   if (isPhone()) {
-    // phone: single big card, swipe to browse (item 5)
-    view.innerHTML = seg + controls + deckView(deck);
+    // phone: single big card, swipe to browse
+    view.innerHTML = seg + controls + deckView(deck) + similar;
     wireDeck();
+    wirePullRefresh();
   } else {
-    // desktop: hero + scrolling grid fallback
+    // desktop: hero + similar + scrolling grid fallback
     const rest = deck.filter((_, i) => i !== deckIndex);
     const listCards = rest.slice(0, 60).map((o, i) => outfitCard(o, i)).join("");
-    view.innerHTML = seg + controls + heroCard(deck[deckIndex], deck.length, deckIndex) +
+    view.innerHTML = seg + controls + heroCard(current, deck.length, deckIndex) + similar +
       `<div class="sectitle" style="margin:22px 0 10px;">Browse all (${deck.length})</div>
        <div class="grid">${listCards}</div>`;
   }
@@ -1496,11 +1623,112 @@ window.setOccasion = function (o) { occasionFilter = o; deckIndex = 0; renderOut
 let deckCache = [];
 function deckView(deck) {
   const dots = deck.length <= 14 ? `<div class="deck-dots">${deck.map((_, i) => `<span class="deck-dot ${i === deckIndex ? "on" : ""}"></span>`).join("")}</div>` : "";
-  return `<div class="deck">
+  return `<div class="deck" id="deck">
+    <div class="ptr" id="ptr"><span class="spin">↻</span><span id="ptr-label">Pull to refresh</span></div>
     <div class="deck-card" style="touch-action:none;">${heroCard(deck[deckIndex], deck.length, deckIndex)}</div>
     ${dots}
-    <div class="deck-hint">Swipe ← → to browse · up to wear · down to skip</div>
+    <div class="deck-hint">Swipe ← → to browse · up to wear · pull down to refresh</div>
   </div>`;
+}
+function similarSection(current, pool) {
+  const sim = similarOutfits(current, pool);
+  if (!sim.length) return "";
+  return `<div class="sectitle" style="margin:22px 0 10px;">More like this</div>
+    <div class="stack">${sim.map((o, i) => outfitCard(o, i)).join("")}</div>`;
+}
+function sharedCount(a, b) { const s = new Set(a.garmentIds); let n = 0; for (const id of b.garmentIds) if (s.has(id)) n++; return n; }
+function similarOutfits(current, pool) {
+  return pool.filter(o => o !== current && sharedCount(o, current) >= 2)
+    .sort((a, b) => scoreOutfit(b.items) - scoreOutfit(a.items)).slice(0, 5);
+}
+function freshSuggestion() {
+  const g = getGarments(); if (!canBuildOutfits(g)) return;
+  const { outfits } = generateOutfits(g, { store: OUTFIT_STORE });
+  if (!outfits.length) return;
+  ootd = outfits[Math.floor(Math.random() * outfits.length)];
+  deckIndex = 0; haptic(20); renderOutfits();
+}
+function wirePullRefresh() {
+  const deck = document.getElementById("deck"), ptr = document.getElementById("ptr"), label = document.getElementById("ptr-label");
+  if (!deck || !ptr) return;
+  let startY = 0, pulling = false, dist = 0;
+  deck.addEventListener("touchstart", e => { if (window.scrollY > 0) { pulling = false; return; } startY = e.touches[0].clientY; pulling = true; dist = 0; }, { passive: true });
+  deck.addEventListener("touchmove", e => {
+    if (!pulling) return;
+    dist = e.touches[0].clientY - startY;
+    if (dist <= 0) { ptr.style.height = "0"; ptr.style.opacity = "0"; return; }
+    const d = Math.min(dist * 0.5, 70);
+    ptr.style.height = d + "px"; ptr.style.opacity = String(Math.min(1, d / 50));
+    const armed = dist > 90; ptr.classList.toggle("armed", armed);
+    label.textContent = armed ? "Release to refresh" : "Pull to refresh";
+  }, { passive: true });
+  const endPull = () => { const go = pulling && dist > 90; pulling = false; dist = 0; if (ptr) { ptr.style.height = "0"; ptr.style.opacity = "0"; ptr.classList.remove("armed"); } if (go) freshSuggestion(); };
+  deck.addEventListener("touchend", endPull);
+  deck.addEventListener("touchcancel", endPull);
+}
+
+/* ----- tap a garment inside an outfit → every outfit that uses it (item 3) ----- */
+function renderGarmentOutfits(id) {
+  const g = getGarment(id);
+  if (!g) { focusGarment = null; return render(); }
+  viewTitle.textContent = "Garment";
+  viewSub.textContent = "";
+  const { outfits, count } = generateOutfits(getGarments(), { store: OUTFIT_STORE, requireId: id });
+  outfits.sort((a, b) => scoreOutfit(b.items) - scoreOutfit(a.items));
+  const thumb = g.imageData
+    ? `<div class="vthumb" style="width:60px;height:60px;"><img src="${g.imageData}"></div>`
+    : `<div class="vthumb" style="width:60px;height:60px;${swatchStyle(g.color)}"><span class="catico">${CATEGORY_ICO[g.category] || "👚"}</span></div>`;
+  const head = `<button class="btn sm ghost" style="margin-bottom:14px;" onclick="closeGarmentFocus()">← Back</button>
+    <div class="card" style="padding:14px; margin-bottom:16px;">
+      <div class="focus-head">
+        ${thumb}
+        <div class="grow" style="min-width:0;">
+          <div class="g-name">${esc(g.name)}</div>
+          <div class="tiny muted" style="margin-top:3px; display:flex; align-items:center; gap:6px;">${colorDot(g.color)} ${esc(g.color || "")} · ${esc(g.subcategory || CATEGORY_LBL[g.category])}</div>
+        </div>
+        <div class="gap-delta">${count}</div>
+      </div>
+      <div class="tiny muted" style="margin-top:8px;">Appears in ${count} valid outfit${count === 1 ? "" : "s"}.</div>
+    </div>`;
+  const list = outfits.length
+    ? `<div class="stack">${outfits.slice(0, 60).map((o, i) => outfitCard(o, i)).join("")}</div>`
+    : `<div class="empty muted">This piece isn't in any valid outfit yet.</div>`;
+  view.innerHTML = head + list;
+}
+window.showGarmentOutfits = function (id) { focusGarment = id; haptic(10); render(); };
+window.closeGarmentFocus = function () { focusGarment = null; render(); };
+
+/* ----- shake for a random outfit (item 1) ----- */
+let shakeReady = false, lastShake = 0, lastAccel = null;
+function onDeviceMotion(e) {
+  const a = e.accelerationIncludingGravity; if (!a) return;
+  if (lastAccel) {
+    const delta = Math.abs(a.x - lastAccel.x) + Math.abs(a.y - lastAccel.y) + Math.abs(a.z - lastAccel.z);
+    const now = Date.now();
+    if (delta > 32 && now - lastShake > 1200) { lastShake = now; onShake(); }
+  }
+  lastAccel = { x: a.x, y: a.y, z: a.z };
+}
+function onShake() {
+  haptic(30);
+  const g = getGarments(); if (!canBuildOutfits(g)) return;
+  const { outfits } = generateOutfits(g, { store: OUTFIT_STORE }); if (!outfits.length) return;
+  ootd = outfits[Math.floor(Math.random() * outfits.length)];
+  deckIndex = 0; searching = false; focusGarment = null;
+  if (currentTab !== "outfits") {
+    currentTab = "outfits";
+    document.querySelectorAll("[data-nav]").forEach(el => el.classList.toggle("active", el.dataset.nav === "outfits"));
+  }
+  render();
+}
+function initShake() {
+  if (typeof DeviceMotionEvent === "undefined") return;
+  const add = () => { if (shakeReady) return; window.addEventListener("devicemotion", onDeviceMotion); shakeReady = true; };
+  if (typeof DeviceMotionEvent.requestPermission === "function") {
+    // iOS 13+ needs a user gesture to grant motion access
+    const req = () => { DeviceMotionEvent.requestPermission().then(s => { if (s === "granted") add(); }).catch(() => {}); document.removeEventListener("click", req); };
+    document.addEventListener("click", req, { once: true });
+  } else { add(); }
 }
 function heroCard(o, total, idx) {
   const totalCost = o.items.reduce((a, i) => a + i.cost, 0);
@@ -1529,24 +1757,42 @@ function heroCard(o, total, idx) {
 window.deckNext = function () { if (!deckCache.length) return; deckIndex = (deckIndex + 1) % deckCache.length; renderOutfits(); };
 window.deckPrev = function () { if (!deckCache.length) return; deckIndex = (deckIndex - 1 + deckCache.length) % deckCache.length; renderOutfits(); };
 window.deckReshuffle = function () { if (deckCache.length < 2) return; let n; do { n = Math.floor(Math.random() * deckCache.length); } while (n === deckIndex); deckIndex = n; renderOutfits(); };
-window.deckWear = function () { const o = deckCache[deckIndex]; if (o) { wearOutfit(o.items); haptic(18); } window.deckNext(); };
+window.deckWear = function () {
+  const o = deckCache[deckIndex]; if (!o) return;
+  wearOutfit(o.items); haptic(22);
+  const card = document.querySelector(".deck-card");
+  if (card) {
+    card.insertAdjacentHTML("beforeend", `<div class="wear-check"><div class="disc">✓</div></div>`);
+    requestAnimationFrame(() => card.classList.add("worn"));   // checkmark pops, card slides away
+    setTimeout(() => window.deckNext(), 470);                  // then advance
+  } else window.deckNext();
+};
 window.deckDismiss = function () { window.deckNext(); };
 
 function wireDeck() {
   const card = document.querySelector(".deck-card");
   if (!card) return;
+  // No pointer capture — that would retarget the click and break taps on the
+  // buttons, stars and garment rows inside the card. We track the drag on
+  // window instead, added on pointerdown and removed on release.
   let x0 = 0, y0 = 0, drag = false;
-  card.addEventListener("pointerdown", e => { drag = true; x0 = e.clientX; y0 = e.clientY; card.classList.add("dragging"); try { card.setPointerCapture(e.pointerId); } catch (x) {} });
-  card.addEventListener("pointermove", e => { if (!drag) return; const dx = e.clientX - x0, dy = e.clientY - y0; card.style.transform = `translate(${dx}px, ${dy}px) rotate(${dx * 0.03}deg)`; });
+  const move = e => {
+    if (!drag) return;
+    const dx = e.clientX - x0, dy = e.clientY - y0;
+    card.style.transform = `translate(${dx}px, ${Math.min(0, dy)}px) rotate(${dx * 0.03}deg)`; // downward reserved for pull-to-refresh
+  };
   const end = e => {
     if (!drag) return; drag = false; card.classList.remove("dragging");
+    window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", end);
     const dx = e.clientX - x0, dy = e.clientY - y0; card.style.transform = "";
     const T = 55;
-    if (Math.abs(dx) > Math.abs(dy)) { if (dx < -T) window.deckNext(); else if (dx > T) window.deckPrev(); }
-    else { if (dy < -T) window.deckWear(); else if (dy > T) window.deckDismiss(); }
+    if (Math.abs(dx) > Math.abs(dy)) { if (dx < -T) { haptic(12); window.deckNext(); } else if (dx > T) { haptic(12); window.deckPrev(); } }
+    else if (dy < -T) { window.deckWear(); }   // swipe up = wear
   };
-  card.addEventListener("pointerup", end);
-  card.addEventListener("pointercancel", () => { drag = false; card.classList.remove("dragging"); card.style.transform = ""; });
+  card.addEventListener("pointerdown", e => {
+    drag = true; x0 = e.clientX; y0 = e.clientY; card.classList.add("dragging");
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", end);
+  });
 }
 
 /* ----- weather (Open-Meteo, no key; fails gracefully to no filtering) ----- */
@@ -1734,6 +1980,7 @@ window.saveManualOutfit = function () {
   const occasion = document.getElementById("build-occasion").value || null;
   const rec = saveOutfitRecord({ garmentIds: items.map(i => i.id), name, occasion, isManual: true });
   if (!rec) { alert("You've already saved this exact outfit."); return; }
+  haptic(14);
   builderSel.clear(); builderName = ""; builderOccasion = "";
   renderOutfits();
 };
@@ -1767,7 +2014,7 @@ window.woreSaved = function (id) {
   saveToStorage(); haptic(18); renderOutfits();
 };
 window.deleteSaved = function (id) {
-  if (confirm("Delete this saved outfit?")) { deleteOutfitRecord(id); renderOutfits(); }
+  if (confirm("Delete this saved outfit?")) { haptic(30); deleteOutfitRecord(id); renderOutfits(); }
 };
 
 /* ---------- Plan (Gap analysis / Wishlist) ---------- */
@@ -1829,7 +2076,7 @@ function gapRow(r, maxDelta) {
     </div>`;
 }
 window.addCandidateToWardrobe = function (spec) { const g = addGarment(spec); alert(`Added “${g.name}” to your wardrobe.`); renderPlan(); };
-window.addCandidateToWishlist = function (spec) { addWishlist(spec); planMode = "wishlist"; renderPlan(); };
+window.addCandidateToWishlist = function (spec) { addWishlist(spec); haptic(14); planMode = "wishlist"; renderPlan(); };
 
 /* ----- Wishlist: hypotheticals with projected unlock + convert-to-real ----- */
 function renderWishlist(garments, seg) {
@@ -1865,6 +2112,7 @@ function renderWishlist(garments, seg) {
     const err = document.getElementById("wl-err");
     if (!data.name.trim()) { err.hidden = false; f.name.classList.add("invalid"); f.name.focus(); return; }
     addWishlist(data);
+    haptic(14);
     renderPlan();
   });
 }
@@ -1893,7 +2141,7 @@ function wishlistCard(w, garments, canProject) {
     </div>`;
 }
 window.buyWishlist = function (id) { const g = convertWishlist(id); if (g) alert(`“${g.name}” moved into your wardrobe.`); renderPlan(); };
-window.removeWishlist = function (id) { if (confirm("Remove from wishlist?")) { deleteWishlist(id); renderPlan(); } };
+window.removeWishlist = function (id) { if (confirm("Remove from wishlist?")) { haptic(30); deleteWishlist(id); renderPlan(); } };
 
 /* ----- Packing: minimum capsule covering N days of chosen occasions ----- */
 function renderPacking(garments, seg) {
@@ -2053,6 +2301,15 @@ function renderStats() {
         <div class="row wrap" style="gap:6px;">${stale.map(x => `<span class="badge warn">${esc(x.name)} · ${daysSince(x.lastWorn)}d</span>`).join("")}</div>
       </div>` : ""}
       <div class="card" style="padding:14px;">
+        <div class="sectitle" style="margin-bottom:10px;">Appearance</div>
+        <div class="row wrap" style="gap:10px;">
+          ${THEMES.map(t => `<button class="theme-card ${t.id === theme ? "on" : ""}" style="width:98px; padding:8px;" onclick="setTheme('${t.id}')">
+            <div class="theme-prev" style="height:38px;"><span style="background:${t.bg}"></span><span style="background:${t.surface}"></span><span class="a" style="background:${t.accent}"></span></div>
+            <div style="font-size:12px; font-weight:600;">${t.name}</div>
+          </button>`).join("")}
+        </div>
+      </div>
+      <div class="card" style="padding:14px;">
         <div class="sectitle" style="margin-bottom:8px;">Data</div>
         <div class="row wrap" style="gap:8px;">
           <button class="btn sm" onclick="exportData()">Export JSON</button>
@@ -2066,6 +2323,7 @@ function renderStats() {
 }
 window.wipeAll = function () {
   if (confirm("Erase ALL garments, outfits, wishlist and ratings from this device? This can't be undone.")) {
+    haptic(30);
     state = { garments: [], outfits: [], wishlist: [], ratings: {} };
     saveToStorage(); rebuildRatingContext(); lastUnlock = null; ootd = null; render();
   }
@@ -2213,6 +2471,8 @@ setTab("outfits");   // open directly to today's suggested outfit (item 2)
 // re-render when crossing the phone/desktop breakpoint so the deck/list swap
 let _wasPhone = isPhone();
 window.addEventListener("resize", () => { const p = isPhone(); if (p !== _wasPhone) { _wasPhone = p; render(); } });
+
+initShake();   // shake-for-random-outfit (item 1)
 
 // PWA: register the service worker only when served over http(s). On file:// this
 // is a no-op — the app still works, it just can't be installed/offline-cached there.
