@@ -1,7 +1,8 @@
 /* Wardrobe service worker — cache-first app shell for offline use.
    Only active when the app is served over http(s); ignored on file://. */
-const CACHE = "wardrobe-v4";
-const ASSETS = ["./", "./wardrobe.html", "./manifest.webmanifest"];
+const CACHE = "wardrobe-v5";
+const ASSETS = ["./", "./index.html", "./wardrobe.html", "./manifest.webmanifest",
+  "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

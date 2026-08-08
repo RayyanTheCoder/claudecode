@@ -10,7 +10,8 @@
   "background_color": "#0b0c0e",
   "theme_color": "#0b0c0e",
   "icons": [
-    { "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiI+PHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHJ4PSIxMTIiIGZpbGw9IiMwYjBjMGUiLz48ZyBmaWxsPSJub25lIiBzdHJva2U9IiM3YzhkZmYiIHN0cm9rZS13aWR0aD0iMjYiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTI1NiAxNThhMzIgMzIgMCAxIDEgMzMgMzJjLTE5IDAtMzMgMTItMzMgMjl2OSIvPjxwYXRoIGQ9Ik0yNTYgMjI4IDEyMiAzMzZhMTUgMTUgMCAwIDAgOSAyN2gyNTBhMTUgMTUgMCAwIDAgOS0yN3oiLz48L2c+PC9zdmc+Cg==", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiI+PHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHJ4PSIxMTIiIGZpbGw9IiMwYjBjMGUiLz48ZyBmaWxsPSJub25lIiBzdHJva2U9IiM3YzhkZmYiIHN0cm9rZS13aWR0aD0iMjYiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTI1NiAxNThhMzIgMzIgMCAxIDEgMzMgMzJjLTE5IDAtMzMgMTItMzMgMjl2OSIvPjxwYXRoIGQ9Ik0yNTYgMjI4IDEyMiAzMzZhMTUgMTUgMCAwIDAgOSAyN2gyNTBhMTUgMTUgMCAwIDAgOS0yN3oiLz48L2c+PC9zdmc+Cg==", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
