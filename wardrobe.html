@@ -1,0 +1,1109 @@
+<!--
+  WARDROBE — single-file personal wardrobe app.
+  No build step, no framework, no npm. Data lives in localStorage.
+  Open this file in a browser; works fully offline.
+
+  Session 1 scope: data layer, CRUD, list view, outfit engine
+  (structural + color + formality + season + silhouette rules),
+  unlock counter, and a basic outfit browser.
+-->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Wardrobe</title>
+
+<style>
+  /* ---------- design tokens ---------- */
+  :root {
+    --bg:        #0b0c0e;
+    --bg-raise:  #14161b;
+    --bg-raise2: #191c22;
+    --border:    #262a31;
+    --border-2:  #333843;
+    --text:      #e7e9ee;
+    --muted:     #8b909b;
+    --muted-2:   #6b7077;
+    --accent:    #7c8dff;
+    --accent-ink:#0b0c0e;
+    --good:      #4ec98a;
+    --warn:      #e6b84b;
+    --bad:       #e07a6b;
+    --radius:    14px;
+    --tap:       44px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+            "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 15px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  a { color: var(--accent); }
+
+  /* ---------- layout shell ---------- */
+  .app { min-height: 100%; display: flex; flex-direction: column; }
+  .sidebar { display: none; }
+  main {
+    flex: 1;
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 18px 16px calc(84px + env(safe-area-inset-bottom));
+  }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px calc(14px);
+    background: linear-gradient(var(--bg), rgba(11,12,14,.85));
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+  .topbar .sub { color: var(--muted); font-size: 12.5px; }
+
+  /* bottom tabs (phone) */
+  .tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    background: rgba(16,18,22,.92);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tab {
+    appearance: none; background: none; border: 0;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 9px 4px 8px; color: var(--muted-2);
+    font-size: 11px; cursor: pointer; min-height: var(--tap);
+    transition: color .15s ease;
+  }
+  .tab .ico { font-size: 19px; line-height: 1; }
+  .tab.active { color: var(--text); }
+  .tab.active .ico { filter: drop-shadow(0 0 8px rgba(124,141,255,.5)); }
+
+  /* ---------- generic components ---------- */
+  .card {
+    background: var(--bg-raise);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .wrap { flex-wrap: wrap; }
+  .grow { flex: 1; min-width: 0; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12.5px; }
+  .tiny { font-size: 11.5px; }
+  .stack { display: flex; flex-direction: column; gap: 12px; }
+  .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .btn {
+    appearance: none; cursor: pointer;
+    background: var(--bg-raise2); color: var(--text);
+    border: 1px solid var(--border-2); border-radius: 10px;
+    padding: 9px 13px; min-height: var(--tap);
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    transition: background .15s ease, border-color .15s ease, transform .05s ease;
+  }
+  .btn:active { transform: scale(.98); }
+  .btn:hover { border-color: var(--muted-2); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.ghost { background: transparent; }
+  .btn.sm { min-height: 34px; padding: 6px 10px; font-size: 13px; border-radius: 9px; }
+  .btn.danger { color: var(--bad); border-color: #4a2b28; }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field > label { font-size: 12.5px; color: var(--muted); }
+  .field .req { color: var(--accent); }
+  input[type=text], input[type=number], select, textarea {
+    background: var(--bg); border: 1px solid var(--border-2);
+    border-radius: 10px; padding: 11px 12px; min-height: var(--tap);
+    width: 100%; outline: none;
+    transition: border-color .15s ease;
+  }
+  textarea { min-height: 74px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; padding-right: 32px; }
+  .invalid { border-color: var(--bad) !important; }
+  .err { color: var(--bad); font-size: 12px; }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--bg-raise2); border: 1px solid var(--border);
+    border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--muted);
+  }
+  .chip.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+  .chip.tag { cursor: default; }
+
+  .swatch { width: 14px; height: 14px; border-radius: 5px; border: 1px solid rgba(255,255,255,.18); flex: none; }
+  .fam-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+
+  /* ---------- garment grid ---------- */
+  .grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  .g-card { overflow: hidden; display: flex; gap: 12px; padding: 10px; align-items: center; }
+  .g-thumb {
+    width: 64px; height: 64px; border-radius: 10px; flex: none;
+    background: var(--bg-raise2); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; color: var(--muted-2); overflow: hidden;
+  }
+  .g-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .g-meta { min-width: 0; flex: 1; }
+  .g-name { font-weight: 600; }
+  .g-actions { display: flex; gap: 6px; flex: none; }
+
+  .badge { font-size: 10.5px; padding: 2px 7px; border-radius: 6px; background: var(--bg-raise2); border: 1px solid var(--border); color: var(--muted); }
+  .badge.warn { color: var(--warn); border-color: #4a3f22; }
+
+  /* ---------- outfit cards ---------- */
+  .o-card { padding: 12px; }
+  .o-items { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 10px; }
+  .o-item { display: flex; align-items: center; gap: 7px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 5px 9px 5px 5px; }
+  .o-item .mini { width: 30px; height: 30px; border-radius: 7px; background: var(--bg-raise2); overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 13px; flex: none; }
+  .o-item .mini img { width: 100%; height: 100%; object-fit: cover; }
+
+  /* ---------- unlock banner ---------- */
+  .unlock {
+    border: 1px solid var(--accent); border-radius: var(--radius);
+    background: linear-gradient(160deg, rgba(124,141,255,.16), rgba(124,141,255,.04));
+    padding: 16px; margin-bottom: 16px;
+  }
+  .unlock .big { font-size: 34px; font-weight: 700; letter-spacing: -.5px; }
+  .unlock .big.pos { color: var(--accent); }
+
+  /* ---------- stats ---------- */
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .stat { padding: 14px; }
+  .stat .n { font-size: 26px; font-weight: 700; letter-spacing: -.5px; }
+  .stat .l { color: var(--muted); font-size: 12.5px; }
+
+  .empty { text-align: center; color: var(--muted); padding: 48px 16px; }
+  .empty .ico { font-size: 40px; opacity: .5; }
+
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .toolbar select, .toolbar input { min-height: 40px; width: auto; }
+  .search { flex: 1; min-width: 160px; }
+
+  .pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 18px; }
+
+  .banner { padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 12px; }
+  .banner.warn { background: rgba(230,184,75,.1); border: 1px solid #4a3f22; color: var(--warn); }
+  .banner.bad  { background: rgba(224,122,107,.1); border: 1px solid #4a2b28; color: var(--bad); }
+
+  .sectitle { font-size: 13px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted-2); margin: 4px 0 2px; }
+
+  /* ---------- desktop ---------- */
+  @media (min-width: 860px) {
+    .app { flex-direction: row; }
+    .tabs { display: none; }
+    .sidebar {
+      display: flex; flex-direction: column; gap: 4px;
+      width: 210px; flex: none; padding: 20px 12px;
+      border-right: 1px solid var(--border);
+      position: sticky; top: 0; height: 100vh;
+    }
+    .sidebar .brand { font-size: 17px; font-weight: 700; padding: 6px 12px 16px; }
+    .side-tab {
+      appearance: none; background: none; border: 0; text-align: left;
+      color: var(--muted); padding: 10px 12px; border-radius: 10px; cursor: pointer;
+      display: flex; align-items: center; gap: 10px; font-size: 14px;
+    }
+    .side-tab .ico { font-size: 17px; }
+    .side-tab:hover { background: var(--bg-raise); color: var(--text); }
+    .side-tab.active { background: var(--bg-raise2); color: var(--text); }
+    main { padding: 8px 28px 40px; }
+    .grid { grid-template-columns: 1fr 1fr; }
+    .stat-grid { grid-template-columns: repeat(4, 1fr); }
+  }
+  @media (min-width: 1180px) { .grid { grid-template-columns: 1fr 1fr 1fr; } }
+</style>
+
+<div class="app">
+  <!-- desktop sidebar -->
+  <nav class="sidebar">
+    <div class="brand">Wardrobe</div>
+    <button class="side-tab" data-nav="wardrobe"><span class="ico">▦</span> Wardrobe</button>
+    <button class="side-tab" data-nav="outfits"><span class="ico">◈</span> Outfits</button>
+    <button class="side-tab" data-nav="add"><span class="ico">＋</span> Add</button>
+    <button class="side-tab" data-nav="stats"><span class="ico">◐</span> Stats</button>
+  </nav>
+
+  <div class="grow" style="min-width:0; display:flex; flex-direction:column;">
+    <header class="topbar">
+      <div>
+        <h1 id="viewTitle">Wardrobe</h1>
+        <div class="sub" id="viewSub"></div>
+      </div>
+      <div id="topActions" class="row"></div>
+    </header>
+    <main id="view"></main>
+  </div>
+</div>
+
+<!-- phone bottom nav -->
+<nav class="tabs">
+  <button class="tab" data-nav="wardrobe"><span class="ico">▦</span>Wardrobe</button>
+  <button class="tab" data-nav="outfits"><span class="ico">◈</span>Outfits</button>
+  <button class="tab" data-nav="add"><span class="ico">＋</span>Add</button>
+  <button class="tab" data-nav="stats"><span class="ico">◐</span>Stats</button>
+</nav>
+
+<script>
+/* ============================================================================
+   CONFIG  —  edit these to tune the outfit engine. Nothing below hardcodes rules.
+   ============================================================================ */
+const rules = {
+  maxAccentItems: 1,
+  formalitySpread: 2,
+  requireDarkAnchor: true,
+  blockedPairs: [["brown", "navy"]],
+  relaxedBottomBlockedShoes: ["lowProfile"],
+  maxLayers: 2,          // combined mid + outer layers
+  maxOuter: 1,           // outermost shells
+  seasonCompatibility: {
+    hot:  ["hot", "mild", "all"],
+    mild: ["hot", "mild", "cold", "all"],
+    cold: ["mild", "cold", "all"],
+    all:  ["hot", "mild", "cold", "all"],
+  },
+};
+
+// Ordering & display maps
+const WEIGHT_VAL   = { light: 1, medium: 2, heavy: 3 };
+const TIER         = { base: 0, mid: 1, outer: 2 };           // layer stack order
+const CATEGORIES   = ["base", "mid", "outer", "bottom", "shoe"];
+const CATEGORY_LBL = { base: "Base layer", mid: "Mid layer", outer: "Outer", bottom: "Bottom", shoe: "Shoe" };
+const CATEGORY_ICO = { base: "👕", mid: "🧥", outer: "🧥", bottom: "👖", shoe: "👟" };
+const COLOR_FAMILIES = ["neutralDark", "neutralLight", "warmNeutral", "accent"];
+const FAMILY_LBL   = { neutralDark: "Neutral dark", neutralLight: "Neutral light", warmNeutral: "Warm neutral", accent: "Accent" };
+const FAMILY_HEX   = { neutralDark: "#2b2f36", neutralLight: "#d7d9dd", warmNeutral: "#8a7a63", accent: "#7c8dff" };
+const SEASONS      = ["hot", "mild", "cold", "all"];
+const FITS         = ["slim", "relaxed"];
+const WEIGHTS      = ["light", "medium", "heavy"];
+const VISUAL_WEIGHTS = ["lowProfile", "standard", "substantial"];
+const OCCASIONS    = ["campus", "goingOut", "gym", "lazy"];
+
+const STORAGE_KEY = "wardrobe.v1";
+const MAX_EVAL = 300000;   // safety cap on combinations evaluated per run
+const STALE_DAYS = 60;     // "not worn in N days" flag
+
+/* ============================================================================
+   DATA LAYER
+   ============================================================================ */
+let state = { garments: [], outfits: [] };
+
+function uid() {
+  if (crypto && crypto.randomUUID) return crypto.randomUUID();
+  return "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      state.garments = Array.isArray(parsed.garments) ? parsed.garments : [];
+      state.outfits  = Array.isArray(parsed.outfits) ? parsed.outfits : [];
+    }
+  } catch (e) {
+    console.error("load failed", e);
+    state = { garments: [], outfits: [] };
+  }
+}
+function saveToStorage() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    alert("Could not save — storage may be full (photos are large). " + e.message);
+  }
+}
+
+function getGarments() { return state.garments; }
+function getGarment(id) { return state.garments.find(g => g.id === id) || null; }
+
+function normalizeGarment(g) {
+  return {
+    id: g.id || uid(),
+    name: (g.name || "").trim(),
+    category: g.category,
+    subcategory: (g.subcategory || "").trim(),
+    color: (g.color || "").trim(),
+    colorFamily: g.colorFamily || "neutralDark",
+    formality: clampInt(g.formality, 1, 5, 3),
+    season: g.season || "all",
+    fit: g.fit || "slim",
+    weight: g.weight || "medium",
+    visualWeight: g.category === "shoe" ? (g.visualWeight || "standard") : null,
+    cost: Number(g.cost) || 0,
+    timesWorn: clampInt(g.timesWorn, 0, 1e9, 0),
+    lastWorn: g.lastWorn || null,
+    dateAdded: g.dateAdded || todayISO(),
+    imageData: g.imageData || null,
+    rating: g.rating ? clampInt(g.rating, 1, 5, null) : null,
+    notes: (g.notes || "").trim(),
+  };
+}
+function clampInt(v, lo, hi, dflt) {
+  const n = parseInt(v, 10);
+  if (Number.isNaN(n)) return dflt;
+  return Math.min(hi, Math.max(lo, n));
+}
+
+function addGarment(data) {
+  const g = normalizeGarment(data);
+  state.garments.push(g);
+  saveToStorage();
+  return g;
+}
+function updateGarment(id, data) {
+  const i = state.garments.findIndex(g => g.id === id);
+  if (i < 0) return null;
+  state.garments[i] = normalizeGarment({ ...state.garments[i], ...data, id });
+  saveToStorage();
+  return state.garments[i];
+}
+function deleteGarment(id) {
+  state.garments = state.garments.filter(g => g.id !== id);
+  // drop saved outfits that referenced it
+  state.outfits = state.outfits.filter(o => !o.garmentIds.includes(id));
+  saveToStorage();
+}
+
+// wear tracking — increments every item in an outfit
+function wearOutfit(items) {
+  const stamp = todayISO();
+  items.forEach(it => {
+    const g = getGarment(it.id);
+    if (g) { g.timesWorn += 1; g.lastWorn = stamp; }
+  });
+  saveToStorage();
+}
+
+/* ============================================================================
+   OUTFIT ENGINE  —  validity, generation, unlock counting
+   ============================================================================ */
+
+// Validity: returns { valid, reasons[] }. Single source of truth for every rule.
+function isValidOutfit(items) {
+  const reasons = [];
+  const byCat = { base: [], mid: [], outer: [], bottom: [], shoe: [] };
+  for (const it of items) if (byCat[it.category]) byCat[it.category].push(it);
+
+  /* --- structural --- */
+  if (byCat.bottom.length !== 1) reasons.push("Needs exactly one bottom");
+  if (byCat.shoe.length !== 1)   reasons.push("Needs exactly one shoe");
+  if (byCat.base.length > 1)     reasons.push("At most one base layer");
+  if (byCat.outer.length > rules.maxOuter) reasons.push(`At most ${rules.maxOuter} outer layer`);
+  if (byCat.mid.length + byCat.outer.length > rules.maxLayers) reasons.push(`At most ${rules.maxLayers} mid/outer layers`);
+  // must have a base, OR a mid worn alone
+  if (byCat.base.length === 0 && byCat.mid.length === 0) reasons.push("Needs a base layer or a mid worn alone");
+
+  /* --- weight order: lighter layers sit under heavier ones --- */
+  const layers = items.filter(i => i.category in TIER);
+  for (let a = 0; a < layers.length; a++) {
+    for (let b = 0; b < layers.length; b++) {
+      if (TIER[layers[a].category] < TIER[layers[b].category]) {
+        if (wv(layers[a]) > wv(layers[b])) {
+          reasons.push("Heavier layer worn under a lighter one");
+          a = b = layers.length; // break out
+        }
+      }
+    }
+  }
+
+  /* --- color --- */
+  const accents = items.filter(i => i.colorFamily === "accent").length;
+  if (accents > rules.maxAccentItems) reasons.push("Too many accent colors");
+
+  if (rules.requireDarkAnchor && items.length && items.every(i => i.colorFamily === "neutralLight"))
+    reasons.push("Needs a darker anchor (all items are light)");
+
+  for (const [c1, c2] of rules.blockedPairs) {
+    const has1 = items.some(i => (i.color || "").toLowerCase() === c1.toLowerCase());
+    const has2 = items.some(i => (i.color || "").toLowerCase() === c2.toLowerCase());
+    if (has1 && has2) reasons.push(`${c1} + ${c2} — requires intent`);
+  }
+
+  /* --- formality: all within spread --- */
+  if (items.length) {
+    const fs = items.map(i => i.formality);
+    if (Math.max(...fs) - Math.min(...fs) > rules.formalitySpread) reasons.push("Formality mismatch");
+  }
+
+  /* --- season: every pair compatible --- */
+  outer:
+  for (let a = 0; a < items.length; a++) {
+    for (let b = a + 1; b < items.length; b++) {
+      const compat = rules.seasonCompatibility[items[a].season] || [];
+      if (!compat.includes(items[b].season)) { reasons.push("Season clash (hot + cold)"); break outer; }
+    }
+  }
+
+  /* --- silhouette: relaxed bottom rejects blocked shoe profiles --- */
+  const bottom = byCat.bottom[0], shoe = byCat.shoe[0];
+  if (bottom && shoe && bottom.fit === "relaxed" &&
+      rules.relaxedBottomBlockedShoes.includes(shoe.visualWeight)) {
+    reasons.push("Relaxed bottom needs a more substantial shoe");
+  }
+
+  return { valid: reasons.length === 0, reasons };
+}
+function wv(item) { return WEIGHT_VAL[item.weight] || 2; }
+
+// combinations of `arr` of size 0..k
+function subsetsUpTo(arr, k) {
+  const res = [[]];
+  const rec = (start, chosen) => {
+    if (chosen.length === k) return;
+    for (let i = start; i < arr.length; i++) {
+      const next = chosen.concat(arr[i]);
+      res.push(next);
+      rec(i + 1, next);
+    }
+  };
+  rec(0, []);
+  return res;
+}
+
+// enumerate structurally-plausible torso stacks (validity re-checked later)
+function buildTorsos(byCat) {
+  const torsos = [];
+  const baseOpts = [null, ...byCat.base];
+  const outerOpts = [null, ...byCat.outer];
+  for (const base of baseOpts) {
+    for (const outer of outerOpts) {
+      const midBudget = rules.maxLayers - (outer ? 1 : 0);
+      for (const midSet of subsetsUpTo(byCat.mid, midBudget)) {
+        if (!base && midSet.length === 0) continue; // need base or a mid worn alone
+        const torso = [];
+        if (base) torso.push(base);
+        torso.push(...midSet);
+        if (outer) torso.push(outer);
+        torsos.push(torso);
+      }
+    }
+  }
+  return torsos;
+}
+
+function groupByCategory(garments) {
+  const byCat = { base: [], mid: [], outer: [], bottom: [], shoe: [] };
+  for (const g of garments) if (byCat[g.category]) byCat[g.category].push(g);
+  return byCat;
+}
+
+/*
+  Core generator. Always counts every valid outfit (bounded by MAX_EVAL);
+  stores the first `store` outfit objects for display. Optionally restrict
+  to outfits containing `requireId`.
+  Returns { outfits:[{garmentIds, items}], count, capped }.
+*/
+function generateOutfits(garments, opts = {}) {
+  const { store = Infinity, requireId = null } = opts;
+  const byCat = groupByCategory(garments);
+  const torsos = buildTorsos(byCat);
+  const outfits = [];
+  let count = 0, evals = 0, capped = false;
+
+  loops:
+  for (const bottom of byCat.bottom) {
+    for (const shoe of byCat.shoe) {
+      for (const torso of torsos) {
+        if (++evals > MAX_EVAL) { capped = true; break loops; }
+        const items = [bottom, shoe, ...torso];
+        if (!isValidOutfit(items).valid) continue;
+        if (requireId && !items.some(i => i.id === requireId)) continue;
+        count++;
+        if (outfits.length < store) outfits.push({ garmentIds: items.map(i => i.id), items });
+      }
+    }
+  }
+  return { outfits, count, capped };
+}
+
+// aesthetic heuristic used to surface "best" combos (and later OOTD)
+function scoreOutfit(items) {
+  let s = 0;
+  const fs = items.map(i => i.formality);
+  s += (rules.formalitySpread - (Math.max(...fs) - Math.min(...fs))); // tighter = higher
+  if (items.some(i => i.colorFamily === "neutralDark" || i.colorFamily === "warmNeutral")) s += 1;
+  const accents = items.filter(i => i.colorFamily === "accent").length;
+  s += accents === 1 ? 0.5 : 0;                    // one pop of color is good
+  const rated = items.filter(i => i.rating);
+  if (rated.length) s += (rated.reduce((a, i) => a + i.rating, 0) / rated.length) / 5;
+  const torso = items.filter(i => i.category in TIER).length;
+  if (torso === 2) s += 0.4;                        // a little layering reads intentional
+  return s;
+}
+
+// Unlock counter: outfits before vs after adding `garment`.
+function calculateUnlock(existingGarments, garment) {
+  const before = generateOutfits(existingGarments, { store: 0 });
+  const withNew = existingGarments.concat(garment);
+  const after = generateOutfits(withNew, { store: 0 });
+  const created = generateOutfits(withNew, { store: 60, requireId: garment.id });
+  const best = created.outfits
+    .map(o => ({ o, s: scoreOutfit(o.items) }))
+    .sort((a, b) => b.s - a.s)
+    .slice(0, 5)
+    .map(x => x.o);
+  return {
+    before: before.count,
+    after: after.count,
+    delta: after.count - before.count,
+    capped: before.capped || after.capped,
+    best,
+  };
+}
+
+/* ============================================================================
+   UI  —  rendering. Kept separate from data/engine logic above.
+   ============================================================================ */
+const view = document.getElementById("view");
+const viewTitle = document.getElementById("viewTitle");
+const viewSub = document.getElementById("viewSub");
+const topActions = document.getElementById("topActions");
+
+let currentTab = "wardrobe";
+let editingId = null;            // garment id being edited, or null
+let lastUnlock = null;           // unlock result to show after an add
+let filters = { category: "all", season: "all", sort: "dateAdded", search: "" };
+let outfitPage = 0;
+const OUTFITS_PER_PAGE = 12;
+const OUTFIT_STORE = 1500;       // cap outfits materialized for the browser
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+function money(n) { return "$" + (Number(n) || 0).toFixed(0); }
+function cpw(g) {
+  if (!g.timesWorn) return null;
+  return g.cost / g.timesWorn;
+}
+function daysSince(iso) {
+  if (!iso) return null;
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+}
+function swatchStyle(color) {
+  // trust the free-text color as a CSS value; invalid strings render transparent
+  const c = (color || "").trim();
+  return c ? `background:${esc(c)};` : "background:transparent;";
+}
+
+function setTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll("[data-nav]").forEach(el => el.classList.toggle("active", el.dataset.nav === tab));
+  if (tab !== "add") { editingId = null; }
+  render();
+}
+
+function render() {
+  topActions.innerHTML = "";
+  if (currentTab === "wardrobe") renderWardrobe();
+  else if (currentTab === "outfits") renderOutfits();
+  else if (currentTab === "add") renderForm();
+  else if (currentTab === "stats") renderStats();
+  window.scrollTo(0, 0);
+}
+
+/* ---------- Wardrobe (list view) ---------- */
+function renderWardrobe() {
+  viewTitle.textContent = "Wardrobe";
+  const g = getGarments();
+  viewSub.textContent = g.length ? `${g.length} item${g.length === 1 ? "" : "s"}` : "";
+
+  if (!g.length) {
+    view.innerHTML = emptyState("👕", "No garments yet",
+      "Add your first piece, or load a sample wardrobe to see the outfit engine at work.",
+      `<button class="btn primary" onclick="setTab('add')">Add a garment</button>
+       <button class="btn" onclick="loadSample()">Load sample wardrobe</button>`);
+    return;
+  }
+
+  const cats = ["all", ...CATEGORIES];
+  const seasons = ["all", ...SEASONS.filter(s => s !== "all")];
+  const sorts = [
+    ["dateAdded", "Newest"], ["cost", "Cost"], ["timesWorn", "Most worn"], ["cpw", "Cost / wear"],
+  ];
+
+  const toolbar = `
+    <div class="toolbar">
+      <input class="search" id="f-search" type="text" placeholder="Search by name…" value="${esc(filters.search)}" />
+      <select id="f-category">${cats.map(c => opt(c, c === "all" ? "All categories" : CATEGORY_LBL[c], filters.category)).join("")}</select>
+      <select id="f-season">${seasons.map(s => opt(s, s === "all" ? "All seasons" : cap(s), filters.season)).join("")}</select>
+      <select id="f-sort">${sorts.map(([v, l]) => opt(v, l, filters.sort)).join("")}</select>
+    </div>`;
+
+  let list = g.slice();
+  if (filters.category !== "all") list = list.filter(x => x.category === filters.category);
+  if (filters.season !== "all") list = list.filter(x => x.season === filters.season || x.season === "all");
+  if (filters.search.trim()) {
+    const q = filters.search.trim().toLowerCase();
+    list = list.filter(x => (x.name + " " + x.subcategory + " " + x.color).toLowerCase().includes(q));
+  }
+  list.sort((a, b) => {
+    switch (filters.sort) {
+      case "cost": return b.cost - a.cost;
+      case "timesWorn": return b.timesWorn - a.timesWorn;
+      case "cpw": return (cpw(b) ?? Infinity) - (cpw(a) ?? Infinity) === 0 ? 0 : (cpw(b) ?? 1e12) - (cpw(a) ?? 1e12);
+      default: return (b.dateAdded || "").localeCompare(a.dateAdded || "") || b.id.localeCompare(a.id);
+    }
+  });
+
+  const cards = list.map(garmentCard).join("");
+  view.innerHTML = toolbar + (list.length
+    ? `<div class="grid">${cards}</div>`
+    : `<div class="empty muted">No garments match those filters.</div>`);
+
+  document.getElementById("f-search").oninput = e => { filters.search = e.target.value; renderWardrobe(); scrollKeep(); };
+  document.getElementById("f-category").onchange = e => { filters.category = e.target.value; renderWardrobe(); };
+  document.getElementById("f-season").onchange = e => { filters.season = e.target.value; renderWardrobe(); };
+  document.getElementById("f-sort").onchange = e => { filters.sort = e.target.value; renderWardrobe(); };
+}
+let _scroll = 0;
+function scrollKeep() { /* keep focus in search box after re-render */
+  const s = document.getElementById("f-search"); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+}
+
+function garmentCard(g) {
+  const worn = g.timesWorn ? `${g.timesWorn}× worn` : "Never worn";
+  const perWear = cpw(g);
+  const stale = daysSince(g.lastWorn);
+  const staleBadge = (g.timesWorn && stale != null && stale >= STALE_DAYS)
+    ? `<span class="badge warn" title="Not worn in ${stale} days">💤 ${stale}d</span>` : "";
+  const thumb = g.imageData
+    ? `<img src="${g.imageData}" alt="" />`
+    : `<span>${CATEGORY_ICO[g.category] || "👚"}</span>`;
+  return `
+    <div class="card g-card">
+      <div class="g-thumb">${thumb}</div>
+      <div class="g-meta">
+        <div class="g-name truncate">${esc(g.name)}</div>
+        <div class="row small muted" style="gap:7px; margin:2px 0 5px;">
+          <span class="swatch" style="${swatchStyle(g.color)}"></span>
+          <span class="truncate">${esc(g.color || "—")}</span>
+          <span>·</span><span>${esc(g.subcategory || CATEGORY_LBL[g.category])}</span>
+        </div>
+        <div class="row wrap tiny muted" style="gap:6px;">
+          <span class="badge">${CATEGORY_LBL[g.category]}</span>
+          <span class="badge">F${g.formality}</span>
+          <span class="badge">${cap(g.season)}</span>
+          <span>${worn}</span>
+          ${perWear != null ? `<span>· ${money(perWear)}/wear</span>` : ""}
+          ${staleBadge}
+        </div>
+      </div>
+      <div class="g-actions">
+        <button class="btn sm" onclick="startEdit('${g.id}')">Edit</button>
+        <button class="btn sm danger" onclick="confirmDelete('${g.id}')">✕</button>
+      </div>
+    </div>`;
+}
+
+window.confirmDelete = function (id) {
+  const g = getGarment(id);
+  if (g && confirm(`Delete “${g.name}”?`)) { deleteGarment(id); render(); }
+};
+window.startEdit = function (id) { editingId = id; setTab("add"); };
+
+/* ---------- Add / Edit form ---------- */
+function renderForm() {
+  const editing = editingId ? getGarment(editingId) : null;
+  viewTitle.textContent = editing ? "Edit garment" : "Add garment";
+  viewSub.textContent = editing ? esc(editing.name) : "New piece";
+
+  const g = editing || {};
+  const isShoe = (g.category || "base") === "shoe";
+
+  view.innerHTML = `
+    ${lastUnlock && !editing ? unlockBanner(lastUnlock) : ""}
+    <form id="gform" class="stack card" style="padding:16px;">
+      <div class="field">
+        <label>Name <span class="req">*</span></label>
+        <input type="text" name="name" value="${esc(g.name || "")}" placeholder="Charcoal merino crewneck" />
+        <div class="err" id="err-name" hidden>Name is required.</div>
+      </div>
+
+      <div class="row wrap" style="gap:12px;">
+        <div class="field grow">
+          <label>Category <span class="req">*</span></label>
+          <select name="category">${CATEGORIES.map(c => opt(c, CATEGORY_LBL[c], g.category || "base")).join("")}</select>
+        </div>
+        <div class="field grow">
+          <label>Subcategory</label>
+          <input type="text" name="subcategory" value="${esc(g.subcategory || "")}" placeholder="tee, hoodie, jeans…" />
+        </div>
+      </div>
+
+      <div class="row wrap" style="gap:12px;">
+        <div class="field grow">
+          <label>Color</label>
+          <input type="text" name="color" value="${esc(g.color || "")}" placeholder="charcoal" />
+        </div>
+        <div class="field grow">
+          <label>Color family</label>
+          <select name="colorFamily">${COLOR_FAMILIES.map(c => opt(c, FAMILY_LBL[c], g.colorFamily || "neutralDark")).join("")}</select>
+        </div>
+      </div>
+
+      <div class="row wrap" style="gap:12px;">
+        <div class="field grow">
+          <label>Formality (1–5)</label>
+          <select name="formality">${[1,2,3,4,5].map(n => opt(n, `${n} — ${["sweatpants","casual","smart-casual","refined","tailored"][n-1]}`, g.formality || 3)).join("")}</select>
+        </div>
+        <div class="field grow">
+          <label>Season</label>
+          <select name="season">${SEASONS.map(s => opt(s, cap(s), g.season || "all")).join("")}</select>
+        </div>
+      </div>
+
+      <div class="row wrap" style="gap:12px;">
+        <div class="field grow">
+          <label>Fit</label>
+          <select name="fit">${FITS.map(f => opt(f, cap(f), g.fit || "slim")).join("")}</select>
+        </div>
+        <div class="field grow">
+          <label>Weight (layering)</label>
+          <select name="weight">${WEIGHTS.map(w => opt(w, cap(w), g.weight || "medium")).join("")}</select>
+        </div>
+      </div>
+
+      <div class="field" id="vw-field" ${isShoe ? "" : "hidden"}>
+        <label>Shoe visual weight</label>
+        <select name="visualWeight">${VISUAL_WEIGHTS.map(v => opt(v, ({lowProfile:"Low profile",standard:"Standard",substantial:"Substantial"})[v], g.visualWeight || "standard")).join("")}</select>
+      </div>
+
+      <div class="row wrap" style="gap:12px;">
+        <div class="field grow">
+          <label>Cost</label>
+          <input type="number" name="cost" min="0" step="1" value="${g.cost != null ? g.cost : ""}" placeholder="0" />
+        </div>
+        <div class="field grow">
+          <label>Rating</label>
+          <select name="rating">${["", 1,2,3,4,5].map(n => opt(n, n === "" ? "—" : `${n}★`, g.rating || "")).join("")}</select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Photo</label>
+        <div class="row wrap" style="gap:10px;">
+          <div class="g-thumb" id="photo-preview" style="width:72px;height:72px;">
+            ${g.imageData ? `<img src="${g.imageData}" alt="" />` : `<span>${CATEGORY_ICO[g.category] || "👚"}</span>`}
+          </div>
+          <div class="grow">
+            <input type="file" id="photo-input" accept="image/*" style="min-height:auto;padding:8px;" />
+            <div class="tiny muted" style="margin-top:4px;">Resized to 800px max, stored on-device.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Notes</label>
+        <textarea name="notes" placeholder="Optional">${esc(g.notes || "")}</textarea>
+      </div>
+
+      <div class="row" style="gap:10px; margin-top:4px;">
+        <button type="submit" class="btn primary grow">${editing ? "Save changes" : "Add garment"}</button>
+        ${editing ? `<button type="button" class="btn danger" onclick="confirmDelete('${g.id}')">Delete</button>` : ""}
+      </div>
+    </form>`;
+
+  const form = document.getElementById("gform");
+  let pendingImage = g.imageData || null;
+
+  form.category.addEventListener("change", e => {
+    document.getElementById("vw-field").hidden = e.target.value !== "shoe";
+    if (!pendingImage) document.querySelector("#photo-preview span") &&
+      (document.querySelector("#photo-preview").innerHTML = `<span>${CATEGORY_ICO[e.target.value] || "👚"}</span>`);
+  });
+
+  document.getElementById("photo-input").addEventListener("change", async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      pendingImage = await resizeImage(file, 800);
+      document.getElementById("photo-preview").innerHTML = `<img src="${pendingImage}" alt="" />`;
+    } catch (err) { alert("Could not read image: " + err.message); }
+  });
+
+  form.addEventListener("submit", e => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(form).entries());
+    // validate required
+    const nameErr = document.getElementById("err-name");
+    if (!data.name.trim()) { nameErr.hidden = false; form.name.classList.add("invalid"); form.name.focus(); return; }
+    nameErr.hidden = true; form.name.classList.remove("invalid");
+
+    data.imageData = pendingImage;
+    data.rating = data.rating || null;
+
+    if (editing) {
+      updateGarment(editing.id, data);
+      editingId = null;
+      lastUnlock = null;
+      setTab("wardrobe");
+    } else {
+      // unlock counter: measure before adding, then add
+      const draft = normalizeGarment(data);
+      lastUnlock = calculateUnlock(getGarments(), draft);
+      addGarment(draft);
+      form.reset();
+      render(); // re-render Add view with the unlock banner on top
+    }
+  });
+}
+
+function unlockBanner(u) {
+  const delta = u.delta;
+  const sign = delta > 0 ? "+" : "";
+  const previews = u.best.length
+    ? `<div class="sectitle" style="margin-top:14px;">New combinations unlocked</div>
+       <div class="stack" style="gap:8px;">${u.best.map(o => outfitStrip(o)).join("")}</div>`
+    : "";
+  return `
+    <div class="unlock">
+      <div class="small muted">Added to your wardrobe</div>
+      <div class="big ${delta > 0 ? "pos" : ""}">${sign}${delta}${u.capped ? "+" : ""} outfits</div>
+      <div class="small muted">${u.before}${u.capped ? "+" : ""} → ${u.after}${u.capped ? "+" : ""} valid combinations</div>
+      ${previews}
+      <div class="row" style="gap:8px; margin-top:14px;">
+        <button class="btn sm" onclick="setTab('outfits')">Browse outfits</button>
+        <button class="btn sm ghost" onclick="dismissUnlock()">Dismiss</button>
+      </div>
+    </div>`;
+}
+window.dismissUnlock = function () { lastUnlock = null; render(); };
+
+function outfitStrip(o) {
+  return `<div class="o-item" style="width:100%;">
+    <div class="row wrap grow" style="gap:6px;">
+      ${o.items.map(it => `<span class="chip tag">${it.imageData ? `<span class="mini" style="width:18px;height:18px;"><img src="${it.imageData}"></span>` : (CATEGORY_ICO[it.category]||"")} ${esc(it.name)}</span>`).join("")}
+    </div>
+  </div>`;
+}
+
+/* ---------- Outfits browser ---------- */
+function renderOutfits() {
+  viewTitle.textContent = "Outfits";
+  const garments = getGarments();
+  const byCat = groupByCategory(garments);
+
+  if (!byCat.bottom.length || !byCat.shoe.length || (!byCat.base.length && !byCat.mid.length)) {
+    viewSub.textContent = "";
+    view.innerHTML = emptyState("◈", "Not enough to build outfits yet",
+      "The engine needs at least one bottom, one shoe, and a top layer (base or mid).",
+      `<button class="btn primary" onclick="setTab('add')">Add a garment</button>` +
+      (garments.length ? "" : `<button class="btn" onclick="loadSample()">Load sample wardrobe</button>`));
+    return;
+  }
+
+  const { outfits, count, capped } = generateOutfits(garments, { store: OUTFIT_STORE });
+  // rank by score so the browser leads with the strongest looks
+  outfits.sort((a, b) => scoreOutfit(b.items) - scoreOutfit(a.items));
+
+  viewSub.textContent = `${count}${capped ? "+" : ""} valid outfit${count === 1 ? "" : "s"}`;
+
+  const pages = Math.max(1, Math.ceil(outfits.length / OUTFITS_PER_PAGE));
+  outfitPage = Math.min(outfitPage, pages - 1);
+  const slice = outfits.slice(outfitPage * OUTFITS_PER_PAGE, (outfitPage + 1) * OUTFITS_PER_PAGE);
+
+  const banner = capped
+    ? `<div class="banner warn">Showing the first ${OUTFIT_STORE.toLocaleString()} of a very large set — the engine capped generation for performance. Add filters in a later session to narrow this.</div>`
+    : "";
+
+  view.innerHTML = banner +
+    `<div class="stack">${slice.map((o, i) => outfitCard(o, outfitPage * OUTFITS_PER_PAGE + i)).join("")}</div>` +
+    (pages > 1 ? `
+      <div class="pager">
+        <button class="btn sm" ${outfitPage === 0 ? "disabled" : ""} onclick="pageOutfits(-1)">← Prev</button>
+        <span class="small muted">Page ${outfitPage + 1} / ${pages}</span>
+        <button class="btn sm" ${outfitPage >= pages - 1 ? "disabled" : ""} onclick="pageOutfits(1)">Next →</button>
+      </div>` : "");
+}
+window.pageOutfits = function (d) { outfitPage += d; renderOutfits(); };
+
+function outfitCard(o, idx) {
+  const totalCost = o.items.reduce((a, i) => a + i.cost, 0);
+  const fs = o.items.map(i => i.formality);
+  const seasons = [...new Set(o.items.map(i => i.season))];
+  return `
+    <div class="card o-card">
+      <div class="row" style="justify-content:space-between; align-items:flex-start;">
+        <div class="small muted">Outfit #${idx + 1}</div>
+        <div class="row wrap tiny muted" style="gap:5px; justify-content:flex-end;">
+          <span class="badge">F${Math.min(...fs)}–${Math.max(...fs)}</span>
+          <span class="badge">${seasons.map(cap).join("/")}</span>
+          <span class="badge">${money(totalCost)}</span>
+        </div>
+      </div>
+      <div class="o-items">
+        ${o.items.slice().sort(sortForDisplay).map(itemPill).join("")}
+      </div>
+      <div class="row" style="gap:8px;">
+        <button class="btn sm primary" onclick="woreOutfit('${o.garmentIds.join(",")}')">Wore this today</button>
+        <button class="btn sm" onclick="saveOutfit('${o.garmentIds.join(",")}')">Save</button>
+        <button class="btn sm ghost" disabled title="Coming in a later session">Rate</button>
+      </div>
+    </div>`;
+}
+function sortForDisplay(a, b) {
+  const order = { base: 0, mid: 1, outer: 2, bottom: 3, shoe: 4 };
+  return order[a.category] - order[b.category];
+}
+function itemPill(it) {
+  const mini = it.imageData ? `<span class="mini"><img src="${it.imageData}"></span>`
+                            : `<span class="mini">${CATEGORY_ICO[it.category] || "👚"}</span>`;
+  return `<div class="o-item">${mini}<div style="min-width:0;">
+      <div class="small truncate" style="max-width:130px;">${esc(it.name)}</div>
+      <div class="tiny muted">${esc(it.subcategory || CATEGORY_LBL[it.category])}</div>
+    </div></div>`;
+}
+window.woreOutfit = function (ids) {
+  const items = ids.split(",").map(getGarment).filter(Boolean);
+  wearOutfit(items);
+  renderOutfits();
+};
+window.saveOutfit = function (ids) {
+  const garmentIds = ids.split(",");
+  if (state.outfits.some(o => sameSet(o.garmentIds, garmentIds))) { alert("Already saved."); return; }
+  state.outfits.push({
+    id: uid(), garmentIds, name: null, occasion: null,
+    rating: null, timesWorn: 0, lastWorn: null, isManual: false,
+  });
+  saveToStorage();
+  alert("Saved to your outfits.");
+};
+function sameSet(a, b) { return a.length === b.length && [...a].sort().join() === [...b].sort().join(); }
+
+/* ---------- Stats (basic dashboard) ---------- */
+function renderStats() {
+  viewTitle.textContent = "Stats";
+  viewSub.textContent = "";
+  const g = getGarments();
+  if (!g.length) {
+    view.innerHTML = emptyState("◐", "Nothing to summarize yet", "Add garments to see your wardrobe stats.",
+      `<button class="btn primary" onclick="setTab('add')">Add a garment</button>
+       <button class="btn" onclick="loadSample()">Load sample wardrobe</button>`);
+    return;
+  }
+  const spent = g.reduce((a, x) => a + x.cost, 0);
+  const { count, capped } = generateOutfits(g, { store: 0 });
+  const worn = g.filter(x => x.timesWorn > 0);
+  const avgCpw = worn.length ? worn.reduce((a, x) => a + cpw(x), 0) / worn.length : null;
+  const most = g.slice().sort((a, b) => b.timesWorn - a.timesWorn)[0];
+  const least = g.slice().sort((a, b) => a.timesWorn - b.timesWorn)[0];
+  const stale = g.filter(x => x.timesWorn && daysSince(x.lastWorn) >= STALE_DAYS);
+
+  view.innerHTML = `
+    <div class="stat-grid" style="margin-bottom:16px;">
+      <div class="card stat"><div class="n">${g.length}</div><div class="l">Garments</div></div>
+      <div class="card stat"><div class="n">${money(spent)}</div><div class="l">Total spent</div></div>
+      <div class="card stat"><div class="n">${count}${capped ? "+" : ""}</div><div class="l">Valid outfits</div></div>
+      <div class="card stat"><div class="n">${avgCpw != null ? money(avgCpw) : "—"}</div><div class="l">Avg cost / wear</div></div>
+    </div>
+    <div class="stack">
+      <div class="card" style="padding:14px;">
+        <div class="sectitle">Most worn</div>
+        <div class="small">${most.timesWorn ? `${esc(most.name)} — ${most.timesWorn}× ` : "Nothing worn yet"}</div>
+        <div class="sectitle" style="margin-top:10px;">Least worn</div>
+        <div class="small">${esc(least.name)} — ${least.timesWorn}×</div>
+      </div>
+      ${stale.length ? `<div class="card" style="padding:14px;">
+        <div class="sectitle">Not worn in ${STALE_DAYS}+ days (${stale.length})</div>
+        <div class="row wrap" style="gap:6px;">${stale.map(x => `<span class="badge warn">${esc(x.name)}</span>`).join("")}</div>
+      </div>` : ""}
+      <div class="card" style="padding:14px;">
+        <div class="sectitle">Data</div>
+        <div class="row wrap" style="gap:8px;">
+          <button class="btn sm" onclick="loadSample()">Load sample wardrobe</button>
+          <button class="btn sm danger" onclick="wipeAll()">Erase everything</button>
+        </div>
+        <div class="tiny muted" style="margin-top:8px;">Export / import lands in a later session — data currently lives in this browser's localStorage.</div>
+      </div>
+    </div>`;
+}
+window.wipeAll = function () {
+  if (confirm("Erase ALL garments and outfits from this device? This can't be undone.")) {
+    state = { garments: [], outfits: [] }; saveToStorage(); lastUnlock = null; render();
+  }
+};
+
+/* ---------- shared UI helpers ---------- */
+function emptyState(ico, title, body, actions) {
+  return `<div class="empty">
+    <div class="ico">${ico}</div>
+    <h2 style="margin:10px 0 4px; font-size:18px; color:var(--text);">${title}</h2>
+    <p style="max-width:420px; margin:0 auto 18px;">${body}</p>
+    <div class="row" style="gap:10px; justify-content:center; flex-wrap:wrap;">${actions}</div>
+  </div>`;
+}
+function opt(v, label, selected) {
+  return `<option value="${esc(v)}" ${String(v) === String(selected) ? "selected" : ""}>${esc(label)}</option>`;
+}
+function cap(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; }
+
+// image resize → base64 jpeg, max longest side `max`
+function resizeImage(file, max) {
+  return new Promise((res, rej) => {
+    const reader = new FileReader();
+    reader.onerror = () => rej(new Error("read error"));
+    reader.onload = e => {
+      const img = new Image();
+      img.onerror = () => rej(new Error("decode error"));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > max) { height = Math.round(height * max / width); width = max; }
+        else if (height > max) { width = Math.round(width * max / height); height = max; }
+        const c = document.createElement("canvas");
+        c.width = width; c.height = height;
+        c.getContext("2d").drawImage(img, 0, 0, width, height);
+        res(c.toDataURL("image/jpeg", 0.82));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ---------- sample wardrobe (reflects the pieces you mentioned) ---------- */
+function loadSample() {
+  if (getGarments().length && !confirm("Add sample garments to your current wardrobe?")) return;
+  const S = [
+    { name: "Charcoal merino crewneck", category: "base", subcategory: "knit tee", color: "charcoal", colorFamily: "neutralDark", formality: 3, season: "mild", fit: "slim", weight: "light", cost: 60 },
+    { name: "White cotton tee", category: "base", subcategory: "tee", color: "white", colorFamily: "neutralLight", formality: 2, season: "hot", fit: "slim", weight: "light", cost: 20 },
+    { name: "Black cotton tee", category: "base", subcategory: "tee", color: "black", colorFamily: "neutralDark", formality: 2, season: "hot", fit: "slim", weight: "light", cost: 20 },
+    { name: "Grey quarter-zip", category: "mid", subcategory: "quarter-zip", color: "grey", colorFamily: "neutralDark", formality: 3, season: "mild", fit: "slim", weight: "medium", cost: 75 },
+    { name: "Oatmeal hoodie", category: "mid", subcategory: "hoodie", color: "oatmeal", colorFamily: "warmNeutral", formality: 2, season: "cold", fit: "relaxed", weight: "medium", cost: 65 },
+    { name: "Navy cardigan knit", category: "mid", subcategory: "knit", color: "navy", colorFamily: "neutralDark", formality: 3, season: "cold", fit: "slim", weight: "medium", cost: 90 },
+    { name: "Olive overshirt", category: "outer", subcategory: "overshirt", color: "olive", colorFamily: "warmNeutral", formality: 3, season: "mild", fit: "relaxed", weight: "medium", cost: 110 },
+    { name: "Black bomber", category: "outer", subcategory: "jacket", color: "black", colorFamily: "neutralDark", formality: 3, season: "cold", fit: "slim", weight: "heavy", cost: 160 },
+    { name: "555 raw denim", category: "bottom", subcategory: "jeans", color: "indigo", colorFamily: "neutralDark", formality: 3, season: "all", fit: "relaxed", weight: "medium", cost: 120 },
+    { name: "Slim charcoal chinos", category: "bottom", subcategory: "chinos", color: "charcoal", colorFamily: "neutralDark", formality: 4, season: "all", fit: "slim", weight: "medium", cost: 80 },
+    { name: "Open-hem sweatpants", category: "bottom", subcategory: "sweatpants", color: "grey", colorFamily: "neutralDark", formality: 1, season: "cold", fit: "relaxed", weight: "medium", cost: 55 },
+    { name: "Black Spezials", category: "shoe", subcategory: "sneaker", color: "black", colorFamily: "neutralDark", formality: 3, season: "all", fit: "slim", weight: "light", cost: 100, visualWeight: "standard" },
+    { name: "White Grand Courts", category: "shoe", subcategory: "sneaker", color: "white", colorFamily: "neutralLight", formality: 3, season: "all", fit: "slim", weight: "light", cost: 90, visualWeight: "standard" },
+    { name: "Asics Gel-1130", category: "shoe", subcategory: "sneaker", color: "silver", colorFamily: "neutralLight", formality: 2, season: "all", fit: "relaxed", weight: "medium", cost: 130, visualWeight: "substantial" },
+  ];
+  S.forEach(addGarment);
+  render();
+}
+
+/* ============================================================================
+   BOOT
+   ============================================================================ */
+document.querySelectorAll("[data-nav]").forEach(el => {
+  el.addEventListener("click", () => setTab(el.dataset.nav));
+});
+loadFromStorage();
+setTab("wardrobe");
+</script>
