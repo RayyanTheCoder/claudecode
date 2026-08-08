@@ -1,12 +1,15 @@
 /* Wardrobe service worker — cache-first app shell for offline use.
    Only active when the app is served over http(s); ignored on file://. */
-const CACHE = "wardrobe-v8";
+const CACHE = "wardrobe-v9";
 const ASSETS = ["./", "./index.html", "./wardrobe.html", "./manifest.webmanifest",
   "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
+// Install but DO NOT skipWaiting — the new worker parks in "waiting" so the page
+// can show an update prompt. It activates only when the page posts SKIP_WAITING.
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
 });
+self.addEventListener("message", e => { if (e.data === "SKIP_WAITING") self.skipWaiting(); });
 
 self.addEventListener("activate", e => {
   e.waitUntil(
