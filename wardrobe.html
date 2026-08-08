@@ -7,6 +7,8 @@
   color + formality + season + silhouette rules), unlock counter, browser.
   Session 2: gap analysis, wishlist, outfit of the day, occasion filter,
   manual outfit builder.
+  Session 3: weather-aware suggestions (Open-Meteo), outfit rating +
+  suggestion weighting, packing mode, JSON export/import, full stats.
 -->
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -265,6 +267,12 @@
   .validity { padding: 12px 14px; border-radius: 11px; margin: 4px 0 14px; font-size: 13px; }
   .validity.ok { background: rgba(78,201,138,.1); border: 1px solid #23402f; color: var(--good); }
   .validity.bad { background: rgba(230,184,75,.09); border: 1px solid #4a3f22; color: var(--warn); }
+
+  /* ---------- rating stars ---------- */
+  .stars { display: inline-flex; gap: 1px; margin-left: 2px; }
+  .star { cursor: pointer; color: var(--muted-2); font-size: 18px; line-height: 1; padding: 2px; transition: color .1s ease; }
+  .star.on { color: var(--warn); }
+  .star:hover { color: var(--warn); }
 </style>
 
 <div class="app">
@@ -367,10 +375,19 @@ const MAX_EVAL = 300000;   // safety cap on combinations evaluated per run
 const STALE_DAYS = 60;     // "not worn in N days" flag
 const OOTD_AVOID_DAYS = 14; // downweight outfits worn within this many days
 
+// Weather (Open-Meteo, no API key). Temperature °C → season bucket. Editable.
+const OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast";
+const weatherBuckets = { coldBelow: 12, hotAbove: 20 }; // cold < 12 ≤ mild ≤ 20 < hot
+function tempToSeason(t) {
+  if (t < weatherBuckets.coldBelow) return "cold";
+  if (t > weatherBuckets.hotAbove) return "hot";
+  return "mild";
+}
+
 /* ============================================================================
    DATA LAYER
    ============================================================================ */
-let state = { garments: [], outfits: [], wishlist: [] };
+let state = { garments: [], outfits: [], wishlist: [], ratings: {} };
 
 function uid() {
   if (crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -386,10 +403,11 @@ function loadFromStorage() {
       state.garments = Array.isArray(parsed.garments) ? parsed.garments : [];
       state.outfits  = Array.isArray(parsed.outfits) ? parsed.outfits : [];
       state.wishlist = Array.isArray(parsed.wishlist) ? parsed.wishlist : [];
+      state.ratings  = (parsed.ratings && typeof parsed.ratings === "object") ? parsed.ratings : {};
     }
   } catch (e) {
     console.error("load failed", e);
-    state = { garments: [], outfits: [], wishlist: [] };
+    state = { garments: [], outfits: [], wishlist: [], ratings: {} };
   }
 }
 function saveToStorage() {
@@ -497,6 +515,41 @@ function deleteOutfitRecord(id) {
   saveToStorage();
 }
 function sameSet(a, b) { return a.length === b.length && [...a].sort().join() === [...b].sort().join(); }
+
+// --- outfit ratings (feed back into suggestion weighting) ---
+// Ratings are keyed by the sorted garment-id set, so a combo stays rated
+// whether it was surfaced by the browser or saved manually.
+function outfitKey(ids) { return [...ids].sort().join(","); }
+function getOutfitRating(ids) { return state.ratings[outfitKey(ids)] || null; }
+function rateOutfit(ids, rating) {
+  const key = outfitKey(ids);
+  if (rating) state.ratings[key] = rating; else delete state.ratings[key];
+  const rec = state.outfits.find(o => sameSet(o.garmentIds, ids)); // mirror onto a saved record
+  if (rec) rec.rating = rating || null;
+  saveToStorage();
+  rebuildRatingContext();
+}
+
+// Derived weighting context, recomputed whenever ratings change:
+//   exact — rating for a whole combo
+//   pair  — average (rating-3) across every rated combo a garment pair appears in
+let ratingContext = { exact: {}, pair: new Map() };
+function rebuildRatingContext() {
+  const exact = {};
+  const sum = new Map(), cnt = new Map();
+  for (const [key, rating] of Object.entries(state.ratings)) {
+    exact[key] = rating;
+    const ids = key.split(",");
+    for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+      const pk = ids[i] < ids[j] ? ids[i] + "|" + ids[j] : ids[j] + "|" + ids[i];
+      sum.set(pk, (sum.get(pk) || 0) + (rating - 3));
+      cnt.set(pk, (cnt.get(pk) || 0) + 1);
+    }
+  }
+  const pair = new Map();
+  for (const pk of sum.keys()) pair.set(pk, sum.get(pk) / cnt.get(pk));
+  ratingContext = { exact, pair };
+}
 
 /* ============================================================================
    OUTFIT ENGINE  —  validity, generation, unlock counting
@@ -652,6 +705,19 @@ function scoreOutfit(items) {
   if (rated.length) s += (rated.reduce((a, i) => a + i.rating, 0) / rated.length) / 5;
   const torso = items.filter(i => i.category in TIER).length;
   if (torso === 2) s += 0.4;                        // a little layering reads intentional
+
+  // outfit-rating feedback: rated combos and their component pairings rise
+  const ids = items.map(i => i.id);
+  const key = [...ids].sort().join(",");
+  if (ratingContext.exact[key] != null) s += (ratingContext.exact[key] - 3) * 0.5;
+  if (ratingContext.pair.size) {
+    let pa = 0;
+    for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+      const pk = ids[i] < ids[j] ? ids[i] + "|" + ids[j] : ids[j] + "|" + ids[i];
+      const v = ratingContext.pair.get(pk); if (v != null) pa += v;
+    }
+    s += Math.max(-1.5, Math.min(1.5, pa * 0.15));
+  }
   return s;
 }
 
@@ -722,6 +788,44 @@ function pickOOTD(pool, excludeKey) {
   return weighted[weighted.length - 1].o;
 }
 
+// An outfit suits a season if every item is season-compatible with it.
+function outfitSuitsSeason(items, s) {
+  return items.every(i => (rules.seasonCompatibility[i.season] || []).includes(s));
+}
+
+/*
+  Packing mode: cover `days` distinct outfits (matching the chosen occasions)
+  with as few garments as possible. Greedy — each step adds the outfit that
+  introduces the fewest new garments, tie-broken by aesthetic score (the pool
+  is pre-sorted, so the first minimum wins). Returns the capsule + day outfits.
+*/
+function planPacking(garments, days, occasions) {
+  const { outfits } = generateOutfits(garments, { store: OUTFIT_STORE });
+  let pool = outfits;
+  if (occasions.length) {
+    pool = pool.filter(o => occasions.some(occ => { try { return occasionRules[occ](o.items); } catch (e) { return false; } }));
+  }
+  pool = pool.map(o => ({ o, s: scoreOutfit(o.items) })).sort((a, b) => b.s - a.s).map(x => x.o);
+  if (!pool.length) return { chosen: [], capsule: [], pool: 0, shortfall: days };
+
+  const chosen = [], capsule = new Set(), used = new Set();
+  while (chosen.length < days) {
+    let best = null, bestCost = Infinity, bestIdx = -1;
+    for (let i = 0; i < pool.length; i++) {
+      if (used.has(i)) continue;
+      let cost = 0;
+      for (const id of pool[i].garmentIds) if (!capsule.has(id)) cost++;
+      if (cost < bestCost) { bestCost = cost; best = pool[i]; bestIdx = i; if (cost === 0) break; }
+    }
+    if (!best) break; // pool exhausted before reaching `days`
+    used.add(bestIdx);
+    chosen.push(best);
+    best.garmentIds.forEach(id => capsule.add(id));
+  }
+  const capsuleItems = [...capsule].map(getGarment).filter(Boolean);
+  return { chosen, capsule: capsuleItems, pool: pool.length, shortfall: Math.max(0, days - chosen.length) };
+}
+
 /* ============================================================================
    UI  —  rendering. Kept separate from data/engine logic above.
    ============================================================================ */
@@ -746,7 +850,14 @@ let ootdDismissed = false;       // hide OOTD for the session once dismissed
 let builderSel = new Set();      // garment ids selected in the manual builder
 let builderName = "";            // preserved across builder re-renders
 let builderOccasion = "";
-let planMode = "gaps";           // "gaps" | "wishlist"
+let planMode = "gaps";           // "gaps" | "wishlist" | "packing"
+
+// session 3 view state
+let weather = { status: "idle", tempC: null, season: null }; // idle|loading|ok|error
+let weatherFilter = false;       // filter suggestions by current temp's season
+let packDays = 4;
+let packOccasions = [];
+let packResult = null;
 
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -1098,13 +1209,20 @@ function renderSuggested(garments, seg) {
   const { outfits, count, capped } = generateOutfits(garments, { store: OUTFIT_STORE });
   outfits.sort((a, b) => scoreOutfit(b.items) - scoreOutfit(a.items));
 
-  // outfit of the day — picked from the full (unfiltered) pool
-  if (!ootdDismissed && !ootd) ootd = pickOOTD(outfits, "");
+  // weather filter — narrow the working pool to outfits that suit the temperature
+  const weatherOn = weatherFilter && weather.status === "ok";
+  const pool = weatherOn ? outfits.filter(o => outfitSuitsSeason(o.items, weather.season)) : outfits;
+
+  // outfit of the day — picked from the (weather-aware) pool; re-pick if stale
+  if (!ootdDismissed) {
+    const inPool = ootd && pool.some(o => o.garmentIds.join() === ootd.garmentIds.join());
+    if (!ootd || !inPool) ootd = pickOOTD(pool, "");
+  }
   const ootdHTML = (ootd && !ootdDismissed) ? ootdCard(ootd) : "";
 
   // occasion filter
-  const filtered = occasionFilter === "all" ? outfits
-    : outfits.filter(o => { try { return occasionRules[occasionFilter](o.items); } catch (e) { return false; } });
+  const filtered = occasionFilter === "all" ? pool
+    : pool.filter(o => { try { return occasionRules[occasionFilter](o.items); } catch (e) { return false; } });
   const occChips = `<div class="row wrap" style="gap:7px; margin-bottom:14px;">
     ${["all", ...OCCASIONS].map(o => `<span class="chip btn-chip ${occasionFilter === o ? "on" : ""}" onclick="setOccasion('${o}')">${o === "all" ? "All" : OCCASION_LBL[o]}</span>`).join("")}
   </div>`;
@@ -1116,11 +1234,14 @@ function renderSuggested(garments, seg) {
   const slice = filtered.slice(outfitPage * OUTFITS_PER_PAGE, (outfitPage + 1) * OUTFITS_PER_PAGE);
 
   const cappedBanner = capped ? `<div class="banner warn">Showing the first ${OUTFIT_STORE.toLocaleString()} outfits — generation was capped for performance.</div>` : "";
+  const emptyMsg = weatherOn && !filtered.length
+    ? `No ${occasionFilter === "all" ? "" : OCCASION_LBL[occasionFilter] + " "}outfits suit ${weather.tempC}°C right now — turn off the weather filter to see more.`
+    : `No ${occasionFilter === "all" ? "" : OCCASION_LBL[occasionFilter] + " "}outfits from your current wardrobe.`;
   const body = slice.length
     ? `<div class="stack">${slice.map((o, i) => outfitCard(o, outfitPage * OUTFITS_PER_PAGE + i)).join("")}</div>`
-    : `<div class="empty muted">No ${occasionFilter === "all" ? "" : OCCASION_LBL[occasionFilter] + " "}outfits from your current wardrobe.</div>`;
+    : `<div class="empty muted">${emptyMsg}</div>`;
 
-  view.innerHTML = seg + ootdHTML + occChips + cappedBanner + body +
+  view.innerHTML = seg + weatherBar() + ootdHTML + occChips + cappedBanner + body +
     (pages > 1 ? `
       <div class="pager">
         <button class="btn sm" ${outfitPage === 0 ? "disabled" : ""} onclick="pageOutfits(-1)">← Prev</button>
@@ -1130,6 +1251,57 @@ function renderSuggested(garments, seg) {
 }
 window.setOccasion = function (o) { occasionFilter = o; outfitPage = 0; renderOutfits(); };
 window.pageOutfits = function (d) { outfitPage += d; renderOutfits(); };
+
+/* ----- weather (Open-Meteo, no key; fails gracefully to no filtering) ----- */
+function weatherBar() {
+  const emoji = { hot: "☀️", mild: "🌤", cold: "❄️" };
+  if (weather.status === "ok") {
+    return `<div class="card" style="padding:10px 12px; margin-bottom:14px;">
+      <div class="row wrap" style="gap:10px;">
+        <span class="row" style="gap:6px;"><span style="font-size:18px;">${emoji[weather.season]}</span>
+          <b>${weather.tempC}°C</b><span class="muted small">· ${cap(weather.season)} weather</span></span>
+        <span class="chip btn-chip ${weatherFilter ? "on" : ""}" onclick="toggleWeatherFilter()">${weatherFilter ? "Filtering by weather ✓" : "Filter by weather"}</span>
+        <button class="btn sm ghost" onclick="clearWeather()">Clear</button>
+      </div>
+    </div>`;
+  }
+  const loading = weather.status === "loading";
+  const errNote = weather.status === "error"
+    ? `<div class="tiny muted" style="margin-top:6px;">Couldn't fetch weather (offline or location blocked). Enter a temperature manually, or continue without it.</div>` : "";
+  return `<div class="card" style="padding:10px 12px; margin-bottom:14px;">
+    <div class="row wrap" style="gap:8px;">
+      <button class="btn sm" onclick="fetchWeather()" ${loading ? "disabled" : ""}>${loading ? "Locating…" : "🌤 Use my location"}</button>
+      <span class="muted small">or</span>
+      <input id="manual-temp" type="number" placeholder="°C" style="width:78px; min-height:34px;" onkeydown="if(event.key==='Enter')applyManualTemp()" />
+      <button class="btn sm" onclick="applyManualTemp()">Set</button>
+    </div>${errNote}
+  </div>`;
+}
+window.fetchWeather = function () {
+  if (!navigator.geolocation) { weather = { status: "error", tempC: null, season: null }; renderOutfits(); return; }
+  weather = { status: "loading", tempC: null, season: null }; renderOutfits();
+  navigator.geolocation.getCurrentPosition(async pos => {
+    try {
+      const { latitude, longitude } = pos.coords;
+      const res = await fetch(`${OPEN_METEO_URL}?latitude=${latitude}&longitude=${longitude}&current=temperature_2m`);
+      if (!res.ok) throw new Error("http " + res.status);
+      const data = await res.json();
+      const t = data.current.temperature_2m;
+      weather = { status: "ok", tempC: Math.round(t), season: tempToSeason(t) };
+      weatherFilter = true;
+    } catch (e) { weather = { status: "error", tempC: null, season: null }; }
+    renderOutfits();
+  }, () => { weather = { status: "error", tempC: null, season: null }; renderOutfits(); }, { timeout: 8000, maximumAge: 600000 });
+};
+window.applyManualTemp = function () {
+  const el = document.getElementById("manual-temp"); if (!el) return;
+  const t = parseFloat(el.value);
+  if (Number.isNaN(t)) return;
+  weather = { status: "ok", tempC: Math.round(t), season: tempToSeason(t) };
+  weatherFilter = true; renderOutfits();
+};
+window.toggleWeatherFilter = function () { weatherFilter = !weatherFilter; renderOutfits(); };
+window.clearWeather = function () { weather = { status: "idle", tempC: null, season: null }; weatherFilter = false; renderOutfits(); };
 
 function ootdCard(o) {
   return `
@@ -1174,13 +1346,26 @@ function outfitCard(o, idx) {
       <div class="o-items">
         ${o.items.slice().sort(sortForDisplay).map(itemPill).join("")}
       </div>
-      <div class="row" style="gap:8px;">
+      <div class="row wrap" style="gap:8px; align-items:center;">
         <button class="btn sm primary" onclick="woreOutfit('${o.garmentIds.join(",")}')">Wore this today</button>
         <button class="btn sm" onclick="saveOutfit('${o.garmentIds.join(",")}')">Save</button>
-        <button class="btn sm ghost" disabled title="Coming in a later session">Rate</button>
+        ${ratingStars(o.garmentIds)}
       </div>
     </div>`;
 }
+// clickable 1–5 star row keyed to a garment set; click the current rating to clear
+function ratingStars(ids) {
+  const cur = getOutfitRating(ids) || 0;
+  const csv = ids.join(",");
+  return `<span class="stars" title="Rate this outfit — feeds future suggestions">${[1,2,3,4,5].map(n =>
+    `<span class="star ${n <= cur ? "on" : ""}" onclick="rateOutfitUI('${csv}',${n})">★</span>`).join("")}</span>`;
+}
+window.rateOutfitUI = function (csv, n) {
+  const ids = csv.split(",");
+  const cur = getOutfitRating(ids);
+  rateOutfit(ids, cur === n ? 0 : n);
+  renderOutfits();
+};
 function sortForDisplay(a, b) {
   const order = { base: 0, mid: 1, outer: 2, bottom: 3, shoe: 4 };
   return order[a.category] - order[b.category];
@@ -1297,9 +1482,10 @@ function savedOutfitCard(rec) {
         <div class="small muted">${rec.timesWorn ? rec.timesWorn + "× worn" : ""}</div>
       </div>
       <div class="o-items">${items.slice().sort(sortForDisplay).map(itemPill).join("")}</div>
-      <div class="row" style="gap:8px;">
+      <div class="row wrap" style="gap:8px; align-items:center;">
         <button class="btn sm primary" onclick="woreSaved('${rec.id}')">Wore this today</button>
         <button class="btn sm danger" onclick="deleteSaved('${rec.id}')">Delete</button>
+        ${ratingStars(rec.garmentIds)}
       </div>
     </div>`;
 }
@@ -1317,8 +1503,9 @@ window.deleteSaved = function (id) {
 function renderPlan() {
   viewTitle.textContent = "Plan";
   const garments = getGarments();
-  const seg = segmented([["gaps", "Gap analysis"], ["wishlist", "Wishlist"]], planMode, "setPlanMode");
+  const seg = segmented([["gaps", "Gap analysis"], ["wishlist", "Wishlist"], ["packing", "Packing"]], planMode, "setPlanMode");
   if (planMode === "wishlist") renderWishlist(garments, seg);
+  else if (planMode === "packing") renderPacking(garments, seg);
   else renderGaps(garments, seg);
 }
 window.setPlanMode = function (m) { planMode = m; renderPlan(); };
@@ -1437,7 +1624,88 @@ function wishlistCard(w, garments, canProject) {
 window.buyWishlist = function (id) { const g = convertWishlist(id); if (g) alert(`“${g.name}” moved into your wardrobe.`); renderPlan(); };
 window.removeWishlist = function (id) { if (confirm("Remove from wishlist?")) { deleteWishlist(id); renderPlan(); } };
 
-/* ---------- Stats (basic dashboard) ---------- */
+/* ----- Packing: minimum capsule covering N days of chosen occasions ----- */
+function renderPacking(garments, seg) {
+  if (!canBuildOutfits(garments)) {
+    viewSub.textContent = "";
+    view.innerHTML = seg + emptyState("◇", "Packing needs a base wardrobe",
+      "Add at least a bottom, a shoe and a top so the engine has outfits to pack.",
+      `<button class="btn primary" onclick="setTab('add')">Add a garment</button>` +
+      (garments.length ? "" : `<button class="btn" onclick="loadSample()">Load sample wardrobe</button>`));
+    return;
+  }
+  viewSub.textContent = "";
+  const controls = `
+    <div class="card" style="padding:14px; margin-bottom:16px;">
+      <div class="row wrap" style="gap:14px; align-items:flex-end;">
+        <div class="field" style="width:96px; flex:none;">
+          <label>Days</label>
+          <input id="pack-days" type="number" min="1" max="30" value="${packDays}" />
+        </div>
+        <div class="grow" style="min-width:180px;">
+          <label class="small muted">Occasions (optional)</label>
+          <div class="row wrap" style="gap:7px; margin-top:7px;">
+            ${OCCASIONS.map(o => `<span class="chip btn-chip ${packOccasions.includes(o) ? "on" : ""}" onclick="togglePackOccasion('${o}')">${OCCASION_LBL[o]}</span>`).join("")}
+          </div>
+        </div>
+      </div>
+      <button class="btn primary" style="margin-top:14px;" onclick="runPacking()">Build packing list</button>
+    </div>`;
+
+  let result = "";
+  if (packResult) {
+    const r = packResult;
+    if (!r.pool) {
+      result = `<div class="empty muted">No outfits match ${packOccasions.map(o => OCCASION_LBL[o]).join(" / ") || "your wardrobe"}. Try different occasions.</div>`;
+    } else {
+      const shortfall = r.shortfall > 0
+        ? `<div class="banner warn">Only ${r.chosen.length} distinct outfit${r.chosen.length === 1 ? "" : "s"} available — ${r.shortfall} day${r.shortfall === 1 ? "" : "s"} short. Add pieces or widen occasions.</div>` : "";
+      const totalCost = r.capsule.reduce((a, g) => a + g.cost, 0);
+      const capsuleByCat = CATEGORIES.map(cat => {
+        const items = r.capsule.filter(g => g.category === cat);
+        if (!items.length) return "";
+        return `<div style="margin-bottom:10px;">
+          <div class="tiny muted" style="margin-bottom:5px;">${CATEGORY_LBL[cat]}</div>
+          <div class="build-chips">${items.map(g => `<span class="pick"><span class="mini">${g.imageData ? `<img src="${g.imageData}">` : (CATEGORY_ICO[cat] || "👚")}</span>${esc(g.name)}</span>`).join("")}</div>
+        </div>`;
+      }).join("");
+      const daysHTML = r.chosen.map((o, i) => `
+        <div class="card o-card">
+          <div class="small muted">Day ${i + 1}</div>
+          <div class="o-items">${o.items.slice().sort(sortForDisplay).map(itemPill).join("")}</div>
+        </div>`).join("");
+      result = `
+        ${shortfall}
+        <div class="stat-grid" style="margin-bottom:16px;">
+          <div class="card stat"><div class="n">${r.capsule.length}</div><div class="l">Garments to pack</div></div>
+          <div class="card stat"><div class="n">${r.chosen.length}</div><div class="l">Outfits produced</div></div>
+        </div>
+        <div class="card" style="padding:14px; margin-bottom:16px;">
+          <div class="sectitle">Pack these ${r.capsule.length} pieces · ${money(totalCost)}</div>
+          <div style="margin-top:10px;">${capsuleByCat}</div>
+        </div>
+        <div class="sectitle" style="margin:4px 0 10px;">Daily outfits</div>
+        <div class="stack">${daysHTML}</div>`;
+    }
+  }
+
+  view.innerHTML = seg + controls + result;
+  const d = document.getElementById("pack-days");
+  if (d) d.onchange = e => { packDays = clampInt(e.target.value, 1, 30, 4); };
+}
+window.togglePackOccasion = function (o) {
+  const i = packOccasions.indexOf(o);
+  if (i >= 0) packOccasions.splice(i, 1); else packOccasions.push(o);
+  packResult = null; renderPlan();
+};
+window.runPacking = function () {
+  const d = document.getElementById("pack-days");
+  if (d) packDays = clampInt(d.value, 1, 30, 4);
+  packResult = planPacking(getGarments(), packDays, packOccasions);
+  renderPlan();
+};
+
+/* ---------- Stats (full dashboard) ---------- */
 function renderStats() {
   viewTitle.textContent = "Stats";
   viewSub.textContent = "";
@@ -1451,43 +1719,119 @@ function renderStats() {
   const spent = g.reduce((a, x) => a + x.cost, 0);
   const { count, capped } = generateOutfits(g, { store: 0 });
   const worn = g.filter(x => x.timesWorn > 0);
+  const totalWears = g.reduce((a, x) => a + x.timesWorn, 0);
   const avgCpw = worn.length ? worn.reduce((a, x) => a + cpw(x), 0) / worn.length : null;
-  const most = g.slice().sort((a, b) => b.timesWorn - a.timesWorn)[0];
-  const least = g.slice().sort((a, b) => a.timesWorn - b.timesWorn)[0];
+  const neverWorn = g.filter(x => !x.timesWorn);
   const stale = g.filter(x => x.timesWorn && daysSince(x.lastWorn) >= STALE_DAYS);
+  const wl = getWishlist();
+  const wlValue = wl.reduce((a, x) => a + x.cost, 0);
+  const ratings = Object.values(state.ratings);
+  const avgRating = ratings.length ? ratings.reduce((a, r) => a + r, 0) / ratings.length : null;
+
+  const most = g.slice().sort((a, b) => b.timesWorn - a.timesWorn)[0];
+  const least = worn.slice().sort((a, b) => a.timesWorn - b.timesWorn)[0];
+  const bestValue = worn.slice().sort((a, b) => cpw(a) - cpw(b))[0];   // lowest cost/wear
+  const worstValue = worn.slice().sort((a, b) => cpw(b) - cpw(a))[0];  // highest cost/wear
+
+  // wardrobe composition by category
+  const catCounts = CATEGORIES.map(c => [CATEGORY_LBL[c], g.filter(x => x.category === c).length]);
+  const catMax = Math.max(1, ...catCounts.map(c => c[1]));
+  const catBars = catCounts.filter(c => c[1]).map(([lbl, n]) => `
+    <div class="row" style="gap:10px; margin:6px 0;">
+      <span class="small muted" style="width:88px; flex:none;">${lbl}</span>
+      <div class="gap-bar grow" style="margin:0;"><span style="width:${Math.round(n / catMax * 100)}%"></span></div>
+      <span class="small" style="width:22px; text-align:right; flex:none;">${n}</span>
+    </div>`).join("");
+
+  const line = (label, g) => g ? `<div class="row" style="justify-content:space-between; gap:10px;"><span class="small truncate">${esc(g.name)}</span><span class="small muted" style="flex:none;">${label}</span></div>` : "";
 
   view.innerHTML = `
-    <div class="stat-grid" style="margin-bottom:16px;">
+    <div class="stat-grid" style="margin-bottom:12px;">
       <div class="card stat"><div class="n">${g.length}</div><div class="l">Garments</div></div>
       <div class="card stat"><div class="n">${money(spent)}</div><div class="l">Total spent</div></div>
       <div class="card stat"><div class="n">${count}${capped ? "+" : ""}</div><div class="l">Valid outfits</div></div>
       <div class="card stat"><div class="n">${avgCpw != null ? money(avgCpw) : "—"}</div><div class="l">Avg cost / wear</div></div>
     </div>
+    <div class="stat-grid" style="margin-bottom:16px;">
+      <div class="card stat"><div class="n">${totalWears}</div><div class="l">Total wears</div></div>
+      <div class="card stat"><div class="n">${neverWorn.length}</div><div class="l">Never worn</div></div>
+      <div class="card stat"><div class="n">${state.outfits.length}</div><div class="l">Saved outfits</div></div>
+      <div class="card stat"><div class="n">${wl.length}${wl.length ? ` · ${money(wlValue)}` : ""}</div><div class="l">Wishlist${wl.length ? " value" : ""}</div></div>
+    </div>
     <div class="stack">
       <div class="card" style="padding:14px;">
-        <div class="sectitle">Most worn</div>
-        <div class="small">${most.timesWorn ? `${esc(most.name)} — ${most.timesWorn}× ` : "Nothing worn yet"}</div>
-        <div class="sectitle" style="margin-top:10px;">Least worn</div>
-        <div class="small">${esc(least.name)} — ${least.timesWorn}×</div>
+        <div class="sectitle" style="margin-bottom:8px;">Wardrobe by category</div>
+        ${catBars}
       </div>
+      <div class="card" style="padding:14px;">
+        <div class="sectitle" style="margin-bottom:6px;">Wear leaders</div>
+        ${most && most.timesWorn ? line(`${most.timesWorn}× worn`, most) : `<div class="small muted">Nothing worn yet — hit “Wore this today” on an outfit.</div>`}
+        ${least ? line(`${least.timesWorn}× worn`, least) : ""}
+        ${bestValue ? `<div class="sectitle" style="margin:12px 0 6px;">Cost per wear</div>${line(`${money(cpw(bestValue))}/wear · best`, bestValue)}${worstValue && worstValue !== bestValue ? line(`${money(cpw(worstValue))}/wear · worst`, worstValue) : ""}` : ""}
+      </div>
+      ${avgRating != null ? `<div class="card" style="padding:14px;">
+        <div class="sectitle">Outfit ratings</div>
+        <div class="small">${ratings.length} rated · ${avgRating.toFixed(1)}★ average</div>
+      </div>` : ""}
+      ${neverWorn.length ? `<div class="card" style="padding:14px;">
+        <div class="sectitle">Never worn (${neverWorn.length})</div>
+        <div class="row wrap" style="gap:6px;">${neverWorn.map(x => `<span class="badge">${esc(x.name)}</span>`).join("")}</div>
+      </div>` : ""}
       ${stale.length ? `<div class="card" style="padding:14px;">
         <div class="sectitle">Not worn in ${STALE_DAYS}+ days (${stale.length})</div>
-        <div class="row wrap" style="gap:6px;">${stale.map(x => `<span class="badge warn">${esc(x.name)}</span>`).join("")}</div>
+        <div class="row wrap" style="gap:6px;">${stale.map(x => `<span class="badge warn">${esc(x.name)} · ${daysSince(x.lastWorn)}d</span>`).join("")}</div>
       </div>` : ""}
       <div class="card" style="padding:14px;">
-        <div class="sectitle">Data</div>
+        <div class="sectitle" style="margin-bottom:8px;">Data</div>
         <div class="row wrap" style="gap:8px;">
-          <button class="btn sm" onclick="loadSample()">Load sample wardrobe</button>
+          <button class="btn sm" onclick="exportData()">Export JSON</button>
+          <label class="btn sm" style="cursor:pointer;">Import JSON<input type="file" accept="application/json,.json" onchange="importData(this)" hidden></label>
+          <button class="btn sm" onclick="loadSample()">Load sample</button>
           <button class="btn sm danger" onclick="wipeAll()">Erase everything</button>
         </div>
-        <div class="tiny muted" style="margin-top:8px;">Export / import lands in a later session — data currently lives in this browser's localStorage.</div>
+        <div class="tiny muted" style="margin-top:8px;">Export downloads your whole wardrobe as JSON — this is how you move between devices. Import replaces everything currently stored.</div>
       </div>
     </div>`;
 }
 window.wipeAll = function () {
-  if (confirm("Erase ALL garments and outfits from this device? This can't be undone.")) {
-    state = { garments: [], outfits: [] }; saveToStorage(); lastUnlock = null; render();
+  if (confirm("Erase ALL garments, outfits, wishlist and ratings from this device? This can't be undone.")) {
+    state = { garments: [], outfits: [], wishlist: [], ratings: {} };
+    saveToStorage(); rebuildRatingContext(); lastUnlock = null; ootd = null; render();
   }
+};
+
+/* ---------- export / import (move data between devices) ---------- */
+window.exportData = function () {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `wardrobe-${todayISO()}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+window.importData = function (input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      if (typeof parsed !== "object" || !Array.isArray(parsed.garments)) throw new Error("Not a wardrobe export.");
+      if (!confirm(`Replace all current data with ${parsed.garments.length} garments from this file?`)) { input.value = ""; return; }
+      state = {
+        garments: parsed.garments.map(normalizeGarment),
+        outfits: Array.isArray(parsed.outfits) ? parsed.outfits : [],
+        wishlist: Array.isArray(parsed.wishlist) ? parsed.wishlist.map(x => { const w = normalizeGarment(x); w.isWishlist = true; return w; }) : [],
+        ratings: (parsed.ratings && typeof parsed.ratings === "object") ? parsed.ratings : {},
+      };
+      saveToStorage(); rebuildRatingContext();
+      lastUnlock = null; ootd = null; ootdDismissed = false; packResult = null;
+      alert(`Imported ${state.garments.length} garments.`);
+      setTab("wardrobe");
+    } catch (err) { alert("Import failed: " + err.message); }
+    input.value = "";
+  };
+  reader.readAsText(file);
 };
 
 /* ---------- shared UI helpers ---------- */
@@ -1557,5 +1901,6 @@ document.querySelectorAll("[data-nav]").forEach(el => {
   el.addEventListener("click", () => setTab(el.dataset.nav));
 });
 loadFromStorage();
+rebuildRatingContext();
 setTab("wardrobe");
 </script>
