@@ -38,7 +38,8 @@
     --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
     --line:rgba(232,196,119,.15); --line-2:rgba(232,196,119,.08);
     --shadow:0 22px 60px rgba(0,0,0,.62); --glow:0 10px 34px rgba(232,196,119,.28);
-    --serif:'Iowan Old Style','Palatino Linotype','Palatino','Georgia',serif;
+    --sans:'Inter var',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --display:'ui-rounded','SF Pro Rounded','Nunito',var(--sans);
   }
   *{box-sizing:border-box}
   html,body{height:100%}
@@ -46,7 +47,7 @@
     background:
       radial-gradient(1100px 640px at 12% -12%, #241b0c 0%, transparent 55%),
       radial-gradient(820px 560px at 112% 8%, #2a2008 0%, transparent 52%), var(--bg);
-    font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;
+    font:15px/1.45 var(--sans); letter-spacing:-.1px;
     display:grid; place-items:center; padding:24px; -webkit-font-smoothing:antialiased;}
 
   .phone{width:390px; max-width:100%; height:820px; max-height:calc(100vh - 48px);
@@ -67,7 +68,7 @@
   .view-enter{animation:viewIn .32s cubic-bezier(.2,.7,.2,1)}
 
   .date{color:var(--ink-faint); font-size:12px; letter-spacing:.5px; text-transform:uppercase; margin:10px 2px 2px}
-  h1.page{font-family:var(--serif); font-weight:600; font-size:28px; margin:0 2px 14px; letter-spacing:-.2px}
+  h1.page{font-family:var(--display); font-weight:750; font-size:27px; margin:0 2px 14px; letter-spacing:-.5px}
   .row{display:flex; align-items:center; gap:10px}
   .spread{justify-content:space-between}
 
@@ -75,7 +76,7 @@
     border:1px solid var(--line); border-radius:26px; padding:20px 20px 18px;
     box-shadow:0 16px 40px rgba(0,0,0,.4), inset 0 1px 0 rgba(232,196,119,.08); position:relative; overflow:hidden;}
   .hero .label{color:var(--gold);font-size:12px;letter-spacing:.7px;text-transform:uppercase}
-  .hero .big{font-family:var(--serif); font-size:46px; font-weight:600; letter-spacing:-1px; margin:6px 0 6px; line-height:1.02;
+  .hero .big{font-family:var(--display); font-size:47px; font-weight:800; letter-spacing:-1.6px; margin:6px 0 6px; line-height:1.02;
     background:var(--gold-grad); -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow:0 0 30px rgba(232,196,119,.12);}
   .hero .big.neg{background:none;color:var(--red);-webkit-text-fill-color:var(--red)}
   .plusbtn{width:36px;height:36px;border-radius:12px;border:1px solid var(--line);background:rgba(232,196,119,.08);color:var(--gold);font-size:20px;cursor:pointer;display:grid;place-items:center;transition:transform .1s, background .15s}
@@ -90,7 +91,7 @@
   .mini-note{font-size:11px;color:var(--gold-deep);margin-top:8px;min-height:14px}
 
   .sec{margin:22px 2px 10px; display:flex; align-items:center; justify-content:space-between}
-  .sec h2{font-family:var(--serif);font-size:17px; margin:0; color:var(--ink); font-weight:600}
+  .sec h2{font-family:var(--display);font-size:17px; margin:0; color:var(--ink); font-weight:750; letter-spacing:-.3px}
   .link{color:var(--gold); font-size:13px; cursor:pointer; background:none;border:none;padding:0;transition:opacity .15s}
   .link:hover{opacity:.75}
 
@@ -108,7 +109,7 @@
   .callout{background:linear-gradient(150deg,rgba(232,196,119,.14),rgba(232,196,119,.04));border:1px solid var(--line);border-radius:16px;padding:14px;margin-top:6px;display:flex;gap:12px;align-items:flex-start}
   .callout .cx{font-size:22px}
   .callout .ct{flex:1}
-  .callout h4{margin:0 0 3px;font-family:var(--serif);font-size:15px}
+  .callout h4{margin:0 0 3px;font-family:var(--display);font-size:15px;font-weight:750}
   .callout p{margin:0 0 8px;font-size:12.5px;color:var(--ink-dim)}
   .callout .cclose{background:none;border:none;color:var(--ink-faint);font-size:18px;cursor:pointer;padding:0 2px}
 
@@ -148,7 +149,7 @@
   .btn.sm{padding:10px 12px;font-size:13px}
   .btnrow{display:flex;gap:10px;margin-top:6px}
   .toolcard{background:var(--panel);border:1px solid var(--line-2);border-radius:17px;padding:15px;margin-bottom:12px}
-  .toolcard h3{font-family:var(--serif);margin:0 0 4px;font-size:15px;font-weight:600}
+  .toolcard h3{font-family:var(--display);margin:0 0 4px;font-size:15px;font-weight:750;letter-spacing:-.2px}
   .toolcard p{margin:0 0 10px;font-size:12px;color:var(--ink-faint)}
 
   /* ---------- Insights ---------- */
@@ -158,7 +159,7 @@
   .tile .v{font-size:16px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums;white-space:nowrap}
   .tile .v.pos{color:var(--green)} .tile .v.neg{color:var(--red)} .tile .v.gold{color:var(--gold-bright)}
   .card{background:var(--panel);border:1px solid var(--line-2);border-radius:17px;padding:16px;margin-bottom:12px}
-  .card h3{font-family:var(--serif);margin:0 0 12px;font-size:15px;font-weight:600;display:flex;justify-content:space-between;align-items:baseline}
+  .card h3{font-family:var(--display);margin:0 0 12px;font-size:15px;font-weight:750;letter-spacing:-.2px;display:flex;justify-content:space-between;align-items:baseline}
   .card h3 small{font-size:11px;color:var(--ink-faint);font-family:system-ui;font-weight:400}
   /* income vs expense bars */
   .cbar{margin:10px 0}
@@ -169,7 +170,7 @@
   /* donut */
   .donutwrap{display:flex;gap:16px;align-items:center}
   .donut{width:132px;height:132px;flex:none}
-  .donut .dc{font-family:var(--serif)}
+  .donut .dc{font-family:var(--display)}
   .legend{flex:1;display:flex;flex-direction:column;gap:7px;min-width:0}
   .lgi{display:flex;align-items:center;gap:8px;font-size:12.5px}
   .lgi .dot{width:10px;height:10px;border-radius:3px;flex:none}
@@ -200,7 +201,7 @@
   .scrim{position:absolute;inset:0;background:rgba(4,3,2,.66);backdrop-filter:blur(4px);z-index:50;display:grid;place-items:end center;animation:scrimIn .2s}
   .sheet{width:100%;background:linear-gradient(180deg,#181209,#100b06);border-radius:24px 24px 0 0;border-top:1px solid var(--line);padding:16px 18px 22px;box-shadow:0 -12px 44px rgba(0,0,0,.6);max-height:90%;overflow:auto;animation:sheetIn .34s cubic-bezier(.2,.8,.2,1)}
   .sheet .grab{width:42px;height:4px;border-radius:4px;background:var(--gold-deep);opacity:.6;margin:0 auto 14px}
-  .sheet h2{font-family:var(--serif);margin:0 0 15px;font-size:20px;font-weight:600}
+  .sheet h2{font-family:var(--display);margin:0 0 15px;font-size:20px;font-weight:800;letter-spacing:-.4px}
   .typesel{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
   .typesel button{border:1px solid var(--line);background:var(--panel-2);color:var(--ink-dim);border-radius:12px;padding:10px 4px;cursor:pointer;font-size:12.5px;font-weight:650;transition:transform .1s, border-color .15s, background .15s, color .15s}
   .typesel button:active{transform:scale(.95)}
@@ -216,9 +217,9 @@
     background:radial-gradient(560px 340px at 18% 2%, #2a2008 0%, transparent 58%), radial-gradient(480px 320px at 112% 12%, #241a06 0%, transparent 55%), var(--panel-2)}
   .brand{display:flex;align-items:center;gap:13px;margin-bottom:28px}
   .brand .logo{width:52px;height:52px;border-radius:16px;background:var(--gold-grad);display:grid;place-items:center;font-size:26px;color:#1a1305;box-shadow:var(--glow)}
-  .brand .nm{font-family:var(--serif);font-size:23px;font-weight:600;letter-spacing:.2px}
+  .brand .nm{font-family:var(--display);font-size:23px;font-weight:800;letter-spacing:.2px}
   .brand .tg{font-size:12px;color:var(--gold-deep);letter-spacing:.3px}
-  .auth h2{font-family:var(--serif);font-size:24px;margin:0 0 4px;font-weight:600}
+  .auth h2{font-family:var(--display);font-size:25px;margin:0 0 4px;font-weight:800;letter-spacing:-.5px}
   .auth .lead{color:var(--ink-dim);font-size:13px;margin:0 0 20px}
   .gbtn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;background:#f4ede0;color:#211a10;border:none;border-radius:12px;padding:12px;font-weight:700;cursor:pointer;transition:transform .1s, filter .15s}
   .gbtn:hover{filter:brightness(.96)} .gbtn:active{transform:scale(.98)}
@@ -246,10 +247,10 @@
     <section class="auth" id="authView">
       <div class="brand">
         <div class="logo">◆</div>
-        <div><div class="nm">Pocket</div><div class="tg">Wealth, quietly tracked</div></div>
+        <div><div class="nm">Pocket</div><div class="tg">Money stuff, made easy</div></div>
       </div>
       <h2 id="authTitle">Welcome back</h2>
-      <p class="lead" id="authLead">Sign in to pick up where you left off.</p>
+      <p class="lead" id="authLead">Good to see you again 👋</p>
       <button class="gbtn" id="googleBtn">
         <svg class="gicon" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.9 2.4 30.3 0 24 0 14.6 0 6.4 5.4 2.5 13.3l7.9 6.1C12.3 13.2 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.2-.4-4.7H24v9h12.7c-.5 3-2.2 5.5-4.7 7.2l7.3 5.7c4.3-3.9 6.7-9.7 6.7-17.2z"/><path fill="#FBBC05" d="M10.4 28.6c-.5-1.5-.8-3-.8-4.6s.3-3.1.8-4.6l-7.9-6.1C.9 16.5 0 20.1 0 24s.9 7.5 2.5 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.3 0 11.6-2.1 15.5-5.7l-7.3-5.7c-2 1.4-4.7 2.3-8.2 2.3-6.3 0-11.7-3.7-13.6-9.9l-7.9 6.1C6.4 42.6 14.6 48 24 48z"/></svg>
         <span>Continue with Google</span>
@@ -271,7 +272,7 @@
       </div>
       <div class="callout hidden" id="tour">
         <div class="cx">👋</div>
-        <div class="ct"><h4>Welcome to Pocket</h4><p>Tap <b>+</b> to add income or an expense. Check <b>Insights</b> for charts &amp; budgets. Everything saves on this device automatically.</p></div>
+        <div class="ct"><h4>Hey — welcome! 🎉</h4><p>Hit <b>+</b> to drop in some income or a spend. Pop over to <b>Insights</b> for your charts &amp; budgets. It all saves on this device by itself.</p></div>
         <button class="cclose" id="tourClose" title="Dismiss">✕</button>
       </div>
 
@@ -289,13 +290,13 @@
         </div>
       </div>
 
-      <div class="sec"><h2>Income sources</h2></div>
+      <div class="sec"><h2>Money coming in</h2></div>
       <div class="sources">
         <button class="source" data-add="salary"><div class="ic salary">💼</div><div class="nm">Salary</div><div class="amt" id="salaryAmt">$0</div><div class="cnt" id="salaryCnt">0 entries</div></button>
         <button class="source" data-add="commission"><div class="ic commission">📈</div><div class="nm">Commission</div><div class="amt" id="commissionAmt">$0</div><div class="cnt" id="commissionCnt">0 entries</div></button>
       </div>
 
-      <div class="sec"><h2>Recent activity</h2><button class="link" id="seeAll">See all →</button></div>
+      <div class="sec"><h2>Lately</h2><button class="link" id="seeAll">See all →</button></div>
       <div class="list" id="recentList"></div>
     </div>
 
@@ -537,12 +538,12 @@
 
     const sorted=[...state.entries].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
     const recent=$("#recentList"); recent.innerHTML="";
-    if(!sorted.length) recent.appendChild(emptyBlock("No entries yet. Tap + to add one — or load sample data.", true));
+    if(!sorted.length) recent.appendChild(emptyBlock("Nothing here yet — tap + to add something, or try some sample data.", true));
     else sorted.slice(0,state.settings.recentCount).forEach((e,i)=>recent.appendChild(entryRow(e,false,i)));
 
     const list=$("#historyList"); list.innerHTML="";
     const filtered=filter==="all"?sorted:sorted.filter(e=>e.type===filter);
-    if(!filtered.length) list.appendChild(emptyBlock("Nothing here yet.", false));
+    if(!filtered.length) list.appendChild(emptyBlock("Nothing here yet 🌱", false));
     else filtered.forEach((e,i)=>list.appendChild(entryRow(e,true,i)));
 
     $("#setRecent").value=String(state.settings.recentCount);
@@ -855,7 +856,7 @@
   let mode="signin";
   function setMode(m){ mode=m; const signup=m==="signup";
     $("#authTitle").textContent=signup?"Create your account":"Welcome back";
-    $("#authLead").textContent=signup?"Start tracking in under a minute.":"Sign in to pick up where you left off.";
+    $("#authLead").textContent=signup?"Takes like a minute, promise.":"Good to see you again 👋";
     $("#authSubmit").textContent=signup?"Create account":"Sign in";
     $("#nameFld").classList.toggle("hidden",!signup);
     $("#authSwitch").innerHTML=signup?'Already have an account? <button id="switchBtn">Sign in</button>':'New here? <button id="switchBtn">Create an account</button>';
