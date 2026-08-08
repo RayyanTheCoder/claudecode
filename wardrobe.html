@@ -14,7 +14,10 @@
   Session 5: 6-theme system (swatch picker, persisted, status-bar match),
   shake-for-random, expanded haptics, tap a garment to see its outfits,
   similar outfits, wear animation, pull-to-refresh, hover/press states.
-  Note: theming + interactions are presentation-only; engine untouched.
+  Session 6: guided step-by-step add flow (animated, persisted), quick +
+  detailed (advanced) forms, smart defaults from subcategory, bulk edit,
+  duplicate, delete-undo, camera capture, batch photo mode, constrained
+  shuffle. Adds a 'regular' fit value; engine rules otherwise unchanged.
 -->
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -438,6 +441,55 @@
 
   /* ---- search results ---- */
   .search-input { display: flex; align-items: center; gap: 8px; }
+
+  /* ===================== session 6: guided add + data-entry ===================== */
+  .wiz-progress { height: 4px; background: var(--bg-raise2); border-radius: 3px; overflow: hidden; margin-bottom: 14px; }
+  .wiz-progress > span { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width .3s cubic-bezier(.4,0,.2,1); }
+  .wiz-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; min-height: 34px; }
+  @keyframes slideInRight { from { transform: translateX(34px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes slideInLeft  { from { transform: translateX(-34px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .wiz-step.in-right { animation: slideInRight .25s cubic-bezier(.22,.61,.36,1) both; }
+  .wiz-step.in-left  { animation: slideInLeft  .25s cubic-bezier(.22,.61,.36,1) both; }
+  .wiz-q { font-size: 22px; font-weight: 700; letter-spacing: -.3px; margin-bottom: 4px; }
+  .wiz-sub { color: var(--muted); font-size: 13px; margin-bottom: 18px; min-height: 16px; }
+  .wiz-cards { display: flex; flex-direction: column; gap: 10px; }
+  .wiz-card { display: flex; align-items: center; gap: 14px; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-raise); cursor: pointer; text-align: left; width: 100%; color: var(--text); }
+  .wiz-card .ic { font-size: 26px; flex: none; }
+  .wiz-card .t { font-weight: 600; }
+  .wiz-card .d { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .wiz-opts { display: flex; flex-wrap: wrap; gap: 10px; }
+  .wiz-opt { padding: 14px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raise); cursor: pointer; font-size: 15px; font-weight: 500; color: var(--text); }
+  .wiz-opt.sel, .wiz-card.sel, .swatch-opt.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 10px; }
+  .swatch-opt { border: 1px solid var(--border); border-radius: 12px; padding: 10px; cursor: pointer; background: var(--bg-raise); text-align: center; font-size: 13px; color: var(--text); }
+  .swatch-opt .sw { width: 100%; height: 44px; border-radius: 8px; border: 1px solid rgba(128,128,128,.3); margin-bottom: 8px; }
+  .stagger > * { animation: fadeUp .3s ease both; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .picked { animation: pickPop .2s ease both !important; }
+  @keyframes pickPop { 0% { transform: scale(1); } 55% { transform: scale(1.06); } 100% { transform: scale(1); } }
+  .wiz-slider-val { text-align: center; margin: 4px 0 12px; }
+  input[type=range] { accent-color: var(--accent); }
+
+  .toast-wrap { position: fixed; left: 0; right: 0; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 70; display: flex; justify-content: center; pointer-events: none; padding: 0 12px; }
+  @media (min-width: 860px) { .toast-wrap { bottom: 24px; } }
+  .toast { pointer-events: auto; background: var(--bg-raise2); border: 1px solid var(--border-2); color: var(--text); border-radius: 12px; padding: 10px 12px; display: flex; align-items: center; gap: 12px; box-shadow: 0 12px 34px -12px var(--shadow); animation: fadeUp .2s ease both; max-width: 520px; width: 100%; }
+  .toast .msg { flex: 1; font-size: 13.5px; }
+
+  .selbar { position: sticky; top: 0; z-index: 15; background: var(--bar); backdrop-filter: blur(8px); border: 1px solid var(--accent); border-radius: 12px; padding: 8px 10px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .g-check { width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--border-2); flex: none; display: flex; align-items: center; justify-content: center; color: var(--accent-ink); font-size: 15px; }
+  .g-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .g-card.selected .g-check { background: var(--accent); border-color: var(--accent); }
+
+  .ctx { position: fixed; z-index: 65; background: var(--bg-raise); border: 1px solid var(--border-2); border-radius: 12px; box-shadow: 0 14px 40px -12px var(--shadow); overflow: hidden; min-width: 180px; animation: fadeUp .12s ease both; }
+  .ctx button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--text); padding: 12px 14px; cursor: pointer; font-size: 14px; }
+  .ctx button:hover { background: var(--bg-raise2); }
+  .ctx button.danger { color: var(--bad); }
+
+  .mi-chip { display: inline-flex; align-items: center; gap: 6px; background: color-mix(in srgb, var(--accent) 14%, var(--bg-raise)); border: 1px solid var(--accent); color: var(--text); border-radius: 999px; padding: 5px 6px 5px 10px; font-size: 12.5px; }
+  .mi-chip .x { cursor: pointer; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: var(--accent-ink); font-size: 12px; }
+
+  .batch-photo { width: 100%; aspect-ratio: 4/3; max-height: 300px; border-radius: 16px; background: var(--bg-raise2); border: 1px solid var(--border); overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 48px; color: var(--muted-2); }
+  .batch-photo img { width: 100%; height: 100%; object-fit: cover; }
 </style>
 
 <div class="app">
@@ -521,6 +573,25 @@ const occasionRules = {
   lazy:     items => Math.max(...items.map(i => i.formality)) <= 2 && items.some(i => i.fit === "relaxed"),
 };
 
+/*
+  Smart defaults — when a subcategory is picked in the guided add flow, the rest
+  of the fields pre-fill from here (still fully editable). Tune freely.
+*/
+const SUBCATEGORY_DEFAULTS = {
+  "tee":         { category: "base",   formality: 2, weight: "light",  season: "mild", fit: "slim" },
+  "long sleeve": { category: "base",   formality: 2, weight: "light",  season: "mild", fit: "slim" },
+  "hoodie":      { category: "mid",    formality: 2, weight: "medium", season: "mild", fit: "relaxed" },
+  "sweatshirt":  { category: "mid",    formality: 2, weight: "medium", season: "mild", fit: "relaxed" },
+  "quarter-zip": { category: "mid",    formality: 3, weight: "medium", season: "mild", fit: "slim" },
+  "crewneck":    { category: "mid",    formality: 3, weight: "medium", season: "mild", fit: "slim" },
+  "overshirt":   { category: "outer",  formality: 3, weight: "medium", season: "mild", fit: "relaxed" },
+  "jacket":      { category: "outer",  formality: 3, weight: "heavy",  season: "cold", fit: "relaxed" },
+  "jeans":       { category: "bottom", formality: 3, weight: "medium", season: "all",  fit: "relaxed" },
+  "sweatpants":  { category: "bottom", formality: 1, weight: "medium", season: "mild", fit: "relaxed" },
+  "chinos":      { category: "bottom", formality: 4, weight: "medium", season: "all",  fit: "slim" },
+  "sneaker":     { category: "shoe",   formality: 2, weight: "medium", season: "all",  visualWeight: "standard" },
+};
+
 // Ordering & display maps
 const WEIGHT_VAL   = { light: 1, medium: 2, heavy: 3 };
 const TIER         = { base: 0, mid: 1, outer: 2 };           // layer stack order
@@ -531,11 +602,54 @@ const COLOR_FAMILIES = ["neutralDark", "neutralLight", "warmNeutral", "accent"];
 const FAMILY_LBL   = { neutralDark: "Neutral dark", neutralLight: "Neutral light", warmNeutral: "Warm neutral", accent: "Accent" };
 const FAMILY_HEX   = { neutralDark: "#2b2f36", neutralLight: "#d7d9dd", warmNeutral: "#8a7a63", accent: "#7c8dff" };
 const SEASONS      = ["hot", "mild", "cold", "all"];
-const FITS         = ["slim", "relaxed"];
+const FITS         = ["slim", "regular", "relaxed"];
 const WEIGHTS      = ["light", "medium", "heavy"];
 const VISUAL_WEIGHTS = ["lowProfile", "standard", "substantial"];
 const OCCASIONS    = ["campus", "goingOut", "gym", "lazy"];
 const OCCASION_LBL = { campus: "Campus", goingOut: "Going out", gym: "Gym", lazy: "Lazy" };
+
+// ---- guided add-flow option sets ----
+const WIZ_CAT = [
+  ["base",   "👕", "Base layer", "Worn against the skin — tees, henleys"],
+  ["mid",    "🧥", "Mid layer",  "Over the base — hoodies, knits, quarter-zips"],
+  ["outer",  "🧥", "Outer",      "Outermost — jackets, coats, overshirts"],
+  ["bottom", "👖", "Bottom",     "Legs — jeans, chinos, sweatpants, shorts"],
+  ["shoe",   "👟", "Shoe",       "Footwear — sneakers, boots, loafers"],
+];
+const WIZ_SUB = {
+  base:   ["tee", "long sleeve", "tank", "henley", "polo"],
+  mid:    ["hoodie", "sweatshirt", "quarter-zip", "crewneck", "cardigan"],
+  outer:  ["jacket", "overshirt", "coat", "gilet"],
+  bottom: ["jeans", "sweatpants", "chinos", "shorts", "trousers"],
+  shoe:   ["sneaker", "boot", "loafer", "sandal"],
+};
+const WIZ_COLORS = [
+  { name: "black",    family: "neutralDark",  hex: "#15171b" },
+  { name: "charcoal", family: "neutralDark",  hex: "#3a3f47" },
+  { name: "navy",     family: "neutralDark",  hex: "#233150" },
+  { name: "grey",     family: "neutralDark",  hex: "#8b9099" },
+  { name: "white",    family: "neutralLight", hex: "#f4f3ef" },
+  { name: "cream",    family: "neutralLight", hex: "#efe6d2" },
+  { name: "oatmeal",  family: "neutralLight", hex: "#d8cbb0" },
+  { name: "brown",    family: "warmNeutral",  hex: "#6b4f3a" },
+  { name: "olive",    family: "warmNeutral",  hex: "#6d6a33" },
+  { name: "burgundy", family: "accent",       hex: "#6e2233" },
+];
+const WIZ_FIT = [
+  ["slim",    "Slim",    "Close to the body.", "Tapered through arms and legs."],
+  ["regular", "Regular", "Straight, true to size.", "Neither tight nor loose."],
+  ["relaxed", "Relaxed", "Roomy and draped.", "Extra room through the body."],
+];
+const WIZ_FORM = ["Lounge", "Casual", "Everyday", "Smart casual", "Dressy"];
+const WIZ_FORM_EG = ["Sweatpants & a tee", "Tee & jeans", "Chinos & a knit", "Oxford shirt & trousers", "Blazer & dress shoes"];
+const WIZ_SEASON = [["hot", "Hot"], ["mild", "Mild"], ["cold", "Cold"], ["all", "All year"]];
+const WIZ_WEIGHT = [["light", "Light"], ["medium", "Medium"], ["heavy", "Heavy"]];
+const WIZ_VW = [
+  ["lowProfile",  "Low profile", "Sleek and flat — thin soles, minimal bulk."],
+  ["standard",    "Standard",    "Everyday proportions — most sneakers."],
+  ["substantial", "Substantial", "Chunky or heavy — thick soles, boots."],
+];
+const VW_LBL = { lowProfile: "Low profile", standard: "Standard", substantial: "Substantial" };
 
 const STORAGE_KEY = "wardrobe.v1";
 const MAX_EVAL = 300000;   // safety cap on combinations evaluated per run
@@ -1045,8 +1159,16 @@ let searchQuery = "";
 let focusGarment = null;         // garment id whose outfits are being viewed (item 3)
 let deckIndex = 0;               // position in the suggested-outfit swipe deck
 let animateUnlock = false;       // trigger the count pop once after an add
-let addMode = "quick";           // "quick" | "detailed" add form
+let addMode = "guided";          // "guided" | "quick" | "detailed" add form
 const THEME_KEY = "wardrobe.theme";
+
+// session 6 state
+let wizardState = loadWizard() || freshWizard();  // guided add-flow progress (persisted)
+let selectMode = false;          // wardrobe multi-select
+let selected = new Set();         // selected garment ids
+let mustInclude = new Set();      // constrained-shuffle garment ids
+let batchPhoto = null;            // { ids:[], index } when in batch photo mode
+let deleteHistory = [];           // last few deletes for undo (in-memory)
 
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -1194,6 +1316,67 @@ function maybeAnimateUnlock() {
   animateUnlock = false;
 }
 
+/* ---- toast (undo + confirmations, item 4) ---- */
+let toastTimer = null;
+function showToast(msg, actionLabel, actionFn, ms) {
+  clearToast();
+  const wrap = document.createElement("div");
+  wrap.className = "toast-wrap"; wrap.id = "toast";
+  wrap.innerHTML = `<div class="toast"><span class="msg">${esc(msg)}</span>${actionLabel ? `<button class="btn sm" id="toast-action">${esc(actionLabel)}</button>` : ""}</div>`;
+  document.body.appendChild(wrap);
+  if (actionLabel && actionFn) document.getElementById("toast-action").onclick = () => { clearToast(); actionFn(); };
+  toastTimer = setTimeout(clearToast, ms || 3000);
+}
+function clearToast() { if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; } const t = document.getElementById("toast"); if (t) t.remove(); }
+
+/* ---- delete with undo — restores garment(s) + any outfits that referenced them ---- */
+function captureDeletes(ids) {
+  return {
+    garments: ids.map(getGarment).filter(Boolean).map(g => ({ ...g })),
+    outfits: state.outfits.filter(o => o.garmentIds.some(id => ids.includes(id))).map(o => ({ ...o })),
+  };
+}
+function performDelete(ids) {
+  const snap = captureDeletes(ids);
+  ids.forEach(id => deleteGarment(id));   // deleteGarment also drops referencing saved outfits
+  deleteHistory.push(snap); if (deleteHistory.length > 5) deleteHistory.shift();
+  return snap;
+}
+function undoLastDelete() {
+  const snap = deleteHistory.pop(); if (!snap) return;
+  snap.garments.forEach(g => { if (!getGarment(g.id)) state.garments.push(g); });
+  snap.outfits.forEach(o => { if (!state.outfits.some(x => x.id === o.id)) state.outfits.push(o); });
+  saveToStorage(); rebuildRatingContext(); haptic(12); render();
+}
+window.deleteWithUndo = function (ids, label) {
+  performDelete(ids);
+  render();
+  showToast(label || `Deleted ${ids.length} garment${ids.length === 1 ? "" : "s"}`, "Undo", undoLastDelete, 8000);
+};
+
+/* ---- duplicate a garment → opens the copy in edit mode (item 2) ---- */
+window.duplicateGarment = function (id) {
+  const g = getGarment(id); if (!g) return;
+  const { id: _id, timesWorn, lastWorn, dateAdded, ...rest } = g;
+  const copy = addGarment({ ...rest, name: g.name + " copy" });
+  closeCtx(); haptic(12);
+  editingId = copy.id;
+  setTab("add");   // editing always renders the detailed form
+};
+
+/* ---- guided-add progress persistence (item: persist partial progress) ---- */
+function freshWizard() {
+  return { step: 0, dir: 1, showOtherSub: false, showOtherColor: false, data: {
+    category: null, subcategory: null, subcategoryCustom: "",
+    color: null, colorFamily: null, colorCustom: "", colorHex: "",
+    fit: null, formality: 3, season: null, weight: null, visualWeight: null,
+    name: "", imageData: null, cost: "",
+  } };
+}
+function loadWizard() { try { const r = localStorage.getItem("wardrobe.wizard.v1"); if (r) { const w = JSON.parse(r); if (w && w.data) return w; } } catch (e) {} return null; }
+function saveWizard() { try { localStorage.setItem("wardrobe.wizard.v1", JSON.stringify(wizardState)); } catch (e) {} }
+function clearWizard() { wizardState = freshWizard(); try { localStorage.removeItem("wardrobe.wizard.v1"); } catch (e) {} }
+
 function setTab(tab) {
   currentTab = tab;
   searching = false;
@@ -1210,6 +1393,7 @@ function render() {
     <button class="iconbtn" title="Theme" onclick="openThemePicker()">🎨</button>`;
   if (searching) { renderSearch(); window.scrollTo(0, 0); return; }
   if (focusGarment) { renderGarmentOutfits(focusGarment); window.scrollTo(0, 0); return; }
+  if (batchPhoto) { renderBatch(); window.scrollTo(0, 0); return; }
   if (currentTab === "wardrobe") renderWardrobe();
   else if (currentTab === "outfits") renderOutfits();
   else if (currentTab === "add") renderForm();
@@ -1235,10 +1419,26 @@ function renderWardrobe() {
     return;
   }
 
+  const missing = g.filter(x => !x.imageData).length;
+  const actions = selectMode ? "" : `
+    <div class="row wrap" style="gap:8px; margin-bottom:12px;">
+      <button class="btn sm" onclick="enterSelect()">☑ Select</button>
+      ${missing ? `<button class="btn sm" onclick="startBatchPhoto('wardrobe')">📷 Add photos (${missing})</button>` : ""}
+    </div>`;
+  const selbar = selectMode ? `
+    <div class="selbar">
+      <b>${selected.size} selected</b><span class="grow"></span>
+      <button class="btn sm" onclick="bulkAction('season')" ${selected.size ? "" : "disabled"}>Season</button>
+      <button class="btn sm" onclick="bulkAction('formality')" ${selected.size ? "" : "disabled"}>Formality</button>
+      <button class="btn sm" onclick="bulkAction('weight')" ${selected.size ? "" : "disabled"}>Weight</button>
+      <button class="btn sm" onclick="bulkAction('colorFamily')" ${selected.size ? "" : "disabled"}>Colour</button>
+      <button class="btn sm danger" onclick="bulkAction('delete')" ${selected.size ? "" : "disabled"}>Delete</button>
+      <button class="btn sm ghost" onclick="exitSelect()">Done</button>
+    </div>` : "";
+
   const cats = ["all", ...CATEGORIES];
   const seasons = ["all", ...SEASONS.filter(s => s !== "all")];
   const sorts = [["dateAdded", "Newest"], ["cost", "Cost"], ["timesWorn", "Most worn"], ["cpw", "Cost/wear"]];
-
   const toolbar = `
     <div class="stack" style="gap:9px; margin-bottom:14px;">
       <div class="chiprow scroll">${cats.map(c => fchip(c === "all" ? "All" : CATEGORY_LBL[c], filters.category === c, `setWFilter('category','${c}')`)).join("")}</div>
@@ -1259,9 +1459,10 @@ function renderWardrobe() {
   });
 
   const cards = list.map(garmentCard).join("");
-  view.innerHTML = toolbar + (list.length
+  view.innerHTML = actions + selbar + toolbar + (list.length
     ? `<div class="grid">${cards}</div>`
     : `<div class="empty muted">No garments match those filters.</div>`);
+  if (!selectMode) wireLongPress();
 }
 function fchip(label, on, onclick) {
   return `<button class="fchip ${on ? "on" : ""}" onclick="${onclick}">${esc(label)}</button>`;
@@ -1274,40 +1475,122 @@ function garmentCard(g) {
   const stale = daysSince(g.lastWorn);
   const staleBadge = (g.timesWorn && stale != null && stale >= STALE_DAYS)
     ? `<span class="badge warn" title="Not worn in ${stale} days">💤 ${stale}d</span>` : "";
-  const thumb = g.imageData
-    ? `<img src="${g.imageData}" alt="" />`
-    : `<span>${CATEGORY_ICO[g.category] || "👚"}</span>`;
-  return `
-    <div class="card g-card">
-      <div class="g-thumb">${thumb}</div>
-      <div class="g-meta">
-        <div class="g-name truncate">${esc(g.name)}</div>
-        <div class="row small muted" style="gap:7px; margin:2px 0 5px;">
-          ${colorDot(g.color)}
-          <span class="truncate">${esc(g.color || "—")}</span>
-          <span>·</span><span>${esc(g.subcategory || CATEGORY_LBL[g.category])}</span>
-        </div>
-        <div class="row wrap tiny muted" style="gap:6px;">
-          <span class="badge">${CATEGORY_LBL[g.category]}</span>
-          <span class="badge">F${g.formality}</span>
-          <span class="badge">${cap(g.season)}</span>
-          <span>${worn}</span>
-          ${perWear != null ? `<span>· ${money(perWear)}/wear</span>` : ""}
-          ${staleBadge}
-        </div>
+  const thumb = g.imageData ? `<img src="${g.imageData}" alt="" />` : `<span>${CATEGORY_ICO[g.category] || "👚"}</span>`;
+  const meta = `
+    <div class="g-meta">
+      <div class="g-name truncate">${esc(g.name)}</div>
+      <div class="row small muted" style="gap:7px; margin:2px 0 5px;">
+        ${colorDot(g.color)}
+        <span class="truncate">${esc(g.color || "—")}</span>
+        <span>·</span><span>${esc(g.subcategory || CATEGORY_LBL[g.category])}</span>
       </div>
-      <div class="g-actions">
-        <button class="btn sm" onclick="startEdit('${g.id}')">Edit</button>
-        <button class="btn sm danger" onclick="confirmDelete('${g.id}')">✕</button>
+      <div class="row wrap tiny muted" style="gap:6px;">
+        <span class="badge">${CATEGORY_LBL[g.category]}</span>
+        <span class="badge">F${g.formality}</span>
+        <span class="badge">${cap(g.season)}</span>
+        <span>${worn}</span>
+        ${perWear != null ? `<span>· ${money(perWear)}/wear</span>` : ""}
+        ${staleBadge}
       </div>
     </div>`;
+  if (selectMode) {
+    const on = selected.has(g.id);
+    return `<div class="card g-card ${on ? "selected" : ""}" data-id="${g.id}" style="cursor:pointer;" onclick="toggleSelect('${g.id}')">
+      <div class="g-check">${on ? "✓" : ""}</div><div class="g-thumb">${thumb}</div>${meta}</div>`;
+  }
+  return `<div class="card g-card" data-id="${g.id}">
+    <div class="g-thumb">${thumb}</div>${meta}
+    <div class="g-actions">
+      <button class="btn sm" onclick="startEdit('${g.id}')">Edit</button>
+      <button class="btn sm danger" onclick="confirmDelete('${g.id}')">✕</button>
+    </div></div>`;
 }
 
-window.confirmDelete = function (id) {
-  const g = getGarment(id);
-  if (g && confirm(`Delete “${g.name}”?`)) { haptic(30); deleteGarment(id); render(); }
-};
 window.startEdit = function (id) { editingId = id; setTab("add"); };
+window.confirmDelete = function (id) {
+  const g = getGarment(id); if (!g) return;
+  if (!confirm(`Delete “${g.name}”?`)) return;
+  const name = g.name, wasEditing = editingId === id;
+  performDelete([id]);
+  if (wasEditing) { editingId = null; currentTab = "wardrobe"; document.querySelectorAll("[data-nav]").forEach(el => el.classList.toggle("active", el.dataset.nav === "wardrobe")); }
+  render();
+  showToast(`Deleted “${name}”`, "Undo", undoLastDelete, 8000);
+};
+
+/* ---- multi-select (item 1) ---- */
+window.enterSelect = function () { selectMode = true; selected.clear(); haptic(8); render(); };
+window.exitSelect = function () { selectMode = false; selected.clear(); render(); };
+window.toggleSelect = function (id) { if (selected.has(id)) selected.delete(id); else selected.add(id); haptic(6); renderWardrobe(); };
+window.bulkAction = function (field) {
+  if (!selected.size) return;
+  if (field === "delete") {
+    const ids = [...selected];
+    if (!confirm(`Delete ${ids.length} garment${ids.length === 1 ? "" : "s"}?`)) return;
+    deleteWithUndo(ids, `Deleted ${ids.length} garment${ids.length === 1 ? "" : "s"}`);
+    exitSelect(); return;
+  }
+  openBulkPicker(field);
+};
+function bulkOptions(field) {
+  switch (field) {
+    case "season": return SEASONS.map(s => [s, cap(s)]);
+    case "formality": return [1,2,3,4,5].map(n => [n, `F${n} · ${WIZ_FORM[n-1]}`]);
+    case "weight": return WEIGHTS.map(w => [w, cap(w)]);
+    case "colorFamily": return COLOR_FAMILIES.map(f => [f, FAMILY_LBL[f]]);
+  }
+  return [];
+}
+window.openBulkPicker = function (field) {
+  const title = { season: "Set season", formality: "Set formality", weight: "Set weight", colorFamily: "Set colour family" }[field];
+  const el = document.createElement("div"); el.className = "overlay"; el.id = "bulk-overlay";
+  el.onclick = e => { if (e.target === el) el.remove(); };
+  el.innerHTML = `<div class="sheet">
+    <div class="row" style="justify-content:space-between;"><b>${title}</b><button class="btn sm ghost" onclick="document.getElementById('bulk-overlay').remove()">Cancel</button></div>
+    <div class="tiny muted" style="margin:4px 0 12px;">Applies to ${selected.size} selected garment${selected.size === 1 ? "" : "s"}.</div>
+    <div class="wiz-opts">${bulkOptions(field).map(([v, l]) => `<button class="wiz-opt" onclick="bulkApply('${field}','${v}')">${esc(l)}</button>`).join("")}</div>
+  </div>`;
+  document.body.appendChild(el);
+};
+window.bulkApply = function (field, value) {
+  const ids = [...selected];
+  const val = field === "formality" ? parseInt(value, 10) : value;
+  ids.forEach(id => updateGarment(id, { [field]: val }));
+  const o = document.getElementById("bulk-overlay"); if (o) o.remove();
+  haptic(14); exitSelect();
+  showToast(`Updated ${ids.length} garment${ids.length === 1 ? "" : "s"}`, null, null, 2600);
+};
+
+/* ---- long-press context menu (items 1 & 2) ---- */
+function wireLongPress() {
+  document.querySelectorAll("#view .g-card[data-id]").forEach(card => {
+    let timer = null, sx = 0, sy = 0;
+    card.addEventListener("pointerdown", e => {
+      if (selectMode) return;
+      sx = e.clientX; sy = e.clientY;
+      timer = setTimeout(() => { timer = null; haptic(18); openCtx(card.dataset.id, e.clientX, e.clientY); }, 500);
+    });
+    card.addEventListener("pointermove", e => { if (timer && Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) > 10) { clearTimeout(timer); timer = null; } });
+    const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    card.addEventListener("pointerup", cancel); card.addEventListener("pointercancel", cancel); card.addEventListener("pointerleave", cancel);
+  });
+}
+window.openCtx = function (id, x, y) {
+  closeCtx();
+  const el = document.createElement("div"); el.className = "ctx"; el.id = "ctx";
+  el.style.left = Math.min(x, window.innerWidth - 196) + "px";
+  el.style.top = Math.min(y, window.innerHeight - 190) + "px";
+  el.innerHTML = `
+    <button onclick="ctxSelect('${id}')">☑ Select multiple</button>
+    <button onclick="duplicateGarment('${id}')">⧉ Duplicate</button>
+    <button onclick="startEdit('${id}');closeCtx()">✎ Edit</button>
+    <button class="danger" onclick="ctxDelete('${id}')">🗑 Delete</button>`;
+  document.body.appendChild(el);
+  setTimeout(() => document.addEventListener("pointerdown", ctxOutside), 0);
+};
+function ctxOutside(e) { const c = document.getElementById("ctx"); if (c && !c.contains(e.target)) closeCtx(); }
+window.closeCtx = function () { const c = document.getElementById("ctx"); if (c) c.remove(); document.removeEventListener("pointerdown", ctxOutside); };
+window.ctxSelect = function (id) { closeCtx(); selectMode = true; selected.clear(); selected.add(id); render(); };
+window.ctxDelete = function (id) { closeCtx(); confirmDelete(id); };
 
 /* ---------- shared garment-attribute fields (Add form + Wishlist form) ---------- */
 function garmentAttrFieldsHTML(g) {
@@ -1374,17 +1657,24 @@ function wireGarmentForm(form) {
 }
 function readGarmentForm(form) { return Object.fromEntries(new FormData(form).entries()); }
 
-/* ---------- Add / Edit form ---------- */
+/* ---------- Add / Edit form — dispatch to Guided / Quick / Detailed ---------- */
 function renderForm() {
   const editing = editingId ? getGarment(editingId) : null;
   viewTitle.textContent = editing ? "Edit garment" : "Add garment";
   viewSub.textContent = editing ? esc(editing.name) : "New piece";
-
   const g = editing || {};
-  const modeSeg = editing ? "" : segmented([["quick", "Quick"], ["detailed", "Detailed"]], addMode, "setAddMode");
-  if (!editing && addMode === "quick") { renderQuickAdd(modeSeg); return; }
+  if (editing) { renderDetailedForm(g, editing, ""); return; }
+  const seg = segmented([["guided", "Guided"], ["quick", "Quick"]], addMode === "detailed" ? "" : addMode, "setAddMode");
+  if (addMode === "quick") { renderQuickAdd(seg); return; }
+  if (addMode === "detailed") { renderDetailedForm(g, null, seg + `<div class="tiny muted" style="margin-bottom:12px;">Advanced form — every field at once.</div>`); return; }
+  renderWizard(seg);
+}
+window.setAddMode = function (m) { addMode = m; haptic(8); renderForm(); };
+window.openAdvancedAdd = function () { addMode = "detailed"; setTab("add"); };
 
-  view.innerHTML = modeSeg + `
+/* ---------- Detailed form (editing + advanced add) ---------- */
+function renderDetailedForm(g, editing, prefix) {
+  view.innerHTML = prefix + `
     ${lastUnlock && !editing ? unlockBanner(lastUnlock) : ""}
     <form id="gform" class="stack card" style="padding:16px;">
       <div class="field">
@@ -1402,13 +1692,16 @@ function renderForm() {
 
       <div class="field">
         <label>Photo</label>
-        <div class="row wrap" style="gap:10px;">
+        <div class="row wrap" style="gap:10px; align-items:flex-start;">
           <div class="g-thumb" id="photo-preview" style="width:72px;height:72px;">
             ${g.imageData ? `<img src="${g.imageData}" alt="" />` : `<span>${CATEGORY_ICO[g.category] || "👚"}</span>`}
           </div>
           <div class="grow">
-            <input type="file" id="photo-input" accept="image/*" style="min-height:auto;padding:8px;" />
-            <div class="tiny muted" style="margin-top:4px;">Resized to 800px max, stored on-device.</div>
+            <div class="row wrap" style="gap:8px;">
+              <label class="btn sm" style="cursor:pointer;">📷 Take photo<input type="file" id="photo-cam" accept="image/*" capture="environment" hidden></label>
+              <label class="btn sm" style="cursor:pointer;">Choose file<input type="file" id="photo-input" accept="image/*" hidden></label>
+            </div>
+            <div class="tiny muted" style="margin-top:6px;">Resized to 800px max, stored on-device.</div>
           </div>
         </div>
       </div>
@@ -1418,59 +1711,284 @@ function renderForm() {
         <textarea name="notes" placeholder="Optional">${esc(g.notes || "")}</textarea>
       </div>
 
-      <div class="row" style="gap:10px; margin-top:4px;">
+      <div class="row wrap" style="gap:10px; margin-top:4px;">
         <button type="submit" class="btn primary grow">${editing ? "Save changes" : "Add garment"}</button>
+        ${editing ? `<button type="button" class="btn" onclick="duplicateGarment('${g.id}')">Duplicate</button>` : ""}
         ${editing ? `<button type="button" class="btn danger" onclick="confirmDelete('${g.id}')">Delete</button>` : ""}
       </div>
     </form>`;
 
   const form = document.getElementById("gform");
   let pendingImage = g.imageData || null;
-
   wireGarmentForm(form);
   form.category.addEventListener("change", e => {
     if (!pendingImage) { const pv = document.getElementById("photo-preview"); if (pv) pv.innerHTML = `<span>${CATEGORY_ICO[e.target.value] || "👚"}</span>`; }
   });
-
-  document.getElementById("photo-input").addEventListener("change", async e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    try {
-      pendingImage = await resizeImage(file, 800);
-      document.getElementById("photo-preview").innerHTML = `<img src="${pendingImage}" alt="" />`;
-    } catch (err) { alert("Could not read image: " + err.message); }
-  });
+  const onPhoto = async e => {
+    const file = e.target.files[0]; if (!file) return;
+    try { pendingImage = await resizeImage(file, 800); document.getElementById("photo-preview").innerHTML = `<img src="${pendingImage}" alt="" />`; }
+    catch (err) { alert("Could not read image: " + err.message); }
+  };
+  document.getElementById("photo-input").addEventListener("change", onPhoto);
+  document.getElementById("photo-cam").addEventListener("change", onPhoto);
 
   form.addEventListener("submit", e => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(form).entries());
-    // validate required
     const nameErr = document.getElementById("err-name");
     if (!data.name.trim()) { nameErr.hidden = false; form.name.classList.add("invalid"); form.name.focus(); return; }
     nameErr.hidden = true; form.name.classList.remove("invalid");
-
     data.imageData = pendingImage;
     data.rating = data.rating || null;
-
     if (editing) {
       updateGarment(editing.id, data);
-      editingId = null;
-      lastUnlock = null;
+      editingId = null; lastUnlock = null;
       setTab("wardrobe");
     } else {
-      // unlock counter: measure before adding, then add
       const draft = normalizeGarment(data);
       lastUnlock = calculateUnlock(getGarments(), draft);
-      animateUnlock = true;
-      addGarment(draft);
-      haptic(14);
-      form.reset();
-      render(); // re-render Add view with the unlock banner on top
+      animateUnlock = true; addGarment(draft); haptic(14);
+      form.reset(); render();
     }
   });
   maybeAnimateUnlock();
 }
-window.setAddMode = function (m) { addMode = m; renderForm(); };
+
+/* ---------- Guided add flow (item: step-by-step wizard) ---------- */
+function wizardSteps() {
+  const s = ["category", "subcategory", "color", "fit", "formality", "season", "weight"];
+  if (wizardState.data.category === "shoe") s.push("visualWeight");
+  s.push("name", "cost", "summary");
+  return s;
+}
+function renderWizard(seg) {
+  const steps = wizardSteps();
+  wizardState.step = Math.max(0, Math.min(wizardState.step, steps.length - 1));
+  const idx = wizardState.step, id = steps[idx], total = steps.length;
+  const pct = total > 1 ? (idx / (total - 1)) * 100 : 0;
+  const optional = id === "cost";
+  const head = `<div class="wiz-head">
+    <button class="btn sm ghost" style="${idx === 0 ? "visibility:hidden" : ""}" onclick="wizBack()">← Back</button>
+    <span class="tiny muted">Step ${idx + 1} of ${total}</span>
+    ${optional ? `<button class="btn sm ghost" onclick="wizSkip()">Skip</button>` : `<span style="width:52px"></span>`}
+  </div>`;
+  view.innerHTML = seg + (lastUnlock ? unlockBanner(lastUnlock) : "") +
+    `<div class="wiz-progress"><span style="width:${pct}%"></span></div>` + head +
+    `<div class="wiz-step ${wizardState.dir >= 0 ? "in-right" : "in-left"}">${stepContent(id)}</div>`;
+  wireStep(id);
+  maybeAnimateUnlock();
+}
+function applySubcategoryDefaults(sub) {
+  const dflt = SUBCATEGORY_DEFAULTS[sub]; if (!dflt) return;
+  const d = wizardState.data;
+  if (dflt.formality != null) d.formality = dflt.formality;
+  if (dflt.weight) d.weight = dflt.weight;
+  if (dflt.season) d.season = dflt.season;
+  if (dflt.fit) d.fit = dflt.fit;
+  if (dflt.visualWeight) d.visualWeight = dflt.visualWeight;
+}
+function wizSuggestName() {
+  const d = wizardState.data;
+  const col = d.color === "custom" ? d.colorCustom : d.color;
+  const sub = d.subcategory === "__custom__" ? d.subcategoryCustom : d.subcategory;
+  const fit = d.fit && d.fit !== "regular" ? d.fit : "";
+  return [col, fit, sub].filter(Boolean).join(" ").trim();
+}
+function stepContent(id) {
+  const d = wizardState.data;
+  switch (id) {
+    case "category": return `
+      <div class="wiz-q">What kind of piece is it?</div>
+      <div class="wiz-sub">Pick the layer it belongs to.</div>
+      <div class="wiz-cards stagger">
+        ${WIZ_CAT.map(([v, ic, t, desc], i) => `<button class="wiz-card ${d.category === v ? "sel" : ""}" style="animation-delay:${i * 30}ms" onclick="wizPick('category','${v}',this)">
+          <span class="ic">${ic}</span><span class="grow"><span class="t">${t}</span><div class="d">${desc}</div></span></button>`).join("")}
+      </div>`;
+    case "subcategory": {
+      const subs = WIZ_SUB[d.category] || [];
+      if (wizardState.showOtherSub) return `
+        <div class="wiz-q">What type of ${CATEGORY_LBL[d.category].toLowerCase()}?</div>
+        <div class="wiz-sub">Type it in.</div>
+        <input id="wiz-othersub" type="text" placeholder="e.g. rugby shirt" value="${esc(d.subcategoryCustom || "")}">
+        <button class="btn primary" style="margin-top:14px; width:100%;" onclick="wizConfirmOtherSub()">Continue</button>`;
+      return `
+        <div class="wiz-q">What type of ${CATEGORY_LBL[d.category].toLowerCase()}?</div>
+        <div class="wiz-sub">Or choose Other.</div>
+        <div class="wiz-opts stagger">
+          ${subs.map((s, i) => `<button class="wiz-opt ${d.subcategory === s ? "sel" : ""}" style="animation-delay:${i * 30}ms" onclick="wizPick('subcategory','${s}',this)">${cap(s)}</button>`).join("")}
+          <button class="wiz-opt" style="animation-delay:${subs.length * 30}ms" onclick="wizShowOtherSub()">Other…</button>
+        </div>`;
+    }
+    case "color": {
+      if (wizardState.showOtherColor) return `
+        <div class="wiz-q">Custom colour</div>
+        <div class="wiz-sub">Name it, then pick its family.</div>
+        <input id="wiz-colorname" type="text" placeholder="e.g. rust" value="${esc(d.colorCustom || "")}">
+        <div class="wiz-opts stagger" style="margin-top:12px;">
+          ${COLOR_FAMILIES.map((f, i) => `<button class="wiz-opt ${d.colorFamily === f ? "sel" : ""}" style="animation-delay:${i * 30}ms" onclick="wizPickCustomFamily('${f}',this)">${FAMILY_LBL[f]}</button>`).join("")}
+        </div>
+        <button class="btn primary" style="margin-top:14px; width:100%;" onclick="wizConfirmCustomColor()">Continue</button>`;
+      return `
+        <div class="wiz-q">What's its main colour?</div>
+        <div class="wiz-sub">We'll sort the colour family for you.</div>
+        <div class="swatch-grid stagger">
+          ${WIZ_COLORS.map((c, i) => `<button class="swatch-opt ${d.color === c.name ? "sel" : ""}" style="animation-delay:${i * 24}ms" onclick="wizPickColor('${c.name}',this)"><div class="sw" style="background:${c.hex}"></div>${cap(c.name)}</button>`).join("")}
+          <button class="swatch-opt" style="animation-delay:${WIZ_COLORS.length * 24}ms" onclick="wizShowOtherColor()"><div class="sw" style="background:conic-gradient(from 0deg,#e66,#ec6,#6d6,#6dd,#66e,#d6d,#e66)"></div>Custom</button>
+        </div>`;
+    }
+    case "fit": return `
+      <div class="wiz-q">How does it fit?</div><div class="wiz-sub"></div>
+      <div class="wiz-cards stagger">
+        ${WIZ_FIT.map(([v, t, l1, l2], i) => `<button class="wiz-card ${d.fit === v ? "sel" : ""}" style="animation-delay:${i * 30}ms" onclick="wizPick('fit','${v}',this)"><span class="grow"><span class="t">${t}</span><div class="d">${l1} ${l2}</div></span></button>`).join("")}
+      </div>`;
+    case "formality": { const i = (d.formality || 3) - 1; return `
+      <div class="wiz-q">How dressy is it?</div><div class="wiz-sub">Slide to match.</div>
+      <div class="card" style="padding:16px;">
+        <div class="wiz-slider-val"><b id="wiz-form-lbl" style="font-size:18px;">${WIZ_FORM[i]}</b><div class="tiny muted" id="wiz-form-eg" style="margin-top:4px;">${WIZ_FORM_EG[i]}</div></div>
+        <input id="wiz-form" type="range" min="1" max="5" step="1" value="${d.formality || 3}" oninput="wizFormality(this.value)" style="width:100%;">
+        <div class="row" style="justify-content:space-between; margin-top:6px;">${WIZ_FORM.map(l => `<span class="tiny muted">${l.split(" ")[0]}</span>`).join("")}</div>
+      </div>
+      <button class="btn primary" style="margin-top:16px; width:100%;" onclick="wizNext()">Continue</button>`; }
+    case "season": return `
+      <div class="wiz-q">When do you wear it?</div><div class="wiz-sub"></div>
+      <div class="wiz-opts stagger">${WIZ_SEASON.map(([v, t], i) => `<button class="wiz-opt ${d.season === v ? "sel" : ""}" style="animation-delay:${i * 30}ms" onclick="wizPick('season','${v}',this)">${t}</button>`).join("")}</div>`;
+    case "weight": return `
+      <div class="wiz-q">How heavy is the fabric?</div><div class="wiz-sub">Helps the engine layer correctly.</div>
+      <div class="wiz-opts stagger">${WIZ_WEIGHT.map(([v, t], i) => `<button class="wiz-opt ${d.weight === v ? "sel" : ""}" style="animation-delay:${i * 30}ms" onclick="wizPick('weight','${v}',this)">${t}</button>`).join("")}</div>`;
+    case "visualWeight": return `
+      <div class="wiz-q">How substantial is the shoe?</div><div class="wiz-sub"></div>
+      <div class="wiz-cards stagger">${WIZ_VW.map(([v, t, desc], i) => `<button class="wiz-card ${d.visualWeight === v ? "sel" : ""}" style="animation-delay:${i * 30}ms" onclick="wizPick('visualWeight','${v}',this)"><span class="grow"><span class="t">${t}</span><div class="d">${desc}</div></span></button>`).join("")}</div>`;
+    case "name": { const suggested = wizSuggestName(); return `
+      <div class="wiz-q">Name it</div><div class="wiz-sub">Suggested from your answers — edit freely. Photo optional.</div>
+      <div class="batch-photo" id="wiz-photo" style="max-height:220px; margin-bottom:12px;">${d.imageData ? `<img src="${d.imageData}">` : "📷"}</div>
+      <div class="row wrap" style="gap:8px; margin-bottom:14px;">
+        <label class="btn sm" style="cursor:pointer;">📷 Take photo<input type="file" id="wiz-cam" accept="image/*" capture="environment" hidden></label>
+        <label class="btn sm" style="cursor:pointer;">Choose file<input type="file" id="wiz-file" accept="image/*" hidden></label>
+      </div>
+      <input id="wiz-name" type="text" value="${esc(d.name || suggested)}" oninput="wizName(this.value)" placeholder="${esc(suggested || "name")}">
+      <button class="btn primary" style="margin-top:16px; width:100%;" onclick="wizNext()">Continue</button>`; }
+    case "cost": return `
+      <div class="wiz-q">What did it cost?</div><div class="wiz-sub">Optional — powers cost-per-wear later.</div>
+      <input id="wiz-cost" type="number" min="0" step="1" value="${d.cost || ""}" oninput="wizCost(this.value)" placeholder="0">
+      <button class="btn primary" style="margin-top:16px; width:100%;" onclick="wizNext()">Continue</button>`;
+    case "summary": return wizSummary();
+  }
+  return "";
+}
+function wizSummary() {
+  const d = wizardState.data;
+  const col = d.color === "custom" ? d.colorCustom : d.color;
+  const sub = d.subcategory === "__custom__" ? d.subcategoryCustom : d.subcategory;
+  const chips = [
+    ["category", CATEGORY_LBL[d.category] || "—"],
+    ["subcategory", sub ? cap(sub) : "—"],
+    ["color", col ? cap(col) : "—"],
+    ["fit", d.fit ? cap(d.fit) : "—"],
+    ["formality", "F" + (d.formality || 3) + " · " + WIZ_FORM[(d.formality || 3) - 1]],
+    ["season", d.season ? cap(d.season) : "—"],
+    ["weight", d.weight ? cap(d.weight) : "—"],
+  ];
+  if (d.category === "shoe") chips.push(["visualWeight", d.visualWeight ? VW_LBL[d.visualWeight] : "—"]);
+  chips.push(["name", d.name || wizSuggestName() || "—"]);
+  chips.push(["cost", d.cost ? money(d.cost) : "No cost"]);
+  return `
+    <div class="wiz-q">Looks good?</div><div class="wiz-sub">Tap anything to change it.</div>
+    <div class="row wrap stagger" style="gap:8px;">
+      ${chips.map(([sid, label], i) => `<button class="chip btn-chip" style="animation-delay:${i * 40}ms" onclick="wizGoto('${sid}')">${esc(label)}</button>`).join("")}
+    </div>
+    <button class="btn primary" style="margin-top:20px; width:100%; min-height:52px;" onclick="wizConfirm()">Add to wardrobe</button>`;
+}
+function wireStep(id) {
+  if (id === "name") {
+    ["wiz-file", "wiz-cam"].forEach(fid => {
+      const f = document.getElementById(fid);
+      if (f) f.addEventListener("change", async e => {
+        const file = e.target.files[0]; if (!file) return;
+        try { wizardState.data.imageData = await resizeImage(file, 800); saveWizard(); const p = document.getElementById("wiz-photo"); if (p) p.innerHTML = `<img src="${wizardState.data.imageData}">`; }
+        catch (err) { alert("Could not read image: " + err.message); }
+      });
+    });
+  }
+  if (wizardState.showOtherSub) { const el = document.getElementById("wiz-othersub"); if (el) el.focus(); }
+  if (wizardState.showOtherColor) { const el = document.getElementById("wiz-colorname"); if (el) el.focus(); }
+}
+window.wizGo = function (dir) {
+  lastUnlock = null;
+  wizardState.dir = dir;
+  wizardState.step += dir;
+  wizardState.showOtherSub = false; wizardState.showOtherColor = false;
+  saveWizard(); renderForm();
+};
+window.wizNext = function () { wizGo(1); };
+window.wizBack = function () { haptic(8); wizGo(-1); };
+window.wizSkip = function () { wizGo(1); };
+window.wizGoto = function (sid) {
+  const steps = wizardSteps(); const i = steps.indexOf(sid); if (i < 0) return;
+  lastUnlock = null;
+  wizardState.dir = i >= wizardState.step ? 1 : -1;
+  wizardState.step = i; wizardState.showOtherSub = false; wizardState.showOtherColor = false;
+  saveWizard(); renderForm();
+};
+window.wizPick = function (field, value, el) {
+  wizardState.data[field] = value;
+  if (field === "subcategory") applySubcategoryDefaults(value);
+  haptic(12); if (el) el.classList.add("picked", "sel");
+  wizardState.showOtherSub = false; wizardState.showOtherColor = false;
+  saveWizard();
+  setTimeout(() => wizGo(1), 175);
+};
+window.wizPickColor = function (name, el) {
+  const c = WIZ_COLORS.find(x => x.name === name);
+  wizardState.data.color = name; wizardState.data.colorFamily = c.family; wizardState.data.colorHex = c.hex;
+  haptic(12); if (el) el.classList.add("picked");
+  wizardState.showOtherColor = false; saveWizard();
+  setTimeout(() => wizGo(1), 175);
+};
+window.wizShowOtherSub = function () { wizardState.showOtherSub = true; haptic(8); saveWizard(); renderForm(); };
+window.wizConfirmOtherSub = function () {
+  const v = (document.getElementById("wiz-othersub").value || "").trim(); if (!v) return;
+  wizardState.data.subcategory = "__custom__"; wizardState.data.subcategoryCustom = v;
+  wizardState.showOtherSub = false; haptic(12); saveWizard(); wizGo(1);
+};
+window.wizShowOtherColor = function () { wizardState.showOtherColor = true; haptic(8); saveWizard(); renderForm(); };
+window.wizPickCustomFamily = function (f, el) {
+  wizardState.data.colorFamily = f;
+  document.querySelectorAll("#view .wiz-opt.sel").forEach(x => x.classList.remove("sel"));
+  if (el) el.classList.add("sel"); haptic(8); saveWizard();
+};
+window.wizConfirmCustomColor = function () {
+  const v = (document.getElementById("wiz-colorname").value || "").trim(); if (!v) return;
+  if (!wizardState.data.colorFamily) wizardState.data.colorFamily = "warmNeutral";
+  wizardState.data.color = "custom"; wizardState.data.colorCustom = v; wizardState.data.colorHex = "";
+  wizardState.showOtherColor = false; haptic(12); saveWizard(); wizGo(1);
+};
+window.wizFormality = function (v) {
+  wizardState.data.formality = parseInt(v, 10);
+  const i = wizardState.data.formality - 1;
+  const l = document.getElementById("wiz-form-lbl"); if (l) l.textContent = WIZ_FORM[i];
+  const e = document.getElementById("wiz-form-eg"); if (e) e.textContent = WIZ_FORM_EG[i];
+  haptic(6); saveWizard();
+};
+window.wizName = function (v) { wizardState.data.name = v; saveWizard(); };
+window.wizCost = function (v) { wizardState.data.cost = v; saveWizard(); };
+window.wizConfirm = function () {
+  const d = wizardState.data;
+  const color = d.color === "custom" ? d.colorCustom : d.color;
+  const sub = d.subcategory === "__custom__" ? d.subcategoryCustom : d.subcategory;
+  const spec = {
+    name: (d.name || wizSuggestName() || "Untitled").trim(),
+    category: d.category, subcategory: sub || "", color: color || "",
+    colorFamily: d.colorFamily || "neutralDark", formality: d.formality || 3,
+    season: d.season || "all", fit: d.fit || "slim", weight: d.weight || "medium",
+    visualWeight: d.category === "shoe" ? (d.visualWeight || "standard") : null,
+    cost: d.cost || 0, imageData: d.imageData || null,
+  };
+  const draft = normalizeGarment(spec);
+  lastUnlock = calculateUnlock(getGarments(), draft);
+  animateUnlock = true; addGarment(draft); haptic(20);
+  clearWizard();
+  renderForm();
+};
 
 /* ----- Quick add: photo + name + category, everything else defaulted (item 3) ----- */
 function renderQuickAdd(seg) {
@@ -1581,6 +2099,8 @@ function renderSuggested(garments, seg) {
   const weatherOn = weatherFilter && weather.status === "ok";
   let pool = weatherOn ? outfits.filter(o => outfitSuitsSeason(o.items, weather.season)) : outfits;
   if (occasionFilter !== "all") pool = pool.filter(o => { try { return occasionRules[occasionFilter](o.items); } catch (e) { return false; } });
+  // constrained shuffle — only outfits containing every "must include" garment (item 7)
+  if (mustInclude.size) pool = pool.filter(o => [...mustInclude].every(id => o.garmentIds.includes(id)));
 
   // today's pick leads the deck (weighted away from recently-worn)
   if (!ootd || !pool.some(o => o.garmentIds.join() === ootd.garmentIds.join())) ootd = pickOOTD(pool, "");
@@ -1592,10 +2112,12 @@ function renderSuggested(garments, seg) {
 
   const occChips = `<div class="chiprow scroll" style="margin-bottom:14px;">
     ${["all", ...OCCASIONS].map(o => fchip(o === "all" ? "All" : OCCASION_LBL[o], occasionFilter === o, `setOccasion('${o}')`)).join("")}</div>`;
-  const controls = weatherBar() + occChips;
+  const controls = weatherBar() + occChips + mustIncludeBar();
 
   if (!deck.length) {
-    const msg = weatherOn ? `No outfits suit ${weather.tempC}°C right now — clear the weather filter to see more.`
+    const names = [...mustInclude].map(id => getGarment(id)).filter(Boolean).map(g => g.name).join(" + ");
+    const msg = mustInclude.size ? `No valid outfits include ${esc(names)}. Remove a constraint to see more.`
+      : weatherOn ? `No outfits suit ${weather.tempC}°C right now — clear the weather filter to see more.`
       : `No ${occasionFilter === "all" ? "" : OCCASION_LBL[occasionFilter] + " "}outfits from your current wardrobe.`;
     view.innerHTML = seg + controls + `<div class="empty muted">${msg}</div>`;
     return;
@@ -1618,6 +2140,31 @@ function renderSuggested(garments, seg) {
   }
 }
 window.setOccasion = function (o) { occasionFilter = o; deckIndex = 0; renderOutfits(); };
+
+/* ---- constrained shuffle: must-include garments (item 7) ---- */
+function mustIncludeBar() {
+  const chips = [...mustInclude].map(id => { const g = getGarment(id); return g ? `<span class="mi-chip">${esc(g.name)}<span class="x" onclick="removeMustInclude('${id}')">×</span></span>` : ""; }).join("");
+  return `<div class="row wrap" style="gap:7px; margin-bottom:14px; align-items:center;">
+    ${chips}
+    <button class="btn sm" onclick="openMustIncludePicker()">＋ Must include</button>
+    ${mustInclude.size ? `<button class="btn sm ghost" onclick="clearMustInclude()">Clear all</button>` : ""}
+  </div>`;
+}
+window.openMustIncludePicker = function () {
+  const g = getGarments();
+  const el = document.createElement("div"); el.className = "overlay"; el.id = "mi-overlay";
+  el.onclick = e => { if (e.target === el) closeMi(); };
+  el.innerHTML = `<div class="sheet" style="max-height:80vh; overflow:auto;">
+    <div class="row" style="justify-content:space-between;"><b>Must include</b><button class="btn sm ghost" onclick="closeMi()">Done</button></div>
+    <div class="tiny muted" style="margin:4px 0 12px;">Only outfits containing every chosen piece are suggested.</div>
+    <div class="wiz-opts">${g.map(x => `<button class="wiz-opt ${mustInclude.has(x.id) ? "sel" : ""}" onclick="toggleMustInclude('${x.id}',this)">${esc(x.name)}</button>`).join("")}</div>
+  </div>`;
+  document.body.appendChild(el);
+};
+window.closeMi = function () { const o = document.getElementById("mi-overlay"); if (o) o.remove(); deckIndex = 0; ootd = null; renderOutfits(); };
+window.toggleMustInclude = function (id, el) { if (mustInclude.has(id)) mustInclude.delete(id); else mustInclude.add(id); if (el) el.classList.toggle("sel"); haptic(8); };
+window.removeMustInclude = function (id) { mustInclude.delete(id); deckIndex = 0; ootd = null; renderOutfits(); };
+window.clearMustInclude = function () { mustInclude.clear(); deckIndex = 0; ootd = null; renderOutfits(); };
 
 /* deck of suggested outfits */
 let deckCache = [];
@@ -1697,6 +2244,52 @@ function renderGarmentOutfits(id) {
 }
 window.showGarmentOutfits = function (id) { focusGarment = id; haptic(10); render(); };
 window.closeGarmentFocus = function () { focusGarment = null; render(); };
+
+/* ---- batch photo mode (item 6) ---- */
+window.startBatchPhoto = function (source) {
+  const ids = getGarments().filter(g => !g.imageData).map(g => g.id);
+  if (!ids.length) { showToast("Every garment already has a photo", null, null, 2500); return; }
+  batchPhoto = { ids, index: 0, source: source || "wardrobe" };
+  render();
+};
+window.exitBatch = function () { const src = batchPhoto ? batchPhoto.source : "wardrobe"; batchPhoto = null; setTab(src === "stats" ? "stats" : "wardrobe"); };
+window.batchSkip = function () { batchPhoto.index++; haptic(6); renderBatch(); };
+function renderBatch() {
+  viewTitle.textContent = "Add photos"; viewSub.textContent = "";
+  const total = batchPhoto.ids.length;
+  if (batchPhoto.index >= total) {
+    view.innerHTML = `<div class="empty"><div class="ico">✓</div>
+      <h2 style="color:var(--text); margin:10px 0 4px;">All done</h2>
+      <p style="margin-bottom:18px;">Photos captured — nicely done.</p>
+      <button class="btn primary" onclick="exitBatch()">Back to wardrobe</button></div>`;
+    return;
+  }
+  const g = getGarment(batchPhoto.ids[batchPhoto.index]);
+  if (!g) { batchPhoto.index++; return renderBatch(); }
+  const pct = (batchPhoto.index / total) * 100;
+  view.innerHTML = `
+    <div class="row" style="justify-content:space-between; margin-bottom:12px;">
+      <button class="btn sm ghost" onclick="exitBatch()">✕ Exit</button>
+      <span class="tiny muted">${batchPhoto.index + 1} of ${total}</span>
+    </div>
+    <div class="wiz-progress"><span style="width:${pct}%"></span></div>
+    <div class="wiz-q" style="margin-top:8px;">${esc(g.name)}</div>
+    <div class="wiz-sub">${CATEGORY_LBL[g.category]}${g.color ? " · " + esc(g.color) : ""}${g.subcategory ? " · " + esc(g.subcategory) : ""}</div>
+    <div class="batch-photo" id="batch-preview">${CATEGORY_ICO[g.category] || "📷"}</div>
+    <div class="row wrap" style="gap:10px; margin-top:14px;">
+      <label class="btn primary grow" style="cursor:pointer;">📷 Take photo<input type="file" id="batch-cam" accept="image/*" capture="environment" hidden></label>
+      <label class="btn grow" style="cursor:pointer;">Choose file<input type="file" id="batch-file" accept="image/*" hidden></label>
+      <button class="btn ghost" onclick="batchSkip()">Skip</button>
+    </div>`;
+  ["batch-cam", "batch-file"].forEach(fid => {
+    const f = document.getElementById(fid);
+    if (f) f.addEventListener("change", async e => {
+      const file = e.target.files[0]; if (!file) return;
+      try { const img = await resizeImage(file, 800); updateGarment(g.id, { imageData: img }); haptic(14); batchPhoto.index++; renderBatch(); }
+      catch (err) { alert("Could not read image: " + err.message); }
+    });
+  });
+}
 
 /* ----- shake for a random outfit (item 1) ----- */
 let shakeReady = false, lastShake = 0, lastAccel = null;
@@ -2307,6 +2900,13 @@ function renderStats() {
             <div class="theme-prev" style="height:38px;"><span style="background:${t.bg}"></span><span style="background:${t.surface}"></span><span class="a" style="background:${t.accent}"></span></div>
             <div style="font-size:12px; font-weight:600;">${t.name}</div>
           </button>`).join("")}
+        </div>
+      </div>
+      <div class="card" style="padding:14px;">
+        <div class="sectitle" style="margin-bottom:8px;">Tools</div>
+        <div class="row wrap" style="gap:8px;">
+          <button class="btn sm" onclick="startBatchPhoto('stats')">📷 Add photos${neverWorn.length || g.some(x => !x.imageData) ? ` (${g.filter(x => !x.imageData).length})` : ""}</button>
+          <button class="btn sm" onclick="openAdvancedAdd()">Advanced add form</button>
         </div>
       </div>
       <div class="card" style="padding:14px;">
