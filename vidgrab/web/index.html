@@ -7,71 +7,150 @@
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #0f1115;
-    --panel: #171a21;
-    --border: #2a2f3a;
-    --text: #e8eaed;
-    --muted: #9aa3af;
-    --accent: #6c8cff;
+    --bg: #0b0d12;
+    --bg-glow-1: #2a3a8f;
+    --bg-glow-2: #7c3aed;
+    --panel: #14171f;
+    --panel-2: #191d27;
+    --border: #262b38;
+    --border-soft: #1d212c;
+    --text: #eef0f4;
+    --muted: #9aa3b5;
+    --accent: #7c9cff;
+    --accent-2: #a78bfa;
     --accent-text: #0b0d12;
-    --error: #ff6b6b;
-    --ok: #52c97a;
+    --error: #ff7a7a;
+    --error-bg: rgba(255, 107, 107, 0.12);
+    --ok: #4ade80;
+    --ok-bg: rgba(74, 222, 128, 0.12);
+    --shadow: 0 20px 60px -20px rgba(0, 0, 0, 0.6);
+    --radius-lg: 20px;
+    --radius-md: 12px;
+    --radius-sm: 8px;
   }
   @media (prefers-color-scheme: light) {
     :root {
-      --bg: #f5f6f8;
+      --bg: #eef1f8;
+      --bg-glow-1: #c7d2fe;
+      --bg-glow-2: #ddd6fe;
       --panel: #ffffff;
-      --border: #dfe3e8;
-      --text: #16181d;
-      --muted: #5d6673;
-      --accent: #3358e0;
+      --panel-2: #f7f8fc;
+      --border: #e2e5f0;
+      --border-soft: #edeff6;
+      --text: #14161f;
+      --muted: #656b7d;
+      --accent: #4f6bff;
+      --accent-2: #8b5cf6;
       --accent-text: #ffffff;
+      --error: #dc2626;
+      --error-bg: rgba(220, 38, 38, 0.08);
+      --ok: #16a34a;
+      --ok-bg: rgba(22, 163, 74, 0.08);
+      --shadow: 0 20px 60px -24px rgba(30, 40, 90, 0.25);
     }
   }
   * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0;
     min-height: 100vh;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
-    background: var(--bg);
+    background:
+      radial-gradient(900px 500px at 15% -10%, color-mix(in srgb, var(--bg-glow-1) 32%, transparent), transparent),
+      radial-gradient(700px 500px at 110% 10%, color-mix(in srgb, var(--bg-glow-2) 26%, transparent), transparent),
+      var(--bg);
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    padding: 24px;
+    -webkit-font-smoothing: antialiased;
+    padding: clamp(16px, 5vw, 56px) 16px;
+  }
+  .shell {
+    width: 100%;
+    max-width: 560px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: max-width 0.35s ease;
+  }
+  .shell.wide { max-width: 960px; }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--accent) 60%, transparent);
+    flex-shrink: 0;
+  }
+  .brand-mark svg { width: 18px; height: 18px; }
+  .brand-name {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
   }
   .card {
     width: 100%;
-    max-width: 560px;
-    background: var(--panel);
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
     border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 28px;
+    border-radius: var(--radius-lg);
+    padding: clamp(20px, 4vw, 32px);
+    box-shadow: var(--shadow);
   }
-  .card.wide { max-width: 900px; }
   h1 {
-    font-size: 22px;
-    margin: 0 0 4px;
+    font-size: clamp(20px, 3vw, 24px);
+    margin: 0 0 6px;
+    letter-spacing: -0.01em;
   }
   .subtitle {
     color: var(--muted);
-    font-size: 13px;
-    margin: 0 0 24px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    margin: 0 0 26px;
   }
   label {
     display: block;
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 600;
-    margin: 18px 0 6px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 20px 0 8px;
   }
+  label:first-of-type { margin-top: 0; }
   input[type="text"], select {
     width: 100%;
-    padding: 11px 12px;
-    border-radius: 10px;
+    padding: 13px 14px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
-    background: transparent;
+    background: var(--bg);
     color: var(--text);
-    font-size: 14px;
+    font-size: 14.5px;
+    font-family: inherit;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  input[type="text"]::placeholder { color: var(--muted); }
+  input[type="text"]:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%239aa3b5' stroke-width='1.6'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 18px;
+    padding-right: 38px;
   }
   .modes {
     display: grid;
@@ -79,103 +158,169 @@
     gap: 8px;
   }
   .mode-btn {
-    padding: 10px 8px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--text);
-    font-size: 12.5px;
-    cursor: pointer;
-    text-align: center;
-  }
-  .mode-btn.active {
-    border-color: var(--accent);
-    background: var(--accent);
-    color: var(--accent-text);
-  }
-  .row {
     display: flex;
-    gap: 12px;
-  }
-  .row > div { flex: 1; }
-  button.go {
-    margin-top: 22px;
-    width: 100%;
-    padding: 13px;
-    border-radius: 10px;
-    border: none;
-    background: var(--accent);
-    color: var(--accent-text);
-    font-size: 15px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 12px 8px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
+    text-align: center;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.1s ease;
   }
+  .mode-btn svg { width: 18px; height: 18px; opacity: 0.85; }
+  .mode-btn:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); color: var(--text); }
+  .mode-btn:active { transform: scale(0.97); }
+  .mode-btn.active {
+    border-color: transparent;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: var(--accent-text);
+  }
+  .mode-btn.active svg { opacity: 1; }
+  .hint {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 8px;
+    line-height: 1.5;
+  }
+  button.go {
+    margin-top: 26px;
+    width: 100%;
+    padding: 15px;
+    border-radius: var(--radius-md);
+    border: none;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: var(--accent-text);
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.01em;
+    box-shadow: 0 10px 24px -10px color-mix(in srgb, var(--accent) 70%, transparent);
+    transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.15s ease;
+  }
+  button.go:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 14px 28px -10px color-mix(in srgb, var(--accent) 75%, transparent); }
+  button.go:active:not(:disabled) { transform: translateY(0); }
   button.go:disabled {
-    opacity: 0.6;
+    opacity: 0.55;
     cursor: not-allowed;
+    box-shadow: none;
   }
   .status {
-    margin-top: 20px;
+    margin-top: 22px;
     display: none;
   }
-  .status.visible { display: block; }
+  .status.visible { display: block; animation: fadeIn 0.25s ease; }
   .bar-track {
     height: 8px;
     border-radius: 6px;
-    background: var(--border);
+    background: var(--border-soft);
     overflow: hidden;
+    position: relative;
   }
   .bar-fill {
     height: 100%;
     width: 0%;
-    background: var(--accent);
-    transition: width 0.2s ease;
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .status.running .bar-fill::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+    animation: shimmer 1.3s infinite;
+  }
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+  .status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    margin-top: 10px;
   }
   .status-line {
-    margin-top: 8px;
     font-size: 12.5px;
     color: var(--muted);
-    word-break: break-all;
+    word-break: break-word;
+    line-height: 1.5;
   }
-  .status-line.error { color: var(--error); }
-  .status-line.ok { color: var(--ok); }
+  .status-percent {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .status-line.error {
+    color: var(--error);
+    background: var(--error-bg);
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    margin-top: 4px;
+  }
+  .status-line.ok {
+    color: var(--ok);
+    background: var(--ok-bg);
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    margin-top: 4px;
+  }
   .again-btn {
-    margin-top: 12px;
+    margin-top: 14px;
     display: none;
-    padding: 9px 14px;
-    border-radius: 8px;
+    padding: 10px 16px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--border);
     background: transparent;
     color: var(--text);
     font-size: 13px;
+    font-weight: 600;
     cursor: pointer;
+    transition: border-color 0.15s ease;
   }
-  .again-btn.visible { display: inline-block; }
-  .hint {
-    color: var(--muted);
-    font-size: 11.5px;
-    margin-top: 6px;
-  }
+  .again-btn:hover { border-color: var(--accent); }
+  .again-btn.visible { display: inline-flex; align-items: center; gap: 6px; }
   .frames-section {
     display: none;
-    margin-top: 22px;
+    margin-top: 26px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border-soft);
   }
-  .frames-section.visible { display: block; }
+  .frames-section.visible { display: block; animation: fadeIn 0.3s ease; }
   .frames-heading {
     font-size: 13px;
-    font-weight: 600;
-    margin-bottom: 10px;
+    color: var(--muted);
+    margin-bottom: 14px;
+    line-height: 1.5;
   }
   .frames-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 14px;
   }
   .frame-card {
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     overflow: hidden;
     background: var(--bg);
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  }
+  .frame-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 14px 30px -14px rgba(0, 0, 0, 0.45);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   }
   .frame-card img {
     width: 100%;
@@ -183,111 +328,185 @@
     object-fit: cover;
     display: block;
     cursor: zoom-in;
-    background: var(--border);
+    background: var(--border-soft);
   }
   .frame-footer {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 10px;
+    padding: 9px 11px;
   }
   .frame-footer span {
-    font-size: 12px;
+    font-size: 11.5px;
+    font-weight: 600;
     color: var(--muted);
+    font-variant-numeric: tabular-nums;
   }
   .frame-download-btn {
     border: 1px solid var(--border);
     background: transparent;
     color: var(--text);
     border-radius: 7px;
-    padding: 5px 10px;
+    padding: 5px 11px;
     cursor: pointer;
     font-size: 11.5px;
+    font-weight: 600;
+    transition: border-color 0.15s ease, background 0.15s ease;
   }
-  .frame-download-btn:hover { border-color: var(--accent); }
+  .frame-download-btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
   .lightbox {
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.86);
+    background: rgba(5, 6, 10, 0.9);
+    backdrop-filter: blur(4px);
     align-items: center;
     justify-content: center;
     flex-direction: column;
     gap: 18px;
     z-index: 100;
-    padding: 24px;
+    padding: clamp(16px, 4vw, 32px);
   }
-  .lightbox.visible { display: flex; }
+  .lightbox.visible { display: flex; animation: fadeIn 0.2s ease; }
+  .lightbox-stage {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    max-width: 1200px;
+  }
   .lightbox img {
-    max-width: min(90vw, 1100px);
-    max-height: 78vh;
-    border-radius: 10px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    max-width: min(84vw, 1100px);
+    max-height: 72vh;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  }
+  .lightbox-nav {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s ease;
+  }
+  .lightbox-nav:hover { background: rgba(255, 255, 255, 0.18); }
+  .lightbox-nav svg { width: 18px; height: 18px; }
+  .lightbox-caption {
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
   }
   .lightbox-controls { display: flex; gap: 10px; }
   .lightbox-controls button {
-    padding: 9px 16px;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 10px 18px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(255, 255, 255, 0.25);
     background: rgba(255, 255, 255, 0.08);
     color: #fff;
     font-size: 13px;
+    font-weight: 600;
     cursor: pointer;
+    transition: background 0.15s ease;
   }
+  .lightbox-controls button:hover { background: rgba(255, 255, 255, 0.16); }
   .lightbox-controls button.primary {
-    background: var(--accent);
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
     color: var(--accent-text);
-    border-color: var(--accent);
+    border-color: transparent;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @media (max-width: 420px) {
+    .lightbox-nav { display: none; }
   }
 </style>
 </head>
 <body>
-  <div class="card" id="card">
-    <h1>VidGrab</h1>
-    <p class="subtitle">Download YouTube, TikTok &amp; Instagram videos — with audio, without audio, audio only, or as one image per second.</p>
-
-    <label for="url">Video URL</label>
-    <input id="url" type="text" placeholder="https://www.youtube.com/watch?v=...">
-
-    <label>Format</label>
-    <div class="modes">
-      <button type="button" class="mode-btn active" data-mode="video_audio">Video + Audio</button>
-      <button type="button" class="mode-btn" data-mode="video_only">Video only</button>
-      <button type="button" class="mode-btn" data-mode="audio_only">Audio only</button>
-      <button type="button" class="mode-btn" data-mode="frames">Frames (1/sec)</button>
-    </div>
-
-    <div class="row">
-      <div>
-        <label for="quality">Quality</label>
-        <select id="quality">
-          <option value="best" selected>Best available</option>
-          <option value="2160">2160p (4K)</option>
-          <option value="1440">1440p (2K)</option>
-          <option value="1080">1080p</option>
-          <option value="720">720p</option>
-          <option value="480">480p</option>
-        </select>
+  <div class="shell" id="shell">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4l14 8-14 8V4z"/></svg>
       </div>
-    </div>
-    <p class="hint" id="qualityHint"></p>
-
-    <button class="go" id="goBtn">Download</button>
-
-    <div class="status" id="status">
-      <div class="bar-track"><div class="bar-fill" id="barFill"></div></div>
-      <div class="status-line" id="statusLine"></div>
-      <button class="again-btn" id="againBtn">Download again</button>
+      <span class="brand-name">VidGrab</span>
     </div>
 
-    <div class="frames-section" id="framesSection">
-      <div class="frames-heading" id="framesHeading"></div>
-      <div class="frames-grid" id="framesGrid"></div>
+    <div class="card">
+      <h1>Grab any video, your way</h1>
+      <p class="subtitle">Download YouTube, TikTok &amp; Instagram videos — with audio, without audio, audio only, or as one image per second.</p>
+
+      <label for="url">Video URL</label>
+      <input id="url" type="text" placeholder="https://www.youtube.com/watch?v=...">
+
+      <label>Format</label>
+      <div class="modes">
+        <button type="button" class="mode-btn active" data-mode="video_audio">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="14" height="14" rx="3"/><path d="M16 10l6-3.5v11L16 14"/></svg>
+          Video + Audio
+        </button>
+        <button type="button" class="mode-btn" data-mode="video_only">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="14" height="14" rx="3"/><path d="M16 10l6-3.5v11L16 14" opacity="0.35"/><path d="M3 3l18 18"/></svg>
+          Video only
+        </button>
+        <button type="button" class="mode-btn" data-mode="audio_only">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/></svg>
+          Audio only
+        </button>
+        <button type="button" class="mode-btn" data-mode="frames">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
+          Frames (1/sec)
+        </button>
+      </div>
+
+      <label for="quality">Quality</label>
+      <select id="quality">
+        <option value="best" selected>Best available</option>
+        <option value="2160">2160p (4K)</option>
+        <option value="1440">1440p (2K)</option>
+        <option value="1080">1080p</option>
+        <option value="720">720p</option>
+        <option value="480">480p</option>
+      </select>
+      <p class="hint" id="qualityHint"></p>
+
+      <button class="go" id="goBtn">Download</button>
+
+      <div class="status" id="status">
+        <div class="bar-track"><div class="bar-fill" id="barFill"></div></div>
+        <div class="status-row">
+          <div class="status-line" id="statusLine"></div>
+          <div class="status-percent" id="statusPercent"></div>
+        </div>
+        <button class="again-btn" id="againBtn">Download again</button>
+      </div>
+
+      <div class="frames-section" id="framesSection">
+        <div class="frames-heading" id="framesHeading"></div>
+        <div class="frames-grid" id="framesGrid"></div>
+      </div>
     </div>
   </div>
 
   <div class="lightbox" id="lightbox">
-    <img id="lightboxImg" alt="Frame preview">
+    <div class="lightbox-stage">
+      <button type="button" class="lightbox-nav" id="lightboxPrev" aria-label="Previous frame">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <img id="lightboxImg" alt="Frame preview">
+      <button type="button" class="lightbox-nav" id="lightboxNext" aria-label="Next frame">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+    </div>
+    <div class="lightbox-caption" id="lightboxCaption"></div>
     <div class="lightbox-controls">
       <button type="button" id="lightboxDownload" class="primary">Download this frame</button>
       <button type="button" id="lightboxClose">Close</button>
@@ -308,8 +527,11 @@
 
   const qualitySelect = document.getElementById("quality");
   const qualityHint = document.getElementById("qualityHint");
+  const qualityLabel = qualitySelect.previousElementSibling;
   function updateQualityHint() {
-    qualitySelect.parentElement.parentElement.style.display = mode === "audio_only" ? "none" : "flex";
+    const hideQuality = mode === "audio_only";
+    qualitySelect.style.display = hideQuality ? "none" : "block";
+    qualityLabel.style.display = hideQuality ? "none" : "block";
     if (mode === "audio_only") {
       qualityHint.textContent = "Audio is always extracted at the best available quality (MP3).";
     } else if (mode === "frames") {
@@ -320,22 +542,29 @@
   }
   updateQualityHint();
 
-  const card = document.getElementById("card");
+  const shell = document.getElementById("shell");
   const urlInput = document.getElementById("url");
   const goBtn = document.getElementById("goBtn");
   const statusBox = document.getElementById("status");
   const barFill = document.getElementById("barFill");
   const statusLine = document.getElementById("statusLine");
+  const statusPercent = document.getElementById("statusPercent");
   const againBtn = document.getElementById("againBtn");
   const framesSection = document.getElementById("framesSection");
   const framesHeading = document.getElementById("framesHeading");
   const framesGrid = document.getElementById("framesGrid");
   const lightbox = document.getElementById("lightbox");
   const lightboxImg = document.getElementById("lightboxImg");
+  const lightboxCaption = document.getElementById("lightboxCaption");
   const lightboxDownload = document.getElementById("lightboxDownload");
   const lightboxClose = document.getElementById("lightboxClose");
+  const lightboxPrev = document.getElementById("lightboxPrev");
+  const lightboxNext = document.getElementById("lightboxNext");
 
   let currentJobId = null;
+  let lightboxJobId = null;
+  let lightboxFrames = [];
+  let lightboxIndex = 0;
 
   // A same-page anchor click (rather than window.open/location.href) is the
   // most reliable way to trigger a browser's native download flow without
@@ -369,7 +598,7 @@
       img.src = frameURL(jobId, name);
       img.loading = "lazy";
       img.alt = "Frame at " + formatTimestamp(idx);
-      img.addEventListener("click", () => openLightbox(jobId, name, idx));
+      img.addEventListener("click", () => openLightbox(jobId, frames, idx));
       frameCard.appendChild(img);
 
       const footer = document.createElement("div");
@@ -396,15 +625,32 @@
     framesHeading.textContent = frames.length + " frame" + (frames.length === 1 ? "" : "s") +
       " extracted — click one to preview it larger, or use Download to save it.";
     framesSection.classList.add("visible");
-    card.classList.add("wide");
+    shell.classList.add("wide");
   }
 
-  function openLightbox(jobId, name, idx) {
-    lightboxImg.src = frameURL(jobId, name);
-    lightboxImg.alt = "Frame at " + formatTimestamp(idx);
-    lightboxDownload.onclick = () => triggerBrowserDownload(frameURL(jobId, name) + "&download=1");
+  function openLightbox(jobId, frames, idx) {
+    lightboxJobId = jobId;
+    lightboxFrames = frames;
+    lightboxIndex = idx;
+    showLightboxFrame();
     lightbox.classList.add("visible");
   }
+
+  function showLightboxFrame() {
+    const name = lightboxFrames[lightboxIndex];
+    lightboxImg.src = frameURL(lightboxJobId, name);
+    lightboxImg.alt = "Frame at " + formatTimestamp(lightboxIndex);
+    lightboxCaption.textContent = formatTimestamp(lightboxIndex) + "  ·  " + (lightboxIndex + 1) + " / " + lightboxFrames.length;
+    lightboxDownload.onclick = () => triggerBrowserDownload(frameURL(lightboxJobId, name) + "&download=1");
+  }
+
+  function stepLightbox(delta) {
+    if (!lightboxFrames.length) return;
+    lightboxIndex = (lightboxIndex + delta + lightboxFrames.length) % lightboxFrames.length;
+    showLightboxFrame();
+  }
+  lightboxPrev.addEventListener("click", () => stepLightbox(-1));
+  lightboxNext.addEventListener("click", () => stepLightbox(1));
 
   function closeLightbox() {
     lightbox.classList.remove("visible");
@@ -414,7 +660,10 @@
     if (e.target === lightbox) closeLightbox();
   });
   document.addEventListener("keydown", (e) => {
+    if (!lightbox.classList.contains("visible")) return;
     if (e.key === "Escape") closeLightbox();
+    if (e.key === "ArrowLeft") stepLightbox(-1);
+    if (e.key === "ArrowRight") stepLightbox(1);
   });
 
   goBtn.addEventListener("click", async () => {
@@ -427,13 +676,15 @@
     goBtn.disabled = true;
     goBtn.textContent = "Starting...";
     statusBox.classList.add("visible");
+    statusBox.classList.add("running");
     againBtn.classList.remove("visible");
     barFill.style.width = "0%";
     statusLine.className = "status-line";
     statusLine.textContent = "Starting download...";
+    statusPercent.textContent = "";
     framesSection.classList.remove("visible");
     framesGrid.innerHTML = "";
-    card.classList.remove("wide");
+    shell.classList.remove("wide");
 
     try {
       const res = await fetch("/api/download", {
@@ -448,6 +699,7 @@
       currentJobId = data.id;
       listen(data.id);
     } catch (err) {
+      statusBox.classList.remove("running");
       statusLine.className = "status-line error";
       statusLine.textContent = "Error: " + err.message;
       resetButton();
@@ -458,14 +710,18 @@
     const source = new EventSource("/api/progress?id=" + encodeURIComponent(id));
     source.onmessage = (evt) => {
       const job = JSON.parse(evt.data);
-      barFill.style.width = Math.max(0, Math.min(100, job.percent || 0)) + "%";
+      const pct = Math.max(0, Math.min(100, job.percent || 0));
+      barFill.style.width = pct + "%";
 
       if (job.status === "running" || job.status === "extracting") {
         statusLine.className = "status-line";
         statusLine.textContent = job.message || "Working...";
+        statusPercent.textContent = pct > 0 ? Math.round(pct) + "%" : "";
       } else if (job.status === "done") {
         source.close();
         resetButton();
+        statusBox.classList.remove("running");
+        statusPercent.textContent = "100%";
         if (job.frames && job.frames.length) {
           statusLine.className = "status-line ok";
           statusLine.textContent = "Done.";
@@ -477,8 +733,10 @@
           againBtn.classList.add("visible");
         }
       } else if (job.status === "error") {
+        statusBox.classList.remove("running");
         statusLine.className = "status-line error";
         statusLine.textContent = "Failed: " + (job.err || "unknown error");
+        statusPercent.textContent = "";
         source.close();
         resetButton();
       }
