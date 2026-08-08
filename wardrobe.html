@@ -18,6 +18,9 @@
   detailed (advanced) forms, smart defaults from subcategory, bulk edit,
   duplicate, delete-undo, camera capture, batch photo mode, constrained
   shuffle. Adds a 'regular' fit value; engine rules otherwise unchanged.
+  Session 7: photo drag/drop + paste + crop step; 1:1 / 4:5 display normalize.
+  Session 8: one guided wizard for add + edit of garments AND wishlist items
+  (mode-aware), wishlist cost required + projection shown on the summary.
 -->
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -788,6 +791,15 @@ function deleteWishlist(id) {
   state.wishlist = state.wishlist.filter(w => w.id !== id);
   saveToStorage();
 }
+function updateWishlistItem(id, data) {
+  const i = state.wishlist.findIndex(w => w.id === id);
+  if (i < 0) return null;
+  const w = normalizeGarment({ ...state.wishlist[i], ...data, id });
+  w.isWishlist = true;
+  state.wishlist[i] = w;
+  saveToStorage();
+  return w;
+}
 // one-tap: move a wishlist item into the real wardrobe as a fresh garment
 function convertWishlist(id) {
   const w = state.wishlist.find(x => x.id === id);
@@ -1178,7 +1190,7 @@ let addMode = "guided";          // "guided" | "quick" | "detailed" add form
 const THEME_KEY = "wardrobe.theme";
 
 // session 6 state
-let wizardState = loadWizard() || freshWizard();  // guided add-flow progress (persisted)
+let wizardState = null;          // guided-flow state; initialised at boot
 let selectMode = false;          // wardrobe multi-select
 let selected = new Set();         // selected garment ids
 let mustInclude = new Set();      // constrained-shuffle garment ids
@@ -1376,22 +1388,54 @@ window.duplicateGarment = function (id) {
   const { id: _id, timesWorn, lastWorn, dateAdded, ...rest } = g;
   const copy = addGarment({ ...rest, name: g.name + " copy" });
   closeCtx(); haptic(12);
-  editingId = copy.id;
-  setTab("add");   // editing always renders the detailed form
+  startEditGarment(copy.id);   // open the copy in the guided editor
 };
 
-/* ---- guided-add progress persistence (item: persist partial progress) ---- */
-function freshWizard() {
-  return { step: 0, dir: 1, showOtherSub: false, showOtherColor: false, data: {
+/* ---- guided flow: modes, persistence, entry points ----
+   modes: add-garment | add-wishlist | edit-garment | edit-wishlist.
+   Only the two "add" modes persist (one key each); edits are transient. */
+const WIZ_KEYS = { "add-garment": "wardrobe.wizard.garment.v1", "add-wishlist": "wardrobe.wizard.wishlist.v1" };
+function isWishlistMode() { return wizardState.mode === "add-wishlist" || wizardState.mode === "edit-wishlist"; }
+function isEditMode() { return wizardState.mode === "edit-garment" || wizardState.mode === "edit-wishlist"; }
+function freshWizard(mode) {
+  return { mode: mode || "add-garment", editId: null, step: 0, dir: 1, showOtherSub: false, showOtherColor: false, data: {
     category: null, subcategory: null, subcategoryCustom: "",
     color: null, colorFamily: null, colorCustom: "", colorHex: "",
     fit: null, formality: 3, season: null, weight: null, visualWeight: null,
     name: "", imageData: null, cost: "",
   } };
 }
-function loadWizard() { try { const r = localStorage.getItem("wardrobe.wizard.v1"); if (r) { const w = JSON.parse(r); if (w && w.data) return w; } } catch (e) {} return null; }
-function saveWizard() { try { localStorage.setItem("wardrobe.wizard.v1", JSON.stringify(wizardState)); } catch (e) {} }
-function clearWizard() { wizardState = freshWizard(); try { localStorage.removeItem("wardrobe.wizard.v1"); } catch (e) {} }
+function loadWizardFor(mode) {
+  const k = WIZ_KEYS[mode]; if (!k) return null;
+  try { const r = localStorage.getItem(k); if (r) { const w = JSON.parse(r); if (w && w.data && w.mode === mode) return w; } } catch (e) {}
+  return null;
+}
+function saveWizard() { const k = WIZ_KEYS[wizardState.mode]; if (k) { try { localStorage.setItem(k, JSON.stringify(wizardState)); } catch (e) {} } }
+function clearWizardStorage(mode) { const k = WIZ_KEYS[mode]; if (k) { try { localStorage.removeItem(k); } catch (e) {} } }
+function resetWizardToAdd() { wizardState = loadWizardFor("add-garment") || freshWizard("add-garment"); }
+
+// build wizard state from an existing garment / wishlist item for editing
+function wizardFromItem(mode, item) {
+  const w = freshWizard(mode); w.editId = item.id; const d = w.data;
+  d.category = item.category;
+  const subs = WIZ_SUB[item.category] || [];
+  if (item.subcategory && subs.includes(item.subcategory)) d.subcategory = item.subcategory;
+  else if (item.subcategory) { d.subcategory = "__custom__"; d.subcategoryCustom = item.subcategory; }
+  const cm = WIZ_COLORS.find(c => c.name === (item.color || "").toLowerCase());
+  if (cm) { d.color = cm.name; d.colorFamily = cm.family; d.colorHex = cm.hex; }
+  else if (item.color) { d.color = "custom"; d.colorCustom = item.color; d.colorFamily = item.colorFamily; }
+  else d.colorFamily = item.colorFamily;
+  d.fit = item.fit; d.formality = item.formality; d.season = item.season; d.weight = item.weight;
+  d.visualWeight = item.visualWeight; d.name = item.name; d.imageData = item.imageData; d.cost = item.cost || "";
+  return w;
+}
+
+function enterAddGarment() { if (!wizardState || wizardState.mode !== "add-garment") resetWizardToAdd(); }
+window.startAddWishlist = function () { wizardState = loadWizardFor("add-wishlist") || freshWizard("add-wishlist"); setTab("add"); };
+window.startEditGarment = function (id) { const g = getGarment(id); if (!g) return; wizardState = wizardFromItem("edit-garment", g); haptic(8); setTab("add"); };
+window.startEditWishlist = function (id) { const w = getWishlist().find(x => x.id === id); if (!w) return; wizardState = wizardFromItem("edit-wishlist", w); haptic(8); setTab("add"); };
+window.startEdit = function (id) { window.startEditGarment(id); };  // wardrobe cards / context menu
+window.navToAdd = function () { enterAddGarment(); if (addMode === "detailed") addMode = "guided"; setTab("add"); };
 
 function setTab(tab) {
   currentTab = tab;
@@ -1523,7 +1567,6 @@ function garmentCard(g) {
     </div></div>`;
 }
 
-window.startEdit = function (id) { editingId = id; setTab("add"); };
 window.confirmDelete = function (id) {
   const g = getGarment(id); if (!g) return;
   if (!confirm(`Delete “${g.name}”?`)) return;
@@ -1674,20 +1717,26 @@ function wireGarmentForm(form) {
 }
 function readGarmentForm(form) { return Object.fromEntries(new FormData(form).entries()); }
 
-/* ---------- Add / Edit form — dispatch to Guided / Quick / Detailed ---------- */
+/* ---------- Add / Edit — the guided wizard is the single flow for all four
+   modes; Quick + Advanced remain garment-add-only options. ---------- */
 function renderForm() {
-  const editing = editingId ? getGarment(editingId) : null;
-  viewTitle.textContent = editing ? "Edit garment" : "Add garment";
-  viewSub.textContent = editing ? esc(editing.name) : "New piece";
-  const g = editing || {};
-  if (editing) { renderDetailedForm(g, editing, ""); return; }
-  const seg = segmented([["guided", "Guided"], ["quick", "Quick"]], addMode === "detailed" ? "" : addMode, "setAddMode");
-  if (addMode === "quick") { renderQuickAdd(seg); return; }
-  if (addMode === "detailed") { renderDetailedForm(g, null, seg + `<div class="tiny muted" style="margin-bottom:12px;">Advanced form — every field at once.</div>`); return; }
-  renderWizard(seg);
+  if (!wizardState) wizardState = freshWizard("add-garment");
+  const mode = wizardState.mode;
+  const titles = { "add-garment": "Add garment", "add-wishlist": "Add to wishlist", "edit-garment": "Edit garment", "edit-wishlist": "Edit wishlist item" };
+  viewTitle.textContent = titles[mode] || "Add";
+  viewSub.textContent = isEditMode() ? esc(wizardState.data.name || "") : (isWishlistMode() ? "New wishlist item" : "New piece");
+
+  if (mode === "add-garment") {
+    const seg = segmented([["guided", "Guided"], ["quick", "Quick"]], addMode === "detailed" ? "" : addMode, "setAddMode");
+    if (addMode === "quick") { renderQuickAdd(seg); return; }
+    if (addMode === "detailed") { renderDetailedForm({}, null, seg + `<div class="tiny muted" style="margin-bottom:12px;">Advanced form — every field at once.</div>`); return; }
+    renderWizard(seg);   // guided
+    return;
+  }
+  renderWizard("");      // wishlist add + all edits: wizard only
 }
 window.setAddMode = function (m) { addMode = m; haptic(8); renderForm(); };
-window.openAdvancedAdd = function () { addMode = "detailed"; setTab("add"); };
+window.openAdvancedAdd = function () { enterAddGarment(); addMode = "detailed"; setTab("add"); };
 
 /* ---------- Detailed form (editing + advanced add) ---------- */
 function renderDetailedForm(g, editing, prefix) {
@@ -1789,9 +1838,12 @@ function renderWizard(seg) {
   wizardState.step = Math.max(0, Math.min(wizardState.step, steps.length - 1));
   const idx = wizardState.step, id = steps[idx], total = steps.length;
   const pct = total > 1 ? (idx / (total - 1)) * 100 : 0;
-  const optional = id === "cost";
+  const optional = id === "cost" && !isWishlistMode();   // cost is required for wishlist items
+  const leftBtn = idx > 0
+    ? `<button class="btn sm ghost" onclick="wizBack()">← Back</button>`
+    : (isEditMode() ? `<button class="btn sm ghost" onclick="wizCancel()">Cancel</button>` : `<span style="width:52px"></span>`);
   const head = `<div class="wiz-head">
-    <button class="btn sm ghost" style="${idx === 0 ? "visibility:hidden" : ""}" onclick="wizBack()">← Back</button>
+    ${leftBtn}
     <span class="tiny muted">Step ${idx + 1} of ${total}</span>
     ${optional ? `<button class="btn sm ghost" onclick="wizSkip()">Skip</button>` : `<span style="width:52px"></span>`}
   </div>`;
@@ -1894,10 +1946,15 @@ function stepContent(id) {
       </div>
       <input id="wiz-name" type="text" value="${esc(d.name || suggested)}" oninput="wizName(this.value)" placeholder="${esc(suggested || "name")}">
       <button class="btn primary" style="margin-top:16px; width:100%;" onclick="wizNext()">Continue</button>`; }
-    case "cost": return `
-      <div class="wiz-q">What did it cost?</div><div class="wiz-sub">Optional — powers cost-per-wear later.</div>
+    case "cost": {
+      const wl = isWishlistMode();
+      const hasCost = String(d.cost).trim() !== "" && !isNaN(Number(d.cost)) && Number(d.cost) >= 0;
+      return `
+      <div class="wiz-q">${wl ? "What does it cost?" : "What did it cost?"}</div>
+      <div class="wiz-sub">${wl ? "Required — the cost-per-outfit estimate needs it." : "Optional — powers cost-per-wear later."}</div>
       <input id="wiz-cost" type="number" min="0" step="1" value="${d.cost || ""}" oninput="wizCost(this.value)" placeholder="0">
-      <button class="btn primary" style="margin-top:16px; width:100%;" onclick="wizNext()">Continue</button>`;
+      <button class="btn primary" id="wiz-cost-next" style="margin-top:16px; width:100%;" onclick="wizNext()" ${wl && !hasCost ? "disabled" : ""}>Continue</button>`;
+    }
     case "summary": return wizSummary();
   }
   return "";
@@ -1919,13 +1976,36 @@ function wizSummary() {
   if (d.category === "shoe") chips.push(["visualWeight", d.visualWeight ? VW_LBL[d.visualWeight] : "—"]);
   else chips.push(["weight", d.weight ? cap(d.weight) : "—"]);
   chips.push(["name", d.name || wizSuggestName() || "—"]);
-  chips.push(["cost", d.cost ? money(d.cost) : "No cost"]);
+  chips.push(["cost", d.cost ? money(d.cost) : (isWishlistMode() ? "—" : "No cost")]);
+
+  // wishlist: show the projected unlock + cost-per-outfit at the point of decision
+  let projection = "";
+  if (isWishlistMode()) {
+    const draft = normalizeGarment(wizSpec());
+    const u = calculateUnlock(getGarments(), draft);
+    const cpu = (draft.cost > 0 && u.delta > 0) ? `${money(draft.cost / u.delta)} / outfit`
+      : (u.delta > 0 ? "—" : "no new outfits");
+    projection = `<div class="unlock" style="margin-bottom:16px;">
+      <div class="small muted">If you buy this</div>
+      <div class="big ${u.delta > 0 ? "pos" : ""}">+${u.delta}${u.capped ? "+" : ""} outfits</div>
+      <div class="small muted">${esc(cpu)}${draft.cost > 0 ? ` · ${money(draft.cost)}` : ""}</div>
+    </div>`;
+  }
+
+  const title = isWishlistMode() ? "Add to wishlist?" : (isEditMode() ? "Save your changes?" : "Looks good?");
+  const confirmLabel = { "add-garment": "Add to wardrobe", "add-wishlist": "Add to wishlist", "edit-garment": "Save changes", "edit-wishlist": "Save changes" }[wizardState.mode];
+  const secondary = wizardState.mode === "edit-garment"
+    ? `<button class="btn ghost danger" style="margin-top:8px; width:100%;" onclick="wizDeleteGarment()">Delete garment</button>`
+    : wizardState.mode === "edit-wishlist"
+    ? `<button class="btn ghost danger" style="margin-top:8px; width:100%;" onclick="wizRemoveWishlist()">Remove from wishlist</button>` : "";
   return `
-    <div class="wiz-q">Looks good?</div><div class="wiz-sub">Tap anything to change it.</div>
+    <div class="wiz-q">${title}</div><div class="wiz-sub">Tap anything to change it.</div>
+    ${projection}
     <div class="row wrap stagger" style="gap:8px;">
       ${chips.map(([sid, label], i) => `<button class="chip btn-chip" style="animation-delay:${i * 40}ms" onclick="wizGoto('${sid}')">${esc(label)}</button>`).join("")}
     </div>
-    <button class="btn primary" style="margin-top:20px; width:100%; min-height:52px;" onclick="wizConfirm()">Add to wardrobe</button>`;
+    <button class="btn primary" style="margin-top:20px; width:100%; min-height:52px;" onclick="wizConfirm()">${confirmLabel}</button>
+    ${secondary}`;
 }
 function wireStep(id) {
   if (id === "name") {
@@ -1998,24 +2078,63 @@ window.wizFormality = function (v) {
   haptic(6); saveWizard();
 };
 window.wizName = function (v) { wizardState.data.name = v; saveWizard(); };
-window.wizCost = function (v) { wizardState.data.cost = v; saveWizard(); };
-window.wizConfirm = function () {
+window.wizCost = function (v) {
+  wizardState.data.cost = v;
+  const b = document.getElementById("wiz-cost-next");
+  if (b && isWishlistMode()) b.disabled = !(String(v).trim() !== "" && !isNaN(Number(v)) && Number(v) >= 0);
+  saveWizard();
+};
+window.wizCancel = function () {
+  const m = wizardState.mode;
+  resetWizardToAdd();
+  if (m === "edit-wishlist") { planMode = "wishlist"; setTab("plan"); }
+  else setTab("wardrobe");
+};
+// build a normalized-ready spec from the wizard's answers (used by confirm + projection)
+function wizSpec() {
   const d = wizardState.data;
   const color = d.color === "custom" ? d.colorCustom : d.color;
   const sub = d.subcategory === "__custom__" ? d.subcategoryCustom : d.subcategory;
-  const spec = {
+  return {
     name: (d.name || wizSuggestName() || "Untitled").trim(),
     category: d.category, subcategory: sub || "", color: color || "",
     colorFamily: d.colorFamily || "neutralDark", formality: d.formality || 3,
     season: d.season || "all", fit: d.fit || "slim", weight: d.weight || "medium",
     visualWeight: d.category === "shoe" ? (d.visualWeight || "standard") : null,
-    cost: d.cost || 0, imageData: d.imageData || null,
+    cost: Number(d.cost) || 0, imageData: d.imageData || null,
   };
-  const draft = normalizeGarment(spec);
-  lastUnlock = calculateUnlock(getGarments(), draft);
-  animateUnlock = true; addGarment(draft); haptic(20);
-  clearWizard();
-  renderForm();
+}
+window.wizConfirm = function () {
+  const spec = wizSpec();
+  switch (wizardState.mode) {
+    case "add-wishlist":
+      addWishlist(spec); haptic(20);
+      clearWizardStorage("add-wishlist"); resetWizardToAdd();
+      planMode = "wishlist"; setTab("plan"); break;
+    case "edit-garment":
+      updateGarment(wizardState.editId, spec); haptic(16);
+      resetWizardToAdd(); setTab("wardrobe"); break;
+    case "edit-wishlist":
+      updateWishlistItem(wizardState.editId, spec); haptic(16);
+      resetWizardToAdd(); planMode = "wishlist"; setTab("plan"); break;
+    default: {  // add-garment
+      const draft = normalizeGarment(spec);
+      lastUnlock = calculateUnlock(getGarments(), draft);
+      animateUnlock = true; addGarment(draft); haptic(20);
+      clearWizardStorage("add-garment"); wizardState = freshWizard("add-garment");
+      renderForm();
+    }
+  }
+};
+window.wizDeleteGarment = function () {
+  const id = wizardState.editId; if (!id) return;
+  const g = getGarment(id); const name = g ? g.name : "garment";
+  resetWizardToAdd(); performDelete([id]); setTab("wardrobe");
+  showToast(`Deleted “${name}”`, "Undo", undoLastDelete, 8000);
+};
+window.wizRemoveWishlist = function () {
+  const id = wizardState.editId; if (!id) return;
+  resetWizardToAdd(); deleteWishlist(id); planMode = "wishlist"; setTab("plan"); haptic(20);
 };
 
 /* ----- Quick add: photo + name + category, everything else defaulted (item 3) ----- */
@@ -2746,37 +2865,12 @@ function renderWishlist(garments, seg) {
   viewSub.textContent = wl.length ? `${wl.length} item${wl.length === 1 ? "" : "s"}` : "";
   const canProject = canBuildOutfits(garments);
 
-  const form = `
-    <details class="card" style="padding:14px; margin-bottom:16px;" ${wl.length ? "" : "open"}>
-      <summary style="cursor:pointer; font-weight:600;">Add a wishlist item</summary>
-      <form id="wl-form" class="stack" style="margin-top:12px;">
-        <div class="field">
-          <label>Name <span class="req">*</span></label>
-          <input type="text" name="name" placeholder="Navy quarter-zip" />
-          <div class="err" id="wl-err" hidden>Name is required.</div>
-        </div>
-        ${garmentAttrFieldsHTML({})}
-        <button type="submit" class="btn primary">Add to wishlist</button>
-      </form>
-    </details>`;
-
+  const addBtn = `<button class="btn primary" style="margin-bottom:16px;" onclick="startAddWishlist()">＋ Add a wishlist item</button>`;
   const list = wl.length
     ? `<div class="stack">${wl.map(w => wishlistCard(w, garments, canProject)).join("")}</div>`
     : `<div class="empty muted" style="padding:24px;">Nothing on your wishlist yet. Add a piece you're considering to see what it would unlock before you buy.</div>`;
 
-  view.innerHTML = seg + form + list;
-
-  const f = document.getElementById("wl-form");
-  wireGarmentForm(f);
-  f.addEventListener("submit", e => {
-    e.preventDefault();
-    const data = readGarmentForm(f);
-    const err = document.getElementById("wl-err");
-    if (!data.name.trim()) { err.hidden = false; f.name.classList.add("invalid"); f.name.focus(); return; }
-    addWishlist(data);
-    haptic(14);
-    renderPlan();
-  });
+  view.innerHTML = seg + addBtn + list;
 }
 
 function wishlistCard(w, garments, canProject) {
@@ -2798,6 +2892,7 @@ function wishlistCard(w, garments, canProject) {
       </div>
       <div class="row wrap" style="gap:8px; margin-top:12px;">
         <button class="btn sm primary" onclick="buyWishlist('${w.id}')">Bought it — add to wardrobe</button>
+        <button class="btn sm" onclick="startEditWishlist('${w.id}')">Edit</button>
         <button class="btn sm danger" onclick="removeWishlist('${w.id}')">Remove</button>
       </div>
     </div>`;
@@ -3217,12 +3312,13 @@ function loadSample() {
    BOOT
    ============================================================================ */
 document.querySelectorAll("[data-nav]").forEach(el => {
-  el.addEventListener("click", () => setTab(el.dataset.nav));
+  el.addEventListener("click", () => el.dataset.nav === "add" ? navToAdd() : setTab(el.dataset.nav));
 });
 loadTheme();
 applyTheme();
 loadFromStorage();
 rebuildRatingContext();
+wizardState = loadWizardFor("add-garment") || freshWizard("add-garment");  // resume any in-progress add
 setTab("outfits");   // open directly to today's suggested outfit (item 2)
 
 // re-render when crossing the phone/desktop breakpoint so the deck/list swap
