@@ -653,7 +653,7 @@
     el.innerHTML=""; const span=document.createElement("span"); span.textContent=`Deleted "${entry.label}"`;
     const b=document.createElement("button"); b.className="tundo"; b.textContent="Undo";
     b.onclick=()=>{ state.entries.push(entry); render(); el.style.opacity="0"; clearTimeout(undoTimer); };
-    el.appendChild(span); el.appendChild(b); el.style.borderColor="rgba(232,196,119,.3)"; el.style.opacity="1";
+    el.appendChild(span); el.appendChild(b); el.style.pointerEvents="auto"; el.style.borderColor="rgba(232,196,119,.3)"; el.style.opacity="1";
     clearTimeout(undoTimer); undoTimer=setTimeout(()=>el.style.opacity="0",4200);
   }
 
@@ -735,6 +735,49 @@
     render(); flash("Sample data loaded ✓");
   }
 
+  // ---------------- Export ----------------
+  function exportData(){
+    const json=JSON.stringify({app:"pocket-finance",version:2,exportedAt:new Date().toISOString(),data:state},null,2);
+    openExportSheet(json);
+    tryDownload(json); // best-effort; sandboxed frames block it, hence the copyable sheet
+  }
+  function tryDownload(json){
+    try{
+      const blob=new Blob([json],{type:"application/json"});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a"); a.href=url; a.download=`pocket-finance-${todayISO()}.json`;
+      a.style.display="none"; document.body.appendChild(a); a.click();
+      setTimeout(()=>{ try{document.body.removeChild(a);}catch{} URL.revokeObjectURL(url); },1500);
+      return true;
+    }catch{ return false; }
+  }
+  async function copyText(t){
+    try{ await navigator.clipboard.writeText(t); return true; }catch{}
+    try{ const ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.focus(); ta.select();
+      const ok=document.execCommand("copy"); document.body.removeChild(ta); return ok; }catch{ return false; }
+  }
+  function openExportSheet(json){
+    closeSheet();
+    const scrim=document.createElement("div"); scrim.className="scrim";
+    scrim.innerHTML=`<div class="sheet" role="dialog" aria-modal="true">
+      <div class="grab"></div>
+      <h2>Export data</h2>
+      <p style="font-size:12.5px;color:var(--ink-faint);margin:0 0 10px">Copy this and save it somewhere, or paste it into the <b>Import</b> box on another device. (A file download is attempted too, but some browsers block it.)</p>
+      <textarea class="expJson" readonly style="min-height:150px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;white-space:pre"></textarea>
+      <div class="btnrow"><button class="btn sm block xCopy">Copy to clipboard</button><button class="btn ghost sm block xDl">Download file</button></div>
+      <div class="btnrow"><button class="btn ghost sm block xClose">Close</button></div>
+    </div>`;
+    document.body.appendChild(scrim); sheetEl=scrim;
+    const ta=scrim.querySelector(".expJson"); ta.value=json;
+    scrim.addEventListener("click",e=>{ if(e.target===scrim) closeSheet(); });
+    scrim.querySelector(".xClose").onclick=closeSheet;
+    const copyBtn=scrim.querySelector(".xCopy");
+    copyBtn.onclick=async()=>{ const ok=await copyText(json);
+      if(ok){ copyBtn.textContent="Copied ✓"; setTimeout(()=>copyBtn.textContent="Copy to clipboard",1600); }
+      else { ta.focus(); ta.select(); copyBtn.textContent="Select above & copy"; setTimeout(()=>copyBtn.textContent="Copy to clipboard",2200); } };
+    scrim.querySelector(".xDl").onclick=()=>{ if(!tryDownload(json)) flash("Download blocked here — use Copy instead", true); };
+  }
+
   // ---------------- Wire ----------------
   function wireApp(){
     $("#fab").onclick=()=>openSheet(null);
@@ -761,8 +804,7 @@
       $("#bulkText").value=""; render(); flash(`${added} entr${added===1?"y":"ies"} added as ${cap(type)}`);
     };
 
-    $("#exportBtn").onclick=()=>{ const blob=new Blob([JSON.stringify({app:"pocket-finance",version:2,exportedAt:new Date().toISOString(),data:state},null,2)],{type:"application/json"});
-      const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`pocket-finance-${todayISO()}.json`; a.click(); URL.revokeObjectURL(a.href); };
+    $("#exportBtn").onclick=exportData;
     $("#importBtn").onclick=()=>$("#importFile").click();
     $("#importFile").onchange=e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ applyImport(r.result); e.target.value=""; }; r.readAsText(f); };
     $("#importPaste").onclick=()=>{ applyImport($("#importText").value); $("#importText").value=""; };
@@ -794,6 +836,7 @@
       display:"flex",alignItems:"center",transition:"opacity .3s"}); return el; }
   let flashTO=null;
   function flash(msg,bad){ let el=$("#toast")||mkToast(); el.innerHTML=""; el.textContent=msg;
+    el.style.pointerEvents="none"; // passive toast: never block taps underneath
     el.style.borderColor=bad?"rgba(255,136,145,.5)":"rgba(232,196,119,.3)"; el.style.opacity="1";
     clearTimeout(flashTO); flashTO=setTimeout(()=>el.style.opacity="0",2200); }
 
