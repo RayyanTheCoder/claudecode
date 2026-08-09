@@ -511,6 +511,44 @@
   .crop-grid { position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(rgba(255,255,255,.22) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.22) 1px, transparent 1px); background-size: 33.33% 33.33%; }
   .bg-swatch { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border-2); cursor: pointer; flex: none; }
   .bg-swatch.on { box-shadow: 0 0 0 2px var(--accent); }
+
+  /* ---- weekly planner ---- */
+  .pl-nav { display: flex; align-items: center; gap: 8px; justify-content: center; margin-top: 8px; }
+  .pl-week-label { flex: 0 0 auto; min-width: 150px; text-align: center; background: var(--bg-raise); border: 1px solid var(--border); color: var(--text); border-radius: 10px; padding: 8px 14px; font-weight: 600; cursor: pointer; font-size: 14px; }
+  .pl-week-label:hover { border-color: var(--accent); }
+  .pl-strict { display: flex; align-items: center; gap: 10px; margin-top: 12px; justify-content: flex-end; flex-wrap: wrap; }
+  .seg.sm { width: auto; }
+  .seg.sm .seg-btn { padding: 6px 11px; font-size: 12.5px; }
+  .linkbtn { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; padding: 0; text-decoration: underline; }
+  .pl-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 14px; touch-action: pan-y; }
+  @media (min-width: 760px) { .pl-grid { grid-template-columns: repeat(7, 1fr); gap: 8px; align-items: stretch; } }
+  .pl-day { text-align: left; background: var(--bg-raise); border: 1px solid var(--border); border-radius: 14px; padding: 10px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; min-height: 96px; transition: border-color .12s ease, box-shadow .3s ease; color: var(--text); width: 100%; }
+  .pl-day:hover { border-color: var(--accent); }
+  .pl-day.today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .pl-day.locked { background: color-mix(in srgb, var(--accent) 6%, var(--bg-raise)); }
+  .pl-day.is-empty { border-style: dashed; }
+  .pl-day.changed { animation: plflash 1.4s ease; }
+  @keyframes plflash { 0% { box-shadow: 0 0 0 2px var(--accent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+  .pl-day-head { display: flex; justify-content: space-between; align-items: center; }
+  .pl-dow { font-weight: 700; font-size: 13px; display: flex; gap: 6px; align-items: baseline; }
+  .pl-date { font-weight: 500; color: var(--muted); font-size: 12px; }
+  .pl-day-meta { display: flex; gap: 6px; align-items: center; }
+  .pl-temp { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .pl-lock { font-size: 12px; }
+  .pl-thumbs { display: flex; flex-wrap: wrap; gap: 4px; }
+  .pl-thumb { width: 34px; height: 34px; border-radius: 7px; overflow: hidden; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; flex: none; }
+  .pl-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .pl-thumb .catico { font-size: 16px; }
+  .pl-empty { color: var(--muted); font-size: 13px; padding: 10px 0; opacity: .85; }
+  .pl-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; }
+  .pl-badge { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; font-weight: 600; }
+  .pl-badge.worn { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  .pl-badge.carry { background: color-mix(in srgb, #e0a341 22%, transparent); color: #e0a341; }
+  .pl-badge.miss { background: color-mix(in srgb, var(--muted) 20%, transparent); color: var(--muted); }
+  .pl-hrow { display: grid; grid-template-columns: 40px 1fr auto; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--border); }
+  .pl-hrow:first-child { border-top: 0; }
+  .pl-hdow { font-weight: 700; font-size: 12.5px; color: var(--muted); }
+  .pl-hthumbs { display: flex; gap: 4px; flex-wrap: wrap; }
 </style>
 
 <div class="app">
@@ -690,7 +728,7 @@ function tempToSeason(t) {
 /* ============================================================================
    DATA LAYER
    ============================================================================ */
-let state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {} };
+let state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, planner: { strictness: "consecutive", weeks: {} } };
 
 function uid() {
   if (crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -709,10 +747,11 @@ function loadFromStorage() {
       state.ratings  = (parsed.ratings && typeof parsed.ratings === "object") ? parsed.ratings : {};
       state.rejections = Array.isArray(parsed.rejections) ? parsed.rejections : [];
       state.ruleOverrides = (parsed.ruleOverrides && typeof parsed.ruleOverrides === "object") ? parsed.ruleOverrides : {};
+      state.planner = normalizePlanner(parsed.planner);
     }
   } catch (e) {
     console.error("load failed", e);
-    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {} };
+    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, planner: { strictness: "consecutive", weeks: {} } };
   }
   Object.assign(rules, state.ruleOverrides);   // apply any confirmed config changes
 }
@@ -1234,6 +1273,224 @@ function planPacking(garments, days, occasions) {
 }
 
 /* ============================================================================
+   WEEKLY PLANNER — engine
+   A week is keyed by its Monday (ISO date). Each week holds 7 day slots; a slot
+   stores only { garmentIds } for its outfit (hydrated against live garments at
+   render time). All date math is UTC to match todayISO(), so week boundaries
+   never drift with the local clock.
+   ============================================================================ */
+const WEEKDAYS      = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAYS_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const MONTHS_SHORT  = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function isoAddDays(iso, n) { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function isoWeekdayIdx(iso) { return (new Date(iso + "T00:00:00Z").getUTCDay() + 6) % 7; }  // 0=Mon … 6=Sun
+function mondayOf(iso) { return isoAddDays(iso, -isoWeekdayIdx(iso)); }
+function currentMonday() { return mondayOf(todayISO()); }
+function weekDates(monIso) { return Array.from({ length: 7 }, (_, i) => isoAddDays(monIso, i)); }
+function fmtDayNum(iso) { return String(Number(iso.slice(8, 10))); }
+function fmtShort(iso) { return `${Number(iso.slice(8, 10))} ${MONTHS_SHORT[Number(iso.slice(5, 7)) - 1]}`; }
+function weekRelLabel(monIso) {
+  const diff = Math.round((new Date(monIso + "T00:00:00Z") - new Date(currentMonday() + "T00:00:00Z")) / (7 * 86400000));
+  if (diff === 0) return "This week";
+  if (diff === 1) return "Next week";
+  if (diff === -1) return "Last week";
+  return fmtShort(monIso);
+}
+
+function emptyDay() { return { outfit: null, locked: false, worn: false, carriedOver: false }; }
+function emptyWeek() { return { days: Array.from({ length: 7 }, emptyDay) }; }
+function normalizePlanner(p) {
+  const out = { strictness: (p && p.strictness === "weekly") ? "weekly" : "consecutive", weeks: {} };
+  if (p && p.weeks && typeof p.weeks === "object") {
+    for (const k of Object.keys(p.weeks)) {
+      const days = Array.isArray(p.weeks[k] && p.weeks[k].days) ? p.weeks[k].days : [];
+      out.weeks[k] = { days: Array.from({ length: 7 }, (_, i) => {
+        const d = days[i] || {};
+        return {
+          outfit: (d.outfit && Array.isArray(d.outfit.garmentIds)) ? { garmentIds: d.outfit.garmentIds.slice() } : null,
+          locked: !!d.locked, worn: !!d.worn, carriedOver: !!d.carriedOver,
+        };
+      }) };
+    }
+  }
+  return out;
+}
+function getWeek(monIso) {
+  if (!state.planner.weeks[monIso]) state.planner.weeks[monIso] = emptyWeek();
+  return state.planner.weeks[monIso];
+}
+// stored { garmentIds } → { garmentIds, items }; returns null if any garment was since deleted
+function hydrateOutfit(o) {
+  if (!o || !Array.isArray(o.garmentIds) || !o.garmentIds.length) return null;
+  const items = o.garmentIds.map(getGarment).filter(Boolean);
+  if (items.length !== o.garmentIds.length) return null;
+  return { garmentIds: o.garmentIds.slice(), items };
+}
+
+function plannerPool() {
+  const { outfits } = generateOutfits(getGarments(), { store: OUTFIT_STORE });
+  return outfits.map(o => ({ o, s: Math.max(0.15, scoreOutfit(o.items)) }));
+}
+function lookKey(o) { return o.garmentIds.slice().sort().join(","); }   // whole-look identity (distinct from outfitKey(ids))
+function sharesGarment(o, idSet) { return o.garmentIds.some(id => idSet.has(id)); }
+function forecastSeason(iso) {
+  const t = plannerForecast.status === "ok" ? plannerForecast.byDate[iso] : undefined;
+  return (typeof t === "number") ? tempToSeason(t) : null;
+}
+// graceful weather filter: narrow to outfits suiting `season`; if that empties, keep the pool
+function poolForDay(scored, season) {
+  if (!season) return scored;
+  const f = scored.filter(x => outfitSuitsSeason(x.o.items, season));
+  return f.length ? f : scored;
+}
+
+/*
+  Weighted-random outfit pick. `blocked` is a set of garment ids the pick should
+  avoid (the no-repeat constraint) — soft: if nothing avoids them we fall back to
+  the full pool rather than leaving a gap. Whole-look repeats and recently-worn
+  items are down-weighted, mirroring the OOTD logic.
+*/
+function weightedPick(scored, opts = {}) {
+  const { blocked = new Set(), excludeKey = null, avoidKeys = new Set() } = opts;
+  if (!scored.length) return null;
+  let pool = excludeKey ? scored.filter(x => x.o.garmentIds.join() !== excludeKey) : scored;
+  if (!pool.length) pool = scored;
+  const clean = pool.filter(x => !sharesGarment(x.o, blocked));
+  const use = clean.length ? clean : pool;                       // soft fallback
+  const weighted = use.map(x => {
+    let w = x.s;
+    if (avoidKeys.has(lookKey(x.o))) w *= 0.12;                // discourage reusing the same whole look
+    const recent = x.o.items.some(i => { const d = daysSince(i.lastWorn); return d != null && d < OOTD_AVOID_DAYS; });
+    if (recent) w *= 0.3;
+    return { o: x.o, w: Math.max(0.02, w) };
+  });
+  const total = weighted.reduce((a, x) => a + x.w, 0);
+  let r = Math.random() * total;
+  for (const x of weighted) { r -= x.w; if (r <= 0) return { garmentIds: x.o.garmentIds.slice(), items: x.o.items }; }
+  const last = weighted[weighted.length - 1].o;
+  return { garmentIds: last.garmentIds.slice(), items: last.items };
+}
+
+// A day is "fixed" (never regenerated) if it's locked or already marked worn.
+function dayFixed(d) { return d.locked || d.worn; }
+
+/* Fill every non-fixed day with a valid outfit, honoring the repeat rule + weather. */
+function autoPlanWeek(monIso) {
+  const week = getWeek(monIso);
+  const scored = plannerPool();
+  if (!scored.length) return false;
+  const strict = state.planner.strictness;
+  const dates = weekDates(monIso);
+  const usedKeys = new Set();     // whole-look keys already placed
+  const weeklyIds = new Set();    // every garment id used so far this week
+  let prevIds = new Set();        // garment ids from the immediately previous day
+
+  week.days.forEach((d) => {      // seed constraint sets from fixed days
+    if (!dayFixed(d)) return;
+    const hy = hydrateOutfit(d.outfit);
+    if (hy) { usedKeys.add(lookKey(hy)); hy.garmentIds.forEach(id => weeklyIds.add(id)); }
+  });
+
+  for (let i = 0; i < 7; i++) {
+    const d = week.days[i];
+    if (dayFixed(d)) { const hy = hydrateOutfit(d.outfit); prevIds = hy ? new Set(hy.garmentIds) : new Set(); continue; }
+    const dayPool = poolForDay(scored, forecastSeason(dates[i]));
+    const blocked = strict === "weekly" ? weeklyIds : prevIds;
+    const pick = weightedPick(dayPool, { blocked, avoidKeys: usedKeys });
+    d.outfit = pick ? { garmentIds: pick.garmentIds.slice() } : null;
+    d.worn = false; d.carriedOver = false;
+    if (pick) { usedKeys.add(lookKey(pick)); pick.garmentIds.forEach(id => weeklyIds.add(id)); prevIds = new Set(pick.garmentIds); }
+    else prevIds = new Set();
+  }
+  saveToStorage();
+  return true;
+}
+
+/*
+  Swap one day's outfit, then repair the days after it so the no-repeat rule still
+  holds. Fixed (locked/worn) days are never touched but still count as constraints.
+  Returns the indices of every day that actually changed, so the UI can flag them.
+*/
+function shuffleDay(monIso, dayIdx) {
+  const week = getWeek(monIso);
+  const scored = plannerPool();
+  if (!scored.length) return [];
+  const strict = state.planner.strictness;
+  const dates = weekDates(monIso);
+  const changed = [];
+
+  const idsExcept = idx => {
+    const s = new Set();
+    week.days.forEach((d, i) => { if (i === idx) return; const hy = hydrateOutfit(d.outfit); if (hy) hy.garmentIds.forEach(id => s.add(id)); });
+    return s;
+  };
+  const prevIdsOf = idx => {
+    for (let j = idx - 1; j >= 0; j--) { const hy = hydrateOutfit(week.days[j].outfit); if (hy) return new Set(hy.garmentIds); if (!week.days[j].outfit) break; }
+    return new Set();
+  };
+  const usedKeysExcept = idx => {
+    const s = new Set();
+    week.days.forEach((d, i) => { if (i === idx) return; const hy = hydrateOutfit(d.outfit); if (hy) s.add(lookKey(hy)); });
+    return s;
+  };
+  function regen(idx, forceDifferent) {
+    const d = week.days[idx];
+    if (dayFixed(d)) return false;
+    const dayPool = poolForDay(scored, forecastSeason(dates[idx]));
+    const blocked = strict === "weekly" ? idsExcept(idx) : prevIdsOf(idx);
+    const cur = hydrateOutfit(d.outfit);
+    const excludeKey = forceDifferent && cur ? cur.garmentIds.join() : null;
+    const pick = weightedPick(dayPool, { blocked, excludeKey, avoidKeys: usedKeysExcept(idx) });
+    if (!pick) return false;
+    d.outfit = { garmentIds: pick.garmentIds.slice() }; d.worn = false; d.carriedOver = false;
+    return true;
+  }
+
+  if (regen(dayIdx, true)) changed.push(dayIdx);
+  for (let i = dayIdx + 1; i < 7; i++) {
+    const d = week.days[i];
+    if (dayFixed(d)) continue;
+    const hy = hydrateOutfit(d.outfit);
+    if (!hy) continue;
+    const blocked = strict === "weekly" ? idsExcept(i) : prevIdsOf(i);
+    if (sharesGarment(hy, blocked)) { if (regen(i, false)) changed.push(i); }
+    else if (strict === "consecutive") break;   // chain is clean; later days are unaffected
+  }
+  saveToStorage();
+  return changed;
+}
+
+/*
+  Carry unworn plans forward: for the live current week, any past day that had an
+  outfit but was never marked worn rolls into the next empty, unlocked day that is
+  today or later. Runs on render; the moved-out source becomes empty so it can't
+  re-trigger.
+*/
+function applyCarryOver(monIso) {
+  if (monIso !== currentMonday()) return false;
+  const week = getWeek(monIso);
+  const dates = weekDates(monIso);
+  const today = todayISO();
+  let moved = false;
+  for (let i = 0; i < 7; i++) {
+    if (dates[i] >= today) break;
+    const src = week.days[i];
+    if (src.locked || src.worn || !src.outfit) continue;
+    for (let j = i + 1; j < 7; j++) {
+      if (dates[j] < today) continue;
+      const tgt = week.days[j];
+      if (tgt.locked || tgt.outfit) continue;
+      tgt.outfit = src.outfit; tgt.carriedOver = true; tgt.worn = false;
+      src.outfit = null; src.carriedOver = false;
+      moved = true; break;
+    }
+  }
+  if (moved) saveToStorage();
+  return moved;
+}
+
+/* ============================================================================
    UI  —  rendering. Kept separate from data/engine logic above.
    ============================================================================ */
 const view = document.getElementById("view");
@@ -1257,7 +1514,7 @@ let ootdDismissed = false;       // hide OOTD for the session once dismissed
 let builderSel = new Set();      // garment ids selected in the manual builder
 let builderName = "";            // preserved across builder re-renders
 let builderOccasion = "";
-let planMode = "gaps";           // "gaps" | "wishlist" | "packing"
+let planMode = "week";           // "week" | "gaps" | "wishlist" | "packing"
 
 // session 3 view state
 let weather = { status: "idle", tempC: null, season: null }; // idle|loading|ok|error
@@ -1265,6 +1522,13 @@ let weatherFilter = false;       // filter suggestions by current temp's season
 let packDays = 4;
 let packOccasions = [];
 let packResult = null;
+
+// weekly planner view state
+let plannerWeek = null;                              // ISO Monday currently viewed (lazy-init to current week)
+let plannerHistory = false;                          // week grid vs. history view
+let plannerSheetDay = 0;                             // day index the open day-sheet acts on
+let plannerChanged = new Set();                      // day indices to flash after a shuffle
+let plannerForecast = { status: "idle", byDate: {} }; // 7-day highs by ISO date; idle|loading|ok|error
 
 // session 4 view state
 let theme = "charcoal";          // one of THEMES ids
@@ -3038,12 +3302,287 @@ window.deleteSaved = function (id) {
 function renderPlan() {
   viewTitle.textContent = "Plan";
   const garments = getGarments();
-  const seg = segmented([["gaps", "Gap analysis"], ["wishlist", "Wishlist"], ["packing", "Packing"]], planMode, "setPlanMode");
-  if (planMode === "wishlist") renderWishlist(garments, seg);
+  const seg = segmented([["week", "Week"], ["gaps", "Gap analysis"], ["wishlist", "Wishlist"], ["packing", "Packing"]], planMode, "setPlanMode");
+  if (planMode === "week") renderWeekPlanner(garments, seg);
+  else if (planMode === "wishlist") renderWishlist(garments, seg);
   else if (planMode === "packing") renderPacking(garments, seg);
   else renderGaps(garments, seg);
 }
 window.setPlanMode = function (m) { planMode = m; renderPlan(); };
+
+/* ============================================================================
+   WEEKLY PLANNER — view
+   ============================================================================ */
+function renderWeekPlanner(garments, seg) {
+  if (!plannerWeek) plannerWeek = currentMonday();
+  if (plannerHistory) return renderWeekHistory(garments, seg);
+
+  if (!canBuildOutfits(garments)) {
+    viewSub.textContent = "";
+    view.innerHTML = seg + emptyState("◇", "The planner needs a base wardrobe",
+      "Add at least a bottom, a shoe and a top, then fill your whole week in one tap.",
+      `<button class="btn primary" onclick="setTab('add')">Add a garment</button>` +
+      (garments.length ? "" : `<button class="btn" onclick="loadSample()">Load sample wardrobe</button>`));
+    return;
+  }
+
+  const monIso = plannerWeek;
+  applyCarryOver(monIso);                         // roll unworn past days forward (current week only)
+  const dates = weekDates(monIso);
+  const week = getWeek(monIso);
+  viewSub.textContent = `${fmtShort(dates[0])} – ${fmtShort(dates[6])}`;
+
+  const strict = state.planner.strictness;
+  const strictSeg = `<div class="seg sm">
+    <button class="seg-btn ${strict === "consecutive" ? "on" : ""}" onclick="setStrictness('consecutive')">No back-to-back</button>
+    <button class="seg-btn ${strict === "weekly" ? "on" : ""}" onclick="setStrictness('weekly')">Once per week</button>
+  </div>`;
+
+  const nav = `<div class="pl-nav">
+    <button class="btn sm ghost" onclick="plannerShiftWeek(-1)" title="Previous week">←</button>
+    <button class="pl-week-label" onclick="plannerGoCurrent()" title="Jump to this week">${esc(weekRelLabel(monIso))}</button>
+    <button class="btn sm ghost" onclick="plannerShiftWeek(1)" title="Next week">→</button>
+  </div>`;
+
+  const strictRow = `<div class="pl-strict"><span class="tiny muted">Repeat rule</span>${strictSeg}</div>`;
+  const wx = plannerWeatherControl();
+
+  const filled = week.days.filter(d => d.outfit).length;
+  const controls = `<div class="row wrap" style="gap:8px; margin:12px 0 2px;">
+    <button class="btn sm primary" onclick="autoPlanUI()">✨ Auto-plan week</button>
+    ${filled ? `<button class="btn sm" onclick="clearWeekUI()">Clear week</button>` : ""}
+    <button class="btn sm ghost" onclick="togglePlannerHistory()">Week history</button>
+  </div>`;
+
+  const grid = `<div class="pl-grid" id="pl-grid">${dates.map((_, i) => plannerDayCell(monIso, i)).join("")}</div>`;
+  const hint = filled ? "" : `<div class="tiny muted" style="text-align:center; margin-top:12px;">Empty week — tap <b>Auto-plan</b> to fill all seven days, or tap any day to assign one yourself.</div>`;
+
+  view.innerHTML = seg + nav + strictRow + wx + controls + grid + hint;
+  wirePlannerSwipe();
+}
+
+function plannerDayCell(monIso, i) {
+  const week = getWeek(monIso), d = week.days[i], iso = weekDates(monIso)[i];
+  const isToday = iso === todayISO();
+  const hy = hydrateOutfit(d.outfit);
+  const temp = plannerForecast.status === "ok" ? plannerForecast.byDate[iso] : undefined;
+  const tempTag = (typeof temp === "number") ? `<span class="pl-temp">${temp}°</span>` : "";
+  const lock = d.locked ? `<span class="pl-lock" title="Locked">🔒</span>` : "";
+  const badges = [];
+  if (d.carriedOver) badges.push(`<span class="pl-badge carry">Carried over</span>`);
+  if (d.worn) badges.push(`<span class="pl-badge worn">✓ Worn</span>`);
+  const body = hy
+    ? `<div class="pl-thumbs">${planThumbs(hy.items)}</div>`
+    : `<div class="pl-empty">＋ Empty</div>`;
+  return `<button class="pl-day ${isToday ? "today" : ""} ${d.locked ? "locked" : ""} ${hy ? "" : "is-empty"} ${plannerChanged.has(i) ? "changed" : ""}" onclick="openDaySheet(${i})">
+    <div class="pl-day-head">
+      <span class="pl-dow">${WEEKDAYS[i]}<span class="pl-date">${fmtDayNum(iso)}</span></span>
+      <span class="pl-day-meta">${tempTag}${lock}</span>
+    </div>
+    ${body}
+    ${badges.length ? `<div class="pl-badges">${badges.join("")}</div>` : ""}
+  </button>`;
+}
+
+function planThumbs(items) {
+  return items.slice().sort(sortForDisplay).map(g => {
+    const inner = g.imageData ? `<img src="${g.imageData}" alt="">` : `<span class="catico">${CATEGORY_ICO[g.category] || "👚"}</span>`;
+    const st = g.imageData ? "" : swatchStyle(g.color);
+    return `<span class="pl-thumb" style="${st}">${inner}</span>`;
+  }).join("");
+}
+
+function plannerWeatherControl() {
+  if (plannerForecast.status === "ok")
+    return `<div class="tiny muted" style="margin-top:8px;">🌤 Forecast highs shown · each day filtered to weather-appropriate outfits. <button class="linkbtn" onclick="clearPlannerForecast()">clear</button></div>`;
+  if (plannerForecast.status === "loading")
+    return `<div class="tiny muted" style="margin-top:8px;">Locating…</div>`;
+  const err = plannerForecast.status === "error"
+    ? ` <span class="muted">Couldn’t fetch (offline or location blocked) — planning without weather.</span>` : "";
+  return `<div class="tiny muted" style="margin-top:8px;"><button class="linkbtn" onclick="fetchPlannerForecast()">🌤 Add 7-day forecast</button>${err}</div>`;
+}
+
+// swipe left/right on the grid to change weeks; a small drag won't fire (day taps still work)
+function wirePlannerSwipe() {
+  const grid = document.getElementById("pl-grid");
+  if (!grid) return;
+  let x0 = null, y0 = null;
+  grid.addEventListener("pointerdown", e => { x0 = e.clientX; y0 = e.clientY; }, { passive: true });
+  grid.addEventListener("pointerup", e => {
+    if (x0 == null) return;
+    const dx = e.clientX - x0, dy = e.clientY - y0;
+    x0 = y0 = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) plannerShiftWeek(dx < 0 ? 1 : -1);
+  }, { passive: true });
+  grid.addEventListener("pointercancel", () => { x0 = y0 = null; });
+}
+
+/* ----- day sheet: full outfit + all per-day options (tap or long-press a day) ----- */
+window.openDaySheet = function (i) {
+  plannerSheetDay = i;
+  const monIso = plannerWeek, iso = weekDates(monIso)[i], d = getWeek(monIso).days[i];
+  const hy = hydrateOutfit(d.outfit);
+  const temp = plannerForecast.status === "ok" ? plannerForecast.byDate[iso] : undefined;
+  const title = `${WEEKDAYS_FULL[i]} <span class="muted small" style="font-weight:500;">${fmtShort(iso)}${typeof temp === "number" ? ` · ${temp}°` : ""}</span>`;
+  const bodyHtml = hy ? visualOutfit(hy.items) : `<div class="empty muted" style="padding:26px 0;">No outfit assigned yet.</div>`;
+  const actions = [];
+  if (hy && !d.worn) actions.push(`<button class="btn primary" onclick="dayWore()">Wore this</button>`);
+  if (hy && d.worn) actions.push(`<button class="btn" disabled>✓ Worn</button>`);
+  actions.push(`<button class="btn" onclick="dayAssign()">${hy ? "Replace" : "Assign"} outfit</button>`);
+  if (hy && !d.worn) actions.push(`<button class="btn" onclick="dayShuffleFromSheet()">Shuffle</button>`);
+  actions.push(`<button class="btn" onclick="dayToggleLock()">${d.locked ? "🔓 Unlock" : "🔒 Lock"}</button>`);
+  if (hy) actions.push(`<button class="btn ghost danger" onclick="dayClear()">Clear</button>`);
+
+  const el = document.createElement("div");
+  el.className = "overlay"; el.id = "day-overlay";
+  el.innerHTML = `<div class="sheet" style="max-height:86vh; overflow:auto;">
+    <div class="row" style="justify-content:space-between; align-items:flex-start;">
+      <b style="font-size:16px;">${title}</b>
+      <button class="btn sm ghost" onclick="closeDaySheet()">Close</button>
+    </div>
+    ${d.locked ? `<div class="tiny muted" style="margin-top:3px;">🔒 Locked — kept when you auto-plan or shuffle.</div>` : ""}
+    ${d.carriedOver ? `<div class="tiny muted" style="margin-top:3px;">↪ Carried over from an earlier unworn day.</div>` : ""}
+    <div style="margin-top:12px;">${bodyHtml}</div>
+    <div class="row wrap" style="gap:8px; margin-top:14px;">${actions.join("")}</div>
+  </div>`;
+  el.addEventListener("click", e => { if (e.target === el) closeDaySheet(); });
+  document.body.appendChild(el); haptic(10);
+};
+window.closeDaySheet = function () { const o = document.getElementById("day-overlay"); if (o) o.remove(); };
+window.dayWore = function () {
+  const d = getWeek(plannerWeek).days[plannerSheetDay], hy = hydrateOutfit(d.outfit);
+  if (!hy) return;
+  wearOutfit(hy.items); d.worn = true; saveToStorage(); haptic(22);
+  closeDaySheet(); renderPlan();
+};
+window.dayToggleLock = function () {
+  const d = getWeek(plannerWeek).days[plannerSheetDay];
+  d.locked = !d.locked; saveToStorage(); haptic(12);
+  closeDaySheet(); renderPlan();
+};
+window.dayClear = function () {
+  const d = getWeek(plannerWeek).days[plannerSheetDay];
+  d.outfit = null; d.worn = false; d.carriedOver = false; saveToStorage(); haptic(12);
+  closeDaySheet(); renderPlan();
+};
+window.dayShuffleFromSheet = function () {
+  const changed = shuffleDay(plannerWeek, plannerSheetDay);
+  plannerChanged = new Set(changed); haptic(16);
+  closeDaySheet(); renderPlan();
+  if (changed.length > 1) showToast(`Reshuffled — ${changed.length} days updated`);
+  else if (changed.length) showToast("Day reshuffled");
+  setTimeout(() => { plannerChanged = new Set(); if (currentTab === "plan" && planMode === "week" && !plannerHistory) renderPlan(); }, 1500);
+};
+window.dayAssign = function () { openAssignPicker(plannerSheetDay); };
+
+/* ----- manual assignment: pick a saved or generated outfit for a day ----- */
+window.openAssignPicker = function (i) {
+  plannerSheetDay = i; closeDaySheet();
+  const iso = weekDates(plannerWeek)[i];
+  const season = forecastSeason(iso);
+  const scored = plannerPool();
+  const gen = poolForDay(scored, season).slice().sort((a, b) => b.s - a.s).slice(0, 40).map(x => x.o);
+  const saved = state.outfits.map(o => ({ garmentIds: o.garmentIds, items: o.garmentIds.map(getGarment).filter(Boolean), _name: o.name, _saved: true }))
+    .filter(o => o.items.length === o.garmentIds.length && o.items.length);
+
+  const cards = [];
+  if (saved.length) cards.push(`<div class="sectitle" style="margin:4px 0 8px;">Saved outfits</div>` + saved.map(assignCard).join(""));
+  cards.push(`<div class="sectitle" style="margin:${saved.length ? "16px" : "4px"} 0 8px;">Generated${season ? ` · suited to ${cap(season)} weather` : ""}</div>` +
+    (gen.length ? gen.map(assignCard).join("") : `<div class="tiny muted">No outfits available.</div>`));
+
+  const el = document.createElement("div");
+  el.className = "overlay"; el.id = "assign-overlay";
+  el.innerHTML = `<div class="sheet" style="max-height:86vh; overflow:auto;">
+    <div class="row" style="justify-content:space-between; align-items:center;"><b>Assign to ${WEEKDAYS_FULL[i]}</b><button class="btn sm ghost" onclick="closeAssign()">Cancel</button></div>
+    <div class="stack" style="margin-top:12px;">${cards.join("")}</div>
+  </div>`;
+  el.addEventListener("click", e => { if (e.target === el) closeAssign(); });
+  document.body.appendChild(el); haptic(8);
+};
+function assignCard(o) {
+  const ids = o.garmentIds.join(",");
+  return `<div class="card" style="padding:12px;">
+    ${o._saved ? `<div class="small" style="margin-bottom:6px;"><b>${esc(o._name || "Saved outfit")}</b></div>` : ""}
+    ${visualOutfit(o.items)}
+    <button class="btn sm primary" style="margin-top:10px; width:100%;" onclick="assignOutfit('${ids}')">Assign</button>
+  </div>`;
+}
+window.assignOutfit = function (idsStr) {
+  const ids = idsStr.split(",").filter(Boolean);
+  const d = getWeek(plannerWeek).days[plannerSheetDay];
+  d.outfit = { garmentIds: ids }; d.worn = false; d.carriedOver = false;
+  saveToStorage(); haptic(16); closeAssign(); renderPlan();
+};
+window.closeAssign = function () { const o = document.getElementById("assign-overlay"); if (o) o.remove(); };
+
+/* ----- planner controls ----- */
+window.plannerShiftWeek = function (n) { plannerWeek = mondayOf(isoAddDays(plannerWeek || currentMonday(), n * 7)); haptic(8); renderPlan(); };
+window.plannerGoCurrent = function () { plannerWeek = currentMonday(); haptic(8); renderPlan(); };
+window.setStrictness = function (v) { state.planner.strictness = v === "weekly" ? "weekly" : "consecutive"; saveToStorage(); haptic(10); renderPlan(); };
+window.autoPlanUI = function () { const ok = autoPlanWeek(plannerWeek); haptic(20); renderPlan(); if (ok) showToast("Week planned"); };
+window.clearWeekUI = function () {
+  if (!confirm("Clear all unlocked days this week? Locked days stay put.")) return;
+  getWeek(plannerWeek).days.forEach(d => { if (!d.locked) { d.outfit = null; d.worn = false; d.carriedOver = false; } });
+  saveToStorage(); haptic(12); renderPlan();
+};
+window.togglePlannerHistory = function () { plannerHistory = !plannerHistory; haptic(8); renderPlan(); };
+window.clearPlannerForecast = function () { plannerForecast = { status: "idle", byDate: {} }; renderPlan(); };
+window.fetchPlannerForecast = function () {
+  if (!navigator.geolocation) { plannerForecast = { status: "error", byDate: {} }; renderPlan(); return; }
+  plannerForecast = { status: "loading", byDate: {} }; renderPlan();
+  navigator.geolocation.getCurrentPosition(async pos => {
+    try {
+      const { latitude, longitude } = pos.coords;
+      const res = await fetch(`${OPEN_METEO_URL}?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max&past_days=7&forecast_days=14&timezone=auto`);
+      if (!res.ok) throw new Error("http " + res.status);
+      const data = await res.json();
+      const times = (data.daily && data.daily.time) || [], temps = (data.daily && data.daily.temperature_2m_max) || [];
+      const byDate = {};
+      times.forEach((t, i) => { if (typeof temps[i] === "number") byDate[t] = Math.round(temps[i]); });
+      plannerForecast = { status: "ok", byDate };
+    } catch (e) { plannerForecast = { status: "error", byDate: {} }; }
+    if (currentTab === "plan") renderPlan();
+  }, () => { plannerForecast = { status: "error", byDate: {} }; if (currentTab === "plan") renderPlan(); }, { timeout: 8000, maximumAge: 1800000 });
+};
+
+/* ----- week history: planned vs. actually worn ----- */
+function renderWeekHistory(garments, seg) {
+  viewSub.textContent = "Planned vs. worn";
+  const cur = currentMonday();
+  const keys = Object.keys(state.planner.weeks)
+    .filter(k => k < cur && state.planner.weeks[k].days.some(d => d.outfit || d.worn))
+    .sort().reverse();
+  const back = `<div class="row" style="margin:12px 0;"><button class="btn sm ghost" onclick="togglePlannerHistory()">← Back to week</button></div>`;
+  if (!keys.length) {
+    view.innerHTML = seg + back + emptyState("◷", "No past weeks yet",
+      "Plan a week and mark outfits worn. Once a week is behind you it lands here, showing how closely you followed the plan.", "");
+    return;
+  }
+  const blocks = keys.map(k => {
+    const w = state.planner.weeks[k], dates = weekDates(k);
+    const planned = w.days.filter(d => d.outfit).length;
+    const worn = w.days.filter(d => d.worn).length;
+    const pct = planned ? Math.round(worn / planned * 100) : 0;
+    const rows = w.days.map((d, i) => {
+      const hy = hydrateOutfit(d.outfit);
+      const status = d.worn ? `<span class="pl-badge worn">✓ Worn</span>`
+        : (hy ? `<span class="pl-badge miss">Not worn</span>` : `<span class="tiny muted">—</span>`);
+      return `<div class="pl-hrow">
+        <span class="pl-hdow">${WEEKDAYS[i]}</span>
+        <span class="pl-hthumbs">${hy ? planThumbs(hy.items) : `<span class="tiny muted">Empty</span>`}</span>
+        <span>${status}</span>
+      </div>`;
+    }).join("");
+    return `<div class="card" style="padding:14px; margin-bottom:14px;">
+      <div class="row" style="justify-content:space-between; align-items:baseline;">
+        <b>${fmtShort(dates[0])} – ${fmtShort(dates[6])}</b>
+        <span class="tiny muted">${worn}/${planned} worn${planned ? ` · ${pct}%` : ""}</span>
+      </div>
+      <div style="margin-top:10px;">${rows}</div>
+    </div>`;
+  }).join("");
+  view.innerHTML = seg + back + blocks;
+}
 
 function canBuildOutfits(garments) {
   const b = groupByCategory(garments);
@@ -3351,7 +3890,7 @@ window.applySuggestion = function () {
 window.wipeAll = function () {
   if (confirm("Erase ALL garments, outfits, wishlist and ratings from this device? This can't be undone.")) {
     haptic(30);
-    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {} };
+    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, planner: { strictness: "consecutive", weeks: {} } };
     saveToStorage(); rebuildRatingContext(); lastUnlock = null; ootd = null; render();
   }
 };
@@ -3381,10 +3920,12 @@ window.importData = function (input) {
         ratings: (parsed.ratings && typeof parsed.ratings === "object") ? parsed.ratings : {},
         rejections: Array.isArray(parsed.rejections) ? parsed.rejections : [],
         ruleOverrides: (parsed.ruleOverrides && typeof parsed.ruleOverrides === "object") ? parsed.ruleOverrides : {},
+        planner: normalizePlanner(parsed.planner),
       };
       Object.assign(rules, state.ruleOverrides);
       saveToStorage(); rebuildRatingContext();
       lastUnlock = null; ootd = null; ootdDismissed = false; packResult = null;
+      plannerWeek = null; plannerHistory = false; plannerForecast = { status: "idle", byDate: {} };
       alert(`Imported ${state.garments.length} garments.`);
       setTab("wardrobe");
     } catch (err) { alert("Import failed: " + err.message); }
