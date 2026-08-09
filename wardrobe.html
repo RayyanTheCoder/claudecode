@@ -1489,7 +1489,7 @@ const WIZ_KEYS = { "add-garment": "wardrobe.wizard.garment.v1", "add-wishlist": 
 function isWishlistMode() { return wizardState.mode === "add-wishlist" || wizardState.mode === "edit-wishlist"; }
 function isEditMode() { return wizardState.mode === "edit-garment" || wizardState.mode === "edit-wishlist"; }
 function freshWizard(mode) {
-  return { mode: mode || "add-garment", editId: null, step: 0, dir: 1, showOtherSub: false, showOtherColor: false, showDetail: false, confirmed: [], data: {
+  return { mode: mode || "add-garment", editId: null, step: 0, dir: 1, showOtherSub: false, showOtherColor: false, showDetail: false, fromSummary: false, confirmed: [], data: {
     category: null, subcategory: null, subcategoryCustom: "",
     color: null, colorFamily: null, colorCustom: "", colorHex: "",
     fit: null, formality: 3, season: null, weight: null, visualWeight: null,
@@ -1507,7 +1507,8 @@ function resetWizardToAdd() { wizardState = loadWizardFor("add-garment") || fres
 
 // build wizard state from an existing garment / wishlist item for editing
 function wizardFromItem(mode, item) {
-  const w = freshWizard(mode); w.editId = item.id; const d = w.data;
+  const w = freshWizard(mode); w.editId = item.id; w.step = 50;  // start at the summary (clamped); everything prefilled
+  const d = w.data;
   d.category = item.category;
   const subs = WIZ_SUB[item.category] || [];
   if (item.subcategory && subs.includes(item.subcategory)) d.subcategory = item.subcategory;
@@ -1989,9 +1990,14 @@ function renderWizard(seg) {
   const idx = wizardState.step, id = steps[idx], total = steps.length;
   const pct = total > 1 ? (idx / (total - 1)) * 100 : 0;
   const optional = id === "cost" && !isWishlistMode();   // cost is required for wishlist items
-  const leftBtn = idx > 0
-    ? `<button class="btn sm ghost" onclick="wizBack()">← Back</button>`
-    : (isEditMode() ? `<button class="btn sm ghost" onclick="wizCancel()">Cancel</button>` : `<span style="width:52px"></span>`);
+  const isSummary = id === "summary";
+  // In edit mode the summary IS the home screen, so its left action cancels the
+  // whole edit rather than stepping back into the field-by-field flow.
+  const leftBtn = (isEditMode() && isSummary)
+    ? `<button class="btn sm ghost" onclick="wizCancel()">Cancel</button>`
+    : idx > 0
+      ? `<button class="btn sm ghost" onclick="wizBack()">← Back</button>`
+      : (isEditMode() ? `<button class="btn sm ghost" onclick="wizCancel()">Cancel</button>` : `<span style="width:52px"></span>`);
   const head = `<div class="wiz-head">
     ${leftBtn}
     <span class="tiny muted">Step ${idx + 1} of ${total}</span>
@@ -2189,9 +2195,14 @@ function wireStep(id) {
 }
 window.wizGo = function (dir) {
   lastUnlock = null;
-  wizardState.dir = dir;
-  wizardState.step += dir;
   wizardState.showOtherSub = false; wizardState.showOtherColor = false;
+  if (wizardState.fromSummary) {   // changed one field via a summary chip → hop back to the summary
+    wizardState.fromSummary = false;
+    const steps = wizardSteps();
+    wizardState.dir = -1; wizardState.step = steps.indexOf("summary");
+  } else {
+    wizardState.dir = dir; wizardState.step += dir;
+  }
   saveWizard(); renderForm();
 };
 window.wizNext = function () { wizGo(1); };
@@ -2201,7 +2212,8 @@ window.wizGoto = function (sid) {
   const steps = wizardSteps(); const i = steps.indexOf(sid); if (i < 0) return;
   lastUnlock = null;
   wizardState.dir = i >= wizardState.step ? 1 : -1;
-  wizardState.step = i; wizardState.showOtherSub = false; wizardState.showOtherColor = false;
+  wizardState.step = i; wizardState.fromSummary = true;   // return here after the edit
+  wizardState.showOtherSub = false; wizardState.showOtherColor = false;
   saveWizard(); renderForm();
 };
 window.wizPick = function (field, value, el) {
