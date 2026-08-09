@@ -517,6 +517,16 @@
   .cc-swatch { position: relative; width: 84px; height: 84px; flex: none; border-radius: 16px; border: 1px solid var(--border-2); cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); overflow: hidden; }
   .cc-swatch input[type="color"] { position: absolute; inset: -4px; width: calc(100% + 8px); height: calc(100% + 8px); border: 0; padding: 0; background: none; cursor: pointer; opacity: 0; }
 
+  /* ---- occasion editor ---- */
+  .occ-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+  .occ-grid .field label { display: block; font-size: 11.5px; color: var(--muted); margin-bottom: 4px; }
+  .occ-grid select { width: 100%; }
+  .occ-check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; color: var(--text); cursor: pointer; }
+  .chip.btn-chip.sm { padding: 4px 9px; font-size: 12px; }
+  .occ-summary { cursor: pointer; font-size: 12.5px; color: var(--muted); user-select: none; }
+  .occ-exlist { max-height: 180px; overflow: auto; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; padding: 4px 2px; }
+  .occ-ex { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+
   /* ---- why-this-outfit reasoning line ---- */
   .why { margin-top: 12px; font-size: 12.5px; color: var(--muted); letter-spacing: .01em; display: flex; align-items: center; gap: 4px; }
   .hero .why { color: color-mix(in srgb, var(--accent) 78%, var(--muted)); font-weight: 500; }
@@ -645,15 +655,31 @@ const gapCandidates = [
 ];
 
 /*
-  Occasion rules — predicates over an outfit's items. Used to filter the outfit
-  browser by intent. Heuristic and editable; occasions can overlap.
+  Occasion rules — declarative so they can be edited from the Occasions settings
+  screen (add / rename / remove) and still live here as tunable defaults. Each rule
+  is compiled to a predicate by occasionMatches(). Fields (all optional):
+    minFormality / maxFormality  every item's formality must sit in this band
+    peakMin                      the outfit must REACH at least this (its dressiest item)
+    requireRelaxed               at least one relaxed-fit piece
+    blockSubcategories []        substring match — none of these may appear
+    allowSubcategories []        whitelist — every item must match one (null = no whitelist)
+    avoidTextures []             none of these textures may appear (e.g. sheen for filming)
+    excludeItemIds []            specific garment ids to keep out (user-populated)
+    scoreWeights {}              per-occasion scoring overrides, merged over rules.scoreWeights
+  The live, editable copy is state.occasions (seeded from this on first run).
 */
-const occasionRules = {
-  campus:   items => { const f = items.map(i => i.formality); return Math.min(...f) >= 2 && Math.max(...f) <= 4; },
-  goingOut: items => Math.max(...items.map(i => i.formality)) >= 3 && !items.some(i => /sweatpant/i.test(i.subcategory)),
-  gym:      items => Math.max(...items.map(i => i.formality)) <= 2,
-  lazy:     items => Math.max(...items.map(i => i.formality)) <= 2 && items.some(i => i.fit === "relaxed"),
-};
+const OCCASION_DEFAULTS = [
+  { id: "campus",   label: "Campus",    minFormality: 2, maxFormality: 4 },
+  { id: "goingOut", label: "Going out", peakMin: 3, blockSubcategories: ["sweatpant"] },
+  { id: "gym",      label: "Gym",       maxFormality: 2 },
+  { id: "lazy",     label: "Lazy",      maxFormality: 2, requireRelaxed: true },
+  // ---- new occasions ----
+  { id: "school",   label: "School",    minFormality: 2, maxFormality: 4, blockSubcategories: ["sweatpant"] }, // casual→smart-casual, no sweatpants unless re-allowed
+  { id: "date",     label: "Date",      minFormality: 2, peakMin: 3, scoreWeights: { contrast: 1.9, texture: 1.9 } }, // dressier end; lean on texture + contrast
+  { id: "family",   label: "Family",    minFormality: 2, maxFormality: 4, blockSubcategories: ["sweatpant", "tank"] }, // modest, mid-formality
+  { id: "errands",  label: "Errands",   maxFormality: 4 }, // anything comfortable; sweatpants allowed (no block)
+  { id: "filming",  label: "Filming",   avoidTextures: ["leather"], maxFormality: 4 }, // matte — no sheen (add "technical" to also drop synthetics)
+];
 
 /*
   Smart defaults — when a subcategory is picked in the guided add flow, the rest
@@ -687,8 +713,56 @@ const SEASONS      = ["hot", "mild", "cold", "all"];
 const FITS         = ["slim", "regular", "relaxed"];
 const WEIGHTS      = ["light", "medium", "heavy"];
 const VISUAL_WEIGHTS = ["lowProfile", "standard", "substantial"];
-const OCCASIONS    = ["campus", "goingOut", "gym", "lazy"];
-const OCCASION_LBL = { campus: "Campus", goingOut: "Going out", gym: "Gym", lazy: "Lazy" };
+// Occasions are user-editable at runtime — these read the live list in state.occasions
+// (seeded from OCCASION_DEFAULTS). See occasionMatches() for how a rule becomes a predicate.
+function getOccasions() { return (state.occasions && state.occasions.length) ? state.occasions : OCCASION_DEFAULTS; }
+function getOccasion(id) { return getOccasions().find(o => o.id === id) || null; }
+function occasionIds() { return getOccasions().map(o => o.id); }
+function occasionLabel(id) { const o = getOccasion(id); return o ? o.label : id; }
+// Compile a declarative rule to a pass/fail over an outfit's items.
+function occasionMatches(rule, items) {
+  if (!rule || !items.length) return true;
+  const f = items.map(i => i.formality);
+  if (rule.minFormality != null && Math.min(...f) < rule.minFormality) return false;
+  if (rule.maxFormality != null && Math.max(...f) > rule.maxFormality) return false;
+  if (rule.peakMin != null && Math.max(...f) < rule.peakMin) return false;
+  if (rule.requireRelaxed && !items.some(i => i.fit === "relaxed")) return false;
+  const block = (rule.blockSubcategories || []).map(s => s.toLowerCase()).filter(Boolean);
+  if (block.length && items.some(i => block.some(b => (i.subcategory || "").toLowerCase().includes(b)))) return false;
+  const allow = rule.allowSubcategories;
+  if (Array.isArray(allow) && allow.length &&
+      !items.every(i => allow.some(a => (i.subcategory || "").toLowerCase().includes(a.toLowerCase())))) return false;
+  const avoidTex = rule.avoidTextures || [];
+  if (avoidTex.length && items.some(i => avoidTex.includes(i.texture))) return false;
+  const ex = rule.excludeItemIds || [];
+  if (ex.length && items.some(i => ex.includes(i.id))) return false;
+  return true;
+}
+function matchesOccasionId(id, items) { return occasionMatches(getOccasion(id), items); }
+// Sanitize a stored occasion list (or clone the defaults for a fresh install / reset).
+function defaultOccasions() { return OCCASION_DEFAULTS.map(o => JSON.parse(JSON.stringify(o))); }
+function normalizeOccasion(o, i) {
+  const id = (o && typeof o.id === "string" && o.id.trim()) ? o.id.trim() : "occ" + i + "_" + Math.random().toString(36).slice(2, 6);
+  const num = v => (v == null || v === "") ? null : Math.min(5, Math.max(1, parseInt(v, 10) || 0)) || null;
+  return {
+    id,
+    label: (o && o.label ? String(o.label) : id).trim() || id,
+    minFormality: num(o && o.minFormality),
+    maxFormality: num(o && o.maxFormality),
+    peakMin: num(o && o.peakMin),
+    requireRelaxed: !!(o && o.requireRelaxed),
+    blockSubcategories: Array.isArray(o && o.blockSubcategories) ? o.blockSubcategories.filter(Boolean) : [],
+    allowSubcategories: Array.isArray(o && o.allowSubcategories) ? o.allowSubcategories.filter(Boolean) : null,
+    avoidTextures: Array.isArray(o && o.avoidTextures) ? o.avoidTextures.filter(t => TEXTURES.includes(t)) : [],
+    excludeItemIds: Array.isArray(o && o.excludeItemIds) ? o.excludeItemIds.filter(Boolean) : [],
+    scoreWeights: (o && o.scoreWeights && typeof o.scoreWeights === "object") ? o.scoreWeights : null,
+  };
+}
+function normalizeOccasions(arr) {
+  if (!Array.isArray(arr) || !arr.length) return defaultOccasions();
+  const seen = new Set();
+  return arr.map(normalizeOccasion).filter(o => { if (seen.has(o.id)) return false; seen.add(o.id); return true; });
+}
 
 // ---- guided add-flow option sets ----
 const WIZ_CAT = [
@@ -873,7 +947,7 @@ function casualFor(subcategory, dressiness) {
 /* ============================================================================
    DATA LAYER
    ============================================================================ */
-let state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, planner: { strictness: "consecutive", weeks: {} } };
+let state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, occasions: defaultOccasions(), planner: { strictness: "consecutive", weeks: {} } };
 
 function uid() {
   if (crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -893,6 +967,9 @@ function loadFromStorage() {
       state.rejections = Array.isArray(parsed.rejections) ? parsed.rejections : [];
       state.ruleOverrides = (parsed.ruleOverrides && typeof parsed.ruleOverrides === "object") ? parsed.ruleOverrides : {};
       state.coWear = (parsed.coWear && typeof parsed.coWear === "object") ? parsed.coWear : {};
+      state.occasions = normalizeOccasions(parsed.occasions);
+      // migration: a saved outfit's single `occasion` becomes an `occasions` array (item: multiple per outfit)
+      state.outfits = state.outfits.map(o => ({ ...o, occasions: normalizeOutfitOccasions(o) }));
       // migration: re-normalize every garment so old records gain the upgraded fields
       // (colorHex, texture, silhouette, dressiness/casualness) derived from what they had
       state.garments = state.garments.map(normalizeGarment);
@@ -901,7 +978,7 @@ function loadFromStorage() {
     }
   } catch (e) {
     console.error("load failed", e);
-    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, planner: { strictness: "consecutive", weeks: {} } };
+    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, occasions: defaultOccasions(), planner: { strictness: "consecutive", weeks: {} } };
   }
   Object.assign(rules, state.ruleOverrides);   // apply any confirmed config changes
 }
@@ -1113,12 +1190,22 @@ function convertWishlist(id) {
 }
 
 // --- saved outfits ---
-function saveOutfitRecord({ garmentIds, name = null, occasion = null, isManual = false }) {
+// An outfit can carry several occasions (e.g. school + errands). Legacy records
+// stored a single `occasion` string; normalizeOutfitOccasions folds it into the array.
+function normalizeOutfitOccasions(o) {
+  if (Array.isArray(o.occasions)) return o.occasions.filter(Boolean);
+  return o.occasion ? [o.occasion] : [];
+}
+function saveOutfitRecord({ garmentIds, name = null, occasions = [], isManual = false }) {
   if (state.outfits.some(o => sameSet(o.garmentIds, garmentIds))) return null;
-  const rec = { id: uid(), garmentIds, name, occasion, rating: null, timesWorn: 0, lastWorn: null, isManual };
+  const rec = { id: uid(), garmentIds, name, occasions: (occasions || []).filter(Boolean), rating: null, timesWorn: 0, lastWorn: null, isManual };
   state.outfits.push(rec);
   saveToStorage();
   return rec;
+}
+function setOutfitOccasions(recId, occasions) {
+  const rec = state.outfits.find(o => o.id === recId);
+  if (rec) { rec.occasions = (occasions || []).filter(Boolean); saveToStorage(); }
 }
 function deleteOutfitRecord(id) {
   state.outfits = state.outfits.filter(o => o.id !== id);
@@ -1386,8 +1473,10 @@ function scoreComponents(items) {
   if (items.filter(i => i.category in TIER).length === 2) base += 0.4;
   return { contrast, temperature, texture, silhouette, learnedPair, wear, rating, base };
 }
-function scoreOutfit(items) {
-  const c = scoreComponents(items), w = rules.scoreWeights;
+function scoreOutfit(items, occasionId) {
+  const c = scoreComponents(items);
+  let w = rules.scoreWeights;
+  if (occasionId) { const r = getOccasion(occasionId); if (r && r.scoreWeights) w = { ...w, ...r.scoreWeights }; }  // e.g. Date leans on contrast + texture
   return w.contrast * c.contrast + w.temperature * c.temperature + w.texture * c.texture
        + w.silhouette * c.silhouette + w.learnedPair * c.learnedPair + w.wear * c.wear
        + w.rating * c.rating + w.base * c.base;
@@ -1493,7 +1582,7 @@ function planPacking(garments, days, occasions) {
   const { outfits } = generateOutfits(garments, { store: OUTFIT_STORE });
   let pool = outfits;
   if (occasions.length) {
-    pool = pool.filter(o => occasions.some(occ => { try { return occasionRules[occ](o.items); } catch (e) { return false; } }));
+    pool = pool.filter(o => occasions.some(occ => matchesOccasionId(occ, o.items)));
   }
   pool = pool.map(o => ({ o, s: scoreOutfit(o.items) })).sort((a, b) => b.s - a.s).map(x => x.o);
   if (!pool.length) return { chosen: [], capsule: [], pool: 0, shortfall: days };
@@ -1757,7 +1846,8 @@ let ootd = null;                 // current outfit-of-the-day pick
 let ootdDismissed = false;       // hide OOTD for the session once dismissed
 let builderSel = new Set();      // garment ids selected in the manual builder
 let builderName = "";            // preserved across builder re-renders
-let builderOccasion = "";
+let builderOccasions = new Set();   // occasions tagged on the outfit being built (multiple allowed)
+let occasionEditor = false;          // occasions settings screen active
 let planMode = "week";           // "week" | "gaps" | "wishlist" | "packing"
 
 // session 3 view state
@@ -2053,6 +2143,7 @@ function render() {
   topActions.innerHTML = `
     <button class="iconbtn" title="Search" onclick="openSearch()">🔍</button>
     <button class="iconbtn" title="Theme" onclick="openThemePicker()">🎨</button>`;
+  if (occasionEditor) { renderOccasionEditor(); window.scrollTo(0, 0); return; }
   if (searching) { renderSearch(); window.scrollTo(0, 0); return; }
   if (focusGarment) { renderGarmentOutfits(focusGarment); window.scrollTo(0, 0); return; }
   if (batchPhoto) { renderBatch(); window.scrollTo(0, 0); return; }
@@ -2974,11 +3065,13 @@ function renderSuggested(garments, seg) {
   }
 
   const { outfits, count, capped } = generateOutfits(garments, { store: OUTFIT_STORE });
-  outfits.sort((a, b) => scoreOutfit(b.items) - scoreOutfit(a.items));
+  // rank with the active occasion's scoring lean (e.g. Date boosts contrast + texture)
+  const occ = occasionFilter !== "all" ? occasionFilter : null;
+  outfits.sort((a, b) => scoreOutfit(b.items, occ) - scoreOutfit(a.items, occ));
 
   const weatherOn = weatherFilter && weather.status === "ok";
   let pool = weatherOn ? outfits.filter(o => outfitSuitsSeason(o.items, weather.season)) : outfits;
-  if (occasionFilter !== "all") pool = pool.filter(o => { try { return occasionRules[occasionFilter](o.items); } catch (e) { return false; } });
+  if (occ) pool = pool.filter(o => matchesOccasionId(occ, o.items));
   // constrained shuffle — only outfits containing every "must include" garment (item 7)
   if (mustInclude.size) pool = pool.filter(o => [...mustInclude].every(id => o.garmentIds.includes(id)));
 
@@ -2991,14 +3084,15 @@ function renderSuggested(garments, seg) {
   viewSub.textContent = `${count}${capped ? "+" : ""} valid · ${pool.length} shown`;
 
   const occChips = `<div class="chiprow scroll" style="margin-bottom:14px;">
-    ${["all", ...OCCASIONS].map(o => fchip(o === "all" ? "All" : OCCASION_LBL[o], occasionFilter === o, `setOccasion('${o}')`)).join("")}</div>`;
+    ${["all", ...occasionIds()].map(o => fchip(o === "all" ? "All" : occasionLabel(o), occasionFilter === o, `setOccasion('${o}')`)).join("")}
+    ${fchip("⚙ Edit", false, "openOccasionEditor()")}</div>`;
   const controls = weatherBar() + occChips + mustIncludeBar();
 
   if (!deck.length) {
     const names = [...mustInclude].map(id => getGarment(id)).filter(Boolean).map(g => g.name).join(" + ");
     const msg = mustInclude.size ? `No valid outfits include ${esc(names)}. Remove a constraint to see more.`
       : weatherOn ? `No outfits suit ${weather.tempC}°C right now — clear the weather filter to see more.`
-      : `No ${occasionFilter === "all" ? "" : OCCASION_LBL[occasionFilter] + " "}outfits from your current wardrobe.`;
+      : `No ${occasionFilter === "all" ? "" : occasionLabel(occasionFilter) + " "}outfits from your current wardrobe.`;
     view.innerHTML = seg + controls + `<div class="empty muted">${msg}</div>`;
     return;
   }
@@ -3020,7 +3114,102 @@ function renderSuggested(garments, seg) {
        <div class="grid">${listCards}</div>`;
   }
 }
-window.setOccasion = function (o) { occasionFilter = o; deckIndex = 0; renderOutfits(); };
+window.setOccasion = function (o) { occasionFilter = (o === "all" || getOccasion(o)) ? o : "all"; deckIndex = 0; renderOutfits(); };
+
+/* ============================================================================
+   OCCASION EDITOR  —  user-editable occasions (add / rename / remove), each with
+   its own declarative rule. Persisted in state.occasions; defaults in the config.
+   ============================================================================ */
+window.openOccasionEditor = function () { occasionEditor = true; render(); };
+window.closeOccasionEditor = function () { occasionEditor = false; if (!getOccasion(occasionFilter)) occasionFilter = "all"; setTab("outfits"); };
+function newOccasionId() { let i = 1, id; do { id = "custom" + i++; } while (getOccasion(id)); return id; }
+
+function renderOccasionEditor() {
+  viewTitle.textContent = "Occasions";
+  viewSub.textContent = "Editable filters & scoring rules";
+  const cards = getOccasions().map(occasionEditorCard).join("");
+  view.innerHTML = `
+    <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <button class="btn sm ghost" onclick="closeOccasionEditor()">← Done</button>
+      <div class="row" style="gap:8px;">
+        <button class="btn sm" onclick="occAdd()">＋ Add occasion</button>
+        <button class="btn sm ghost" onclick="occResetDefaults()">Reset</button>
+      </div>
+    </div>
+    <div class="tiny muted" style="margin-bottom:14px;">Each occasion filters the outfit browser and packing. A rule can set a formality band, a level the outfit must reach, blocked subcategories, textures to avoid (e.g. sheen), and specific items to exclude. Built-in defaults live in the config block at the top of the file.</div>
+    <div class="stack">${cards}</div>`;
+}
+function occasionEditorCard(o) {
+  const numSel = field => {
+    const v = o[field];
+    return `<select onchange="occSetNum('${o.id}','${field}',this.value)"><option value=""${v == null ? " selected" : ""}>—</option>${[1, 2, 3, 4, 5].map(n => `<option value="${n}"${v === n ? " selected" : ""}>${n}</option>`).join("")}</select>`;
+  };
+  const texChips = TEXTURES.map(t => `<span class="chip btn-chip sm ${(o.avoidTextures || []).includes(t) ? "on" : ""}" onclick="occToggleTexture('${o.id}','${t}')">${TEXTURE_LBL[t]}</span>`).join("");
+  const exSet = new Set(o.excludeItemIds || []);
+  const g = getGarments();
+  const exList = g.length ? g.map(x => `<label class="occ-ex"><input type="checkbox" ${exSet.has(x.id) ? "checked" : ""} onchange="occToggleExcludeItem('${o.id}','${x.id}',this.checked)"> ${esc(x.name)}</label>`).join("") : `<div class="tiny muted">No garments yet.</div>`;
+  const scoreNote = o.scoreWeights ? `<div class="tiny muted" style="margin-top:10px;">Scoring lean: ${Object.entries(o.scoreWeights).map(([k, v]) => `${esc(k)} ×${v}`).join(", ")} — tune in the config block.</div>` : "";
+  return `<div class="card" style="padding:14px;">
+    <div class="row" style="gap:8px; align-items:center;">
+      <input type="text" class="grow" value="${esc(o.label)}" onchange="occRename('${o.id}',this.value)" placeholder="Occasion name" style="font-weight:600;">
+      <button class="btn sm ghost danger" onclick="occDelete('${o.id}')">Delete</button>
+    </div>
+    <div class="occ-grid">
+      <div class="field"><label>Every item ≥</label>${numSel("minFormality")}</div>
+      <div class="field"><label>Every item ≤</label>${numSel("maxFormality")}</div>
+      <div class="field"><label>Reaches ≥</label>${numSel("peakMin")}</div>
+    </div>
+    <label class="occ-check"><input type="checkbox" ${o.requireRelaxed ? "checked" : ""} onchange="occToggleRelaxed('${o.id}',this.checked)"> Requires a relaxed-fit piece</label>
+    <div class="field" style="margin-top:10px;"><label>Blocked subcategories (comma-separated)</label>
+      <input type="text" value="${esc((o.blockSubcategories || []).join(", "))}" onchange="occSetBlockSubs('${o.id}',this.value)" placeholder="e.g. sweatpant, tank"></div>
+    <div style="margin-top:10px;"><div class="tiny muted" style="margin-bottom:6px;">Avoid textures</div><div class="chiprow wrap">${texChips}</div></div>
+    <details style="margin-top:10px;"><summary class="occ-summary">Excluded items (${exSet.size})</summary><div class="occ-exlist">${exList}</div></details>
+    ${scoreNote}
+  </div>`;
+}
+window.occAdd = function () {
+  state.occasions = normalizeOccasions(getOccasions());
+  state.occasions.push(normalizeOccasion({ id: newOccasionId(), label: "New occasion" }, state.occasions.length));
+  saveToStorage(); haptic(10); render();
+};
+window.occDelete = function (id) {
+  if (!confirm("Remove this occasion? Saved outfits keep any other tags they have.")) return;
+  state.occasions = getOccasions().filter(o => o.id !== id);
+  if (occasionFilter === id) occasionFilter = "all";
+  saveToStorage(); haptic(14); render();
+};
+window.occRename = function (id, v) { const o = getOccasion(id); if (o) { o.label = (v || "").trim() || o.id; saveToStorage(); } };
+window.occSetNum = function (id, field, v) { const o = getOccasion(id); if (o) { o[field] = v === "" ? null : Math.min(5, Math.max(1, parseInt(v, 10))); saveToStorage(); } };
+window.occToggleRelaxed = function (id, checked) { const o = getOccasion(id); if (o) { o.requireRelaxed = !!checked; saveToStorage(); } };
+window.occSetBlockSubs = function (id, v) { const o = getOccasion(id); if (o) { o.blockSubcategories = v.split(",").map(s => s.trim().toLowerCase()).filter(Boolean); saveToStorage(); } };
+window.occToggleTexture = function (id, tex) { const o = getOccasion(id); if (o) { const s = new Set(o.avoidTextures || []); s.has(tex) ? s.delete(tex) : s.add(tex); o.avoidTextures = [...s]; saveToStorage(); haptic(6); render(); } };
+window.occToggleExcludeItem = function (id, gid, checked) { const o = getOccasion(id); if (o) { const s = new Set(o.excludeItemIds || []); checked ? s.add(gid) : s.delete(gid); o.excludeItemIds = [...s]; saveToStorage(); } };
+window.occResetDefaults = function () {
+  if (!confirm("Reset all occasions to the built-in defaults? Custom occasions and edits are lost.")) return;
+  state.occasions = defaultOccasions(); occasionFilter = "all";
+  saveToStorage(); haptic(20); render();
+};
+
+/* ----- tag a saved outfit with multiple occasions ----- */
+window.openOutfitOccasions = function (recId) {
+  const rec = state.outfits.find(o => o.id === recId); if (!rec) return;
+  const cur = new Set(normalizeOutfitOccasions(rec));
+  const el = document.createElement("div"); el.className = "overlay"; el.id = "occ-overlay";
+  el.innerHTML = `<div class="sheet">
+    <div class="row" style="justify-content:space-between; align-items:center;"><b>Occasions for this outfit</b><button class="btn sm ghost" onclick="closeOutfitOccasions()">Done</button></div>
+    <div class="tiny muted" style="margin:4px 0 12px;">Tag every occasion this outfit works for — it can have several.</div>
+    <div class="chiprow wrap">${occasionIds().map(o => `<span class="chip btn-chip ${cur.has(o) ? "on" : ""}" onclick="toggleOutfitOccasion('${recId}','${o}',this)">${esc(occasionLabel(o))}</span>`).join("")}</div>
+  </div>`;
+  el.addEventListener("click", e => { if (e.target === el) closeOutfitOccasions(); });
+  document.body.appendChild(el); haptic(8);
+};
+window.toggleOutfitOccasion = function (recId, o, elc) {
+  const rec = state.outfits.find(x => x.id === recId); if (!rec) return;
+  const s = new Set(normalizeOutfitOccasions(rec));
+  if (s.has(o)) { s.delete(o); elc.classList.remove("on"); } else { s.add(o); elc.classList.add("on"); }
+  setOutfitOccasions(recId, [...s]); haptic(6);
+};
+window.closeOutfitOccasions = function () { const o = document.getElementById("occ-overlay"); if (o) o.remove(); if (currentTab === "outfits") renderOutfits(); };
 
 /* ---- "Refine" prompt: one question about one incomplete garment, once/session (item 2) ---- */
 function refineTarget() {
@@ -3516,9 +3705,10 @@ function renderBuilder(garments, seg) {
       ${vBox}
       <div class="row wrap" style="gap:10px; margin-top:6px;">
         <input type="text" id="build-name" class="grow" value="${esc(builderName)}" placeholder="Name this outfit (optional)" style="min-width:160px;" />
-        <select id="build-occasion" style="width:auto;">
-          ${["", ...OCCASIONS].map(o => opt(o, o === "" ? "No occasion" : OCCASION_LBL[o], builderOccasion)).join("")}
-        </select>
+      </div>
+      <div class="tiny muted" style="margin:10px 0 6px;">Occasions (tap any that fit — an outfit can have several)</div>
+      <div class="chiprow scroll">
+        ${occasionIds().map(o => fchip(occasionLabel(o), builderOccasions.has(o), `toggleBuilderOccasion('${o}')`)).join("")}
       </div>
       <div class="row" style="gap:10px; margin-top:12px;">
         <button class="btn primary grow" onclick="saveManualOutfit()" ${selItems.length ? "" : "disabled"}>Save outfit</button>
@@ -3529,12 +3719,9 @@ function renderBuilder(garments, seg) {
 
   const nameEl = document.getElementById("build-name");
   if (nameEl) nameEl.oninput = e => { builderName = e.target.value; };
-  const occEl = document.getElementById("build-occasion");
-  if (occEl) occEl.onchange = e => { builderOccasion = e.target.value; };
 }
 function syncBuilderInputs() {
   const n = document.getElementById("build-name"); if (n) builderName = n.value;
-  const o = document.getElementById("build-occasion"); if (o) builderOccasion = o.value;
 }
 window.toggleBuilderPick = function (id) {
   syncBuilderInputs();
@@ -3548,12 +3735,17 @@ window.saveManualOutfit = function () {
   const v = isValidOutfit(items);
   if (!v.valid && !confirm("This outfit breaks:\n\n• " + v.reasons.join("\n• ") + "\n\nSave it anyway?")) return;
   const name = (document.getElementById("build-name").value || "").trim() || null;
-  const occasion = document.getElementById("build-occasion").value || null;
-  const rec = saveOutfitRecord({ garmentIds: items.map(i => i.id), name, occasion, isManual: true });
+  const occasions = [...builderOccasions].filter(o => getOccasion(o));
+  const rec = saveOutfitRecord({ garmentIds: items.map(i => i.id), name, occasions, isManual: true });
   if (!rec) { alert("You've already saved this exact outfit."); return; }
   haptic(14);
-  builderSel.clear(); builderName = ""; builderOccasion = "";
+  builderSel.clear(); builderName = ""; builderOccasions = new Set();
   renderOutfits();
+};
+window.toggleBuilderOccasion = function (o) {
+  syncBuilderInputs();
+  if (builderOccasions.has(o)) builderOccasions.delete(o); else builderOccasions.add(o);
+  haptic(6); renderOutfits();
 };
 
 function savedOutfitCard(rec) {
@@ -3564,7 +3756,7 @@ function savedOutfitCard(rec) {
     <div class="card o-card">
       <div class="row wrap" style="justify-content:space-between; align-items:flex-start; gap:6px;">
         <div class="small">${rec.name ? esc(rec.name) : "Untitled outfit"}
-          ${rec.occasion ? `<span class="badge" style="margin-left:6px;">${OCCASION_LBL[rec.occasion]}</span>` : ""}
+          ${(rec.occasions || []).filter(o => getOccasion(o)).map(o => `<span class="badge" style="margin-left:4px;">${esc(occasionLabel(o))}</span>`).join("")}
           ${rec.isManual ? `<span class="badge" style="margin-left:4px;">Manual</span>` : ""}
           ${!v.valid ? `<span class="badge warn" style="margin-left:4px;" title="${esc(v.reasons.join(', '))}">Breaks a rule</span>` : ""}
         </div>
@@ -3573,6 +3765,7 @@ function savedOutfitCard(rec) {
       ${visualOutfit(items)}
       <div class="row wrap" style="gap:8px; align-items:center; margin-top:12px;">
         <button class="btn sm primary" onclick="woreSaved('${rec.id}')">Wore this today</button>
+        <button class="btn sm" onclick="openOutfitOccasions('${rec.id}')">🏷 Occasions</button>
         <button class="btn sm danger" onclick="deleteSaved('${rec.id}')">Delete</button>
         ${ratingStars(rec.garmentIds)}
       </div>
@@ -3986,7 +4179,7 @@ function renderPacking(garments, seg) {
         <div class="grow" style="min-width:180px;">
           <label class="small muted">Occasions (optional)</label>
           <div class="row wrap" style="gap:7px; margin-top:7px;">
-            ${OCCASIONS.map(o => `<span class="chip btn-chip ${packOccasions.includes(o) ? "on" : ""}" onclick="togglePackOccasion('${o}')">${OCCASION_LBL[o]}</span>`).join("")}
+            ${occasionIds().map(o => `<span class="chip btn-chip ${packOccasions.includes(o) ? "on" : ""}" onclick="togglePackOccasion('${o}')">${esc(occasionLabel(o))}</span>`).join("")}
           </div>
         </div>
       </div>
@@ -3997,7 +4190,7 @@ function renderPacking(garments, seg) {
   if (packResult) {
     const r = packResult;
     if (!r.pool) {
-      result = `<div class="empty muted">No outfits match ${packOccasions.map(o => OCCASION_LBL[o]).join(" / ") || "your wardrobe"}. Try different occasions.</div>`;
+      result = `<div class="empty muted">No outfits match ${packOccasions.map(o => occasionLabel(o)).join(" / ") || "your wardrobe"}. Try different occasions.</div>`;
     } else {
       const shortfall = r.shortfall > 0
         ? `<div class="banner warn">Only ${r.chosen.length} distinct outfit${r.chosen.length === 1 ? "" : "s"} available — ${r.shortfall} day${r.shortfall === 1 ? "" : "s"} short. Add pieces or widen occasions.</div>` : "";
@@ -4139,6 +4332,13 @@ function renderStats() {
           <button class="btn sm" onclick="openAdvancedAdd()">Advanced add form</button>
         </div>
       </div>
+      <div class="card" style="padding:14px; margin-bottom:16px;">
+        <div class="sectitle" style="margin-bottom:8px;">Occasions</div>
+        <div class="row wrap" style="gap:8px;">
+          <button class="btn sm" onclick="openOccasionEditor()">⚙ Edit occasions</button>
+        </div>
+        <div class="tiny muted" style="margin-top:8px;">${getOccasions().length} occasions — add, rename or remove them, and tune each one's rule. Used to filter suggestions and packing.</div>
+      </div>
       <div class="card" style="padding:14px;">
         <div class="sectitle" style="margin-bottom:8px;">Data</div>
         <div class="row wrap" style="gap:8px;">
@@ -4180,7 +4380,7 @@ window.applySuggestion = function () {
 window.wipeAll = function () {
   if (confirm("Erase ALL garments, outfits, wishlist and ratings from this device? This can't be undone.")) {
     haptic(30);
-    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, planner: { strictness: "consecutive", weeks: {} } };
+    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, occasions: defaultOccasions(), planner: { strictness: "consecutive", weeks: {} } };
     saveToStorage(); rebuildRatingContext(); lastUnlock = null; ootd = null; render();
   }
 };
@@ -4211,8 +4411,10 @@ window.importData = function (input) {
         rejections: Array.isArray(parsed.rejections) ? parsed.rejections : [],
         ruleOverrides: (parsed.ruleOverrides && typeof parsed.ruleOverrides === "object") ? parsed.ruleOverrides : {},
         coWear: (parsed.coWear && typeof parsed.coWear === "object") ? parsed.coWear : {},
+        occasions: normalizeOccasions(parsed.occasions),
         planner: normalizePlanner(parsed.planner),
       };
+      state.outfits = state.outfits.map(o => ({ ...o, occasions: normalizeOutfitOccasions(o) }));
       Object.assign(rules, state.ruleOverrides);
       saveToStorage(); rebuildRatingContext();
       lastUnlock = null; ootd = null; ootdDismissed = false; packResult = null;
