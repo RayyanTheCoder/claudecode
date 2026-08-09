@@ -512,6 +512,15 @@
   .bg-swatch { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border-2); cursor: pointer; flex: none; }
   .bg-swatch.on { box-shadow: 0 0 0 2px var(--accent); }
 
+  /* ---- custom colour picker (add flow) ---- */
+  .custom-color { display: flex; gap: 16px; align-items: center; margin: 18px 0 4px; }
+  .cc-swatch { position: relative; width: 84px; height: 84px; flex: none; border-radius: 16px; border: 1px solid var(--border-2); cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); overflow: hidden; }
+  .cc-swatch input[type="color"] { position: absolute; inset: -4px; width: calc(100% + 8px); height: calc(100% + 8px); border: 0; padding: 0; background: none; cursor: pointer; opacity: 0; }
+
+  /* ---- why-this-outfit reasoning line ---- */
+  .why { margin-top: 12px; font-size: 12.5px; color: var(--muted); letter-spacing: .01em; display: flex; align-items: center; gap: 4px; }
+  .hero .why { color: color-mix(in srgb, var(--accent) 78%, var(--muted)); font-weight: 500; }
+
   /* ---- weekly planner ---- */
   .pl-nav { display: flex; align-items: center; gap: 8px; justify-content: center; margin-top: 8px; }
   .pl-week-label { flex: 0 0 auto; min-width: 150px; text-align: center; background: var(--bg-raise); border: 1px solid var(--border); color: var(--text); border-radius: 10px; padding: 8px 14px; font-weight: 600; cursor: pointer; font-size: 14px; }
@@ -589,7 +598,9 @@
    ============================================================================ */
 const rules = {
   maxAccentItems: 1,
-  formalitySpread: 2,
+  formalitySpread: 2,           // legacy single-axis spread (kept for the "tighten spread" learning tip)
+  dressinessSpread: 2,          // NEW: max spread in dressiness across an outfit
+  casualnessSpread: 2,          // NEW: max spread in casualness — the two together fix loungewear-meets-smart
   requireDarkAnchor: true,
   blockedPairs: [["brown", "navy"]],
   relaxedBottomBlockedShoes: ["lowProfile"],
@@ -603,6 +614,18 @@ const rules = {
     cold: ["mild", "cold", "all"],
     all:  ["hot", "mild", "cold", "all"],
   },
+  // ---- scoring composite (item 5). All weights tunable; raise one to lean the engine toward it. ----
+  scoreWeights: {
+    contrast:    1.0,   // tonal distance between the dominant top and the bottom
+    temperature: 0.8,   // warm/cool coherence (mixing is forgiven when contrast is high)
+    texture:     1.0,   // 2–3 distinct textures reads considered; one texture is flat
+    silhouette:  0.9,   // proportional balance between top and bottom
+    learnedPair: 1.2,   // garment pairs you rate highly or wear together, up-weighted over time
+    wear:        0.6,   // proven pieces — what actually gets worn, not just what's rated
+    rating:      0.8,   // explicit star rating of the whole combo
+    base:        0.5,   // legacy niceties (a neutral anchor, one accent, intentional layering)
+  },
+  contrastCeiling: 0.6,  // lightness delta (0–1 in HSL) past which more contrast stops helping
 };
 
 /*
@@ -726,9 +749,131 @@ function tempToSeason(t) {
 }
 
 /* ============================================================================
+   COLOUR + ATTRIBUTE DERIVATION  —  the upgraded data model computes several
+   fields rather than storing them by hand: colorFamily from the hex, temperature
+   and lightness from the hex, texture/silhouette from subcategory + fit. Everything
+   here is a pure function so migration, the add flow and scoring all agree.
+   ============================================================================ */
+
+// Colour names → representative hex. Used by migration (old garments stored a name)
+// and by nameToHex() when a preset swatch isn't matched. Extend freely.
+const NAME_TO_HEX = {
+  black: "#15171b", charcoal: "#3a3f47", navy: "#233150", indigo: "#2b3a5c",
+  grey: "#8b9099", gray: "#8b9099", slate: "#5b626d", silver: "#c3c6cc",
+  white: "#f4f3ef", cream: "#efe6d2", ecru: "#dcd3bf", oatmeal: "#d8cbb0", beige: "#d8cbb0",
+  brown: "#6b4f3a", tan: "#b79b74", camel: "#b08d57", sand: "#cdbb97", stone: "#a99f8d", khaki: "#8f8563",
+  olive: "#6d6a33", forest: "#2f4a38", green: "#3f6b4a", mint: "#a9c9b4", teal: "#2f6f6b",
+  blue: "#3b5b80", denim: "#38516b", burgundy: "#6e2233", maroon: "#5e2530", rust: "#9c5a34",
+  red: "#a23b3b", mustard: "#c19a3b", pink: "#d09aa6", purple: "#6c4c86", lavender: "#9a8fb8",
+};
+const FAMILY_TO_HEX = { neutralDark: "#2b2f36", neutralLight: "#d7d9dd", warmNeutral: "#8a7a63", accent: "#7c8dff" };
+
+function normalizeHex(hex) {
+  if (typeof hex !== "string") return null;
+  let h = hex.trim().toLowerCase();
+  if (/^#?[0-9a-f]{3}$/.test(h)) { h = h.replace("#", ""); h = "#" + h[0] + h[0] + h[1] + h[1] + h[2] + h[2]; }
+  else if (/^#?[0-9a-f]{6}$/.test(h)) { h = h[0] === "#" ? h : "#" + h; }
+  else return null;
+  return h;
+}
+function nameToHex(name) {
+  const n = (name || "").trim().toLowerCase();
+  if (!n) return null;
+  if (NAME_TO_HEX[n]) return NAME_TO_HEX[n];
+  const preset = WIZ_COLORS.find(c => c.name === n);
+  return preset ? preset.hex : null;
+}
+function hexToRgb(hex) {
+  const h = normalizeHex(hex) || "#3a3f47";
+  return { r: parseInt(h.slice(1, 3), 16), g: parseInt(h.slice(3, 5), 16), b: parseInt(h.slice(5, 7), 16) };
+}
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60; if (h < 0) h += 360;
+  }
+  const l = (max + min) / 2;
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  return { h, s, l };
+}
+function hslOf(hex) { const { r, g, b } = hexToRgb(hex); return rgbToHsl(r, g, b); }
+function litOf(hex) { return hslOf(hex).l; }                 // lightness 0..1 (for tonal contrast)
+function tempOf(hex) {                                        // warm | cool | neutral (temperature axis)
+  const { h, s } = hslOf(hex);
+  if (s < 0.15) return "neutral";
+  return (h < 75 || h > 320) ? "warm" : "cool";
+}
+// Derived colour family — reproduces the four buckets from the hex instead of hand-set.
+function familyFromHex(hex) {
+  const { h, s, l } = hslOf(hex);
+  const warmHue = (h >= 20 && h <= 95) || h >= 345;   // browns, tans, olives, warm reds
+  if (s >= 0.42 && l > 0.18 && l < 0.86 && !(warmHue && s < 0.5)) return "accent";
+  if (l >= 0.72 && s < 0.5) return "neutralLight";    // white / cream / oatmeal — light neutrals
+  if (warmHue && s >= 0.18) return "warmNeutral";     // tan / camel / olive / brown
+  if (l >= 0.62) return "neutralLight";
+  return "neutralDark";
+}
+
+// ---- texture (item 2) ----
+const TEXTURES = ["jersey", "denim", "knit", "fleece", "corduroy", "suede", "leather", "woven", "technical"];
+const TEXTURE_LBL = { jersey: "Jersey", denim: "Denim", knit: "Knit", fleece: "Fleece", corduroy: "Corduroy", suede: "Suede", leather: "Leather", woven: "Woven", technical: "Technical" };
+const TEXTURE_BY_SUB = {
+  tee: "jersey", "long sleeve": "jersey", tank: "jersey", henley: "jersey", polo: "jersey", "knit tee": "jersey",
+  hoodie: "fleece", sweatshirt: "fleece", sweatpants: "fleece",
+  "quarter-zip": "knit", crewneck: "knit", cardigan: "knit", knit: "knit",
+  jeans: "denim", jacket: "technical", overshirt: "woven", coat: "woven", gilet: "technical",
+  chinos: "woven", shorts: "woven", trousers: "woven", cargos: "woven", shirt: "woven",
+  sneaker: "technical", boot: "leather", loafer: "leather", sandal: "leather", cords: "corduroy",
+};
+function textureFor(subcategory, category) {
+  const s = (subcategory || "").trim().toLowerCase();
+  if (TEXTURE_BY_SUB[s]) return TEXTURE_BY_SUB[s];
+  if (/cord/.test(s)) return "corduroy";
+  if (/suede/.test(s)) return "suede";
+  if (/leather/.test(s)) return "leather";
+  if (category === "base") return "jersey";
+  if (category === "bottom") return "woven";
+  if (category === "shoe") return "technical";
+  return "woven";
+}
+
+// ---- silhouette (item 4) ----
+const SILHOUETTES = ["fitted", "straight", "boxy", "tapered", "longline", "cropped"];
+const SILHOUETTE_LBL = { fitted: "Fitted", straight: "Straight", boxy: "Boxy", tapered: "Tapered", longline: "Longline", cropped: "Cropped" };
+function silhouetteFor(subcategory, fit, category) {
+  const s = (subcategory || "").trim().toLowerCase();
+  if (/crop/.test(s)) return "cropped";
+  if (/coat|overcoat|trench|longline|parka|mac/.test(s)) return "longline";
+  if (category === "bottom") return fit === "slim" ? "tapered" : "straight";
+  if (fit === "slim") return "fitted";
+  if (fit === "relaxed") return "boxy";
+  return "straight";
+}
+
+// ---- dressiness / casualness (item 3). Casualness nuance by subcategory so migrated
+// loungewear lands high-casual even when its old formality was middling. ----
+const CASUAL_BY_SUB = {
+  tee: 3, "long sleeve": 3, "knit tee": 2, tank: 4, henley: 3, polo: 2,
+  hoodie: 4, sweatshirt: 4, "quarter-zip": 2, crewneck: 2, cardigan: 2, knit: 2,
+  jacket: 2, overshirt: 3, coat: 2, gilet: 3, shirt: 2,
+  jeans: 3, sweatpants: 5, chinos: 2, shorts: 4, trousers: 1, cargos: 4,
+  sneaker: 3, boot: 2, loafer: 1, sandal: 4,
+};
+function casualFor(subcategory, dressiness) {
+  const s = (subcategory || "").trim().toLowerCase();
+  if (CASUAL_BY_SUB[s] != null) return CASUAL_BY_SUB[s];
+  return clampInt(6 - dressiness, 1, 5, 3);
+}
+
+/* ============================================================================
    DATA LAYER
    ============================================================================ */
-let state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, planner: { strictness: "consecutive", weeks: {} } };
+let state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, planner: { strictness: "consecutive", weeks: {} } };
 
 function uid() {
   if (crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -747,11 +892,16 @@ function loadFromStorage() {
       state.ratings  = (parsed.ratings && typeof parsed.ratings === "object") ? parsed.ratings : {};
       state.rejections = Array.isArray(parsed.rejections) ? parsed.rejections : [];
       state.ruleOverrides = (parsed.ruleOverrides && typeof parsed.ruleOverrides === "object") ? parsed.ruleOverrides : {};
+      state.coWear = (parsed.coWear && typeof parsed.coWear === "object") ? parsed.coWear : {};
+      // migration: re-normalize every garment so old records gain the upgraded fields
+      // (colorHex, texture, silhouette, dressiness/casualness) derived from what they had
+      state.garments = state.garments.map(normalizeGarment);
+      state.wishlist = state.wishlist.map(x => { const w = normalizeGarment(x); w.isWishlist = true; return w; });
       state.planner = normalizePlanner(parsed.planner);
     }
   } catch (e) {
     console.error("load failed", e);
-    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, planner: { strictness: "consecutive", weeks: {} } };
+    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, planner: { strictness: "consecutive", weeks: {} } };
   }
   Object.assign(rules, state.ruleOverrides);   // apply any confirmed config changes
 }
@@ -767,16 +917,35 @@ function getGarments() { return state.garments; }
 function getGarment(id) { return state.garments.find(g => g.id === id) || null; }
 
 function normalizeGarment(g) {
+  const subcategory = (g.subcategory || "").trim();
+  const fit = g.fit || "slim";
+
+  // --- colour: hex is primary; family + temperature + lightness derive from it (item 1) ---
+  const colorHex = normalizeHex(g.colorHex) || nameToHex(g.color) || FAMILY_TO_HEX[g.colorFamily] || "#3a3f47";
+  const colorFamily = familyFromHex(colorHex);   // derived, never hand-set
+
+  // --- formality → two axes (item 3). Migrate from the old single value; nuance casualness by subcategory ---
+  const dressiness = clampInt(g.dressiness, 1, 5, clampInt(g.formality, 1, 5, 3));
+  const casualness = (g.casualness != null)
+    ? clampInt(g.casualness, 1, 5, 3)
+    : casualFor(subcategory, dressiness);
+  const formality = clampInt(Math.round((dressiness + (6 - casualness)) / 2), 1, 5, 3);  // derived, for legacy UI/rules
+
   return {
     id: g.id || uid(),
     name: (g.name || "").trim(),
     category: g.category,
-    subcategory: (g.subcategory || "").trim(),
+    subcategory,
     color: (g.color || "").trim(),
-    colorFamily: g.colorFamily || "neutralDark",
-    formality: clampInt(g.formality, 1, 5, 3),
+    colorHex,                         // NEW primary colour value
+    colorFamily,                      // derived from colorHex
+    dressiness,                       // NEW — how formal/elevated (1–5)
+    casualness,                       // NEW — how relaxed/informal (1–5)
+    formality,                        // derived blend, kept for back-compat
+    texture: TEXTURES.includes(g.texture) ? g.texture : textureFor(subcategory, g.category),   // NEW (item 2)
+    silhouette: SILHOUETTES.includes(g.silhouette) ? g.silhouette : silhouetteFor(subcategory, fit, g.category), // NEW (item 4)
     season: g.season || "all",
-    fit: g.fit || "slim",
+    fit,
     weight: g.weight || "medium",
     visualWeight: g.category === "shoe" ? (g.visualWeight || "standard") : null,
     cost: Number(g.cost) || 0,
@@ -816,14 +985,21 @@ function deleteGarment(id) {
   saveToStorage();
 }
 
-// wear tracking — increments every item in an outfit
+// wear tracking — increments every item and records which pairs were worn together,
+// so the engine learns real combinations over time (item 5, learned-pair weighting)
 function wearOutfit(items) {
   const stamp = todayISO();
   items.forEach(it => {
     const g = getGarment(it.id);
     if (g) { g.timesWorn += 1; g.lastWorn = stamp; }
   });
+  const ids = items.map(i => i.id);
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+    const pk = ids[i] < ids[j] ? ids[i] + "|" + ids[j] : ids[j] + "|" + ids[i];
+    state.coWear[pk] = (state.coWear[pk] || 0) + 1;
+  }
   saveToStorage();
+  rebuildRatingContext();   // co-wear feeds the learned-pair signal
 }
 
 // --- wishlist (hypothetical garments the user is considering buying) ---
@@ -968,6 +1144,7 @@ function rateOutfit(ids, rating) {
 //   exact — rating for a whole combo
 //   pair  — average (rating-3) across every rated combo a garment pair appears in
 let ratingContext = { exact: {}, pair: new Map() };
+let coWearMap = new Map();   // pairKey → times the two garments were worn together
 function rebuildRatingContext() {
   const exact = {};
   const sum = new Map(), cnt = new Map();
@@ -983,6 +1160,7 @@ function rebuildRatingContext() {
   const pair = new Map();
   for (const pk of sum.keys()) pair.set(pk, sum.get(pk) / cnt.get(pk));
   ratingContext = { exact, pair };
+  coWearMap = new Map(Object.entries(state.coWear || {}));
 }
 
 /* ============================================================================
@@ -1042,10 +1220,13 @@ function isValidOutfit(items) {
     if (has1 && has2) reasons.push(`${c1} + ${c2} — requires intent`);
   }
 
-  /* --- formality: all within spread --- */
+  /* --- formality coherence on BOTH axes (item 3) --- */
+  // Requiring proximity in dressiness AND casualness is what stops max-casual sweatpants
+  // from reaching a smart piece that happens to sit at a similar single-axis "formality".
   if (items.length) {
-    const fs = items.map(i => i.formality);
-    if (Math.max(...fs) - Math.min(...fs) > rules.formalitySpread) reasons.push("Formality mismatch");
+    const ds = items.map(i => i.dressiness), cs = items.map(i => i.casualness);
+    if (Math.max(...ds) - Math.min(...ds) > rules.dressinessSpread) reasons.push("Dressiness mismatch");
+    if (Math.max(...cs) - Math.min(...cs) > rules.casualnessSpread) reasons.push("Casualness mismatch");
   }
 
   /* --- season: every pair compatible --- */
@@ -1139,32 +1320,95 @@ function generateOutfits(garments, opts = {}) {
   return { outfits, count, capped };
 }
 
-// aesthetic heuristic used to surface "best" combos (and later OOTD)
-function scoreOutfit(items) {
-  let s = 0;
-  const fs = items.map(i => i.formality);
-  s += (rules.formalitySpread - (Math.max(...fs) - Math.min(...fs))); // tighter = higher
-  if (items.some(i => i.colorFamily === "neutralDark" || i.colorFamily === "warmNeutral")) s += 1;
-  const accents = items.filter(i => i.colorFamily === "accent").length;
-  s += accents === 1 ? 0.5 : 0;                    // one pop of color is good
-  const rated = items.filter(i => i.rating);
-  if (rated.length) s += (rated.reduce((a, i) => a + i.rating, 0) / rated.length) / 5;
-  const torso = items.filter(i => i.category in TIER).length;
-  if (torso === 2) s += 0.4;                        // a little layering reads intentional
-
-  // outfit-rating feedback: rated combos and their component pairings rise
+/* ----------------------------------------------------------------------------
+   Scoring (item 5). Every valid outfit gets a weighted composite of independent
+   signals; scoreComponents() returns each 0..1 (or −/+ for learned) so the same
+   numbers drive both the ranking and the why-this-outfit explanation (item 6).
+   ---------------------------------------------------------------------------- */
+function dominantTop(items) {                        // the outermost visible torso layer
+  const torso = items.filter(i => i.category in TIER);
+  if (!torso.length) return null;
+  return torso.slice().sort((a, b) => TIER[b.category] - TIER[a.category])[0];
+}
+function garmentVolume(item) {                       // proportional "bulk" from fit + silhouette
+  let v = { slim: 0, regular: 1, relaxed: 2 }[item.fit];
+  if (v == null) v = 1;
+  if (item.silhouette === "boxy" || item.silhouette === "longline") v = Math.max(v, 2);
+  if (item.silhouette === "fitted" || item.silhouette === "cropped") v = Math.min(v, 0);
+  if (item.silhouette === "tapered") v = Math.min(v, 1);
+  return v;
+}
+function silhouetteBalance(top, bottom) {
+  const vt = garmentVolume(top), vb = garmentVolume(bottom);
+  if (vt >= 2 && vb >= 2) return 0.15;               // boxy/longline top + voluminous bottom = sloppy
+  if (vt === 0 && vb === 0) return 0.55;             // all fitted reads a touch severe
+  return Math.min(1, 0.55 + 0.35 * Math.abs(vt - vb)); // contrast of proportion rewarded
+}
+function temperatureCoherence(items, contrastNorm) {
+  const temps = items.map(i => tempOf(i.colorHex)).filter(t => t !== "neutral");
+  if (temps.length <= 1) return 1;                   // nothing to clash
+  const warm = temps.filter(t => t === "warm").length, cool = temps.length - warm;
+  if (warm === 0 || cool === 0) return 1;            // consistently warm or cool
+  return contrastNorm > 0.6 ? 0.7 : 0.3;             // mixed — forgiven only when it's a deliberate high-contrast look
+}
+function learnedPairScore(items) {                   // ratings + real co-wear, −1.5..1.5
   const ids = items.map(i => i.id);
-  const key = [...ids].sort().join(",");
-  if (ratingContext.exact[key] != null) s += (ratingContext.exact[key] - 3) * 0.5;
-  if (ratingContext.pair.size) {
-    let pa = 0;
-    for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
-      const pk = ids[i] < ids[j] ? ids[i] + "|" + ids[j] : ids[j] + "|" + ids[i];
-      const v = ratingContext.pair.get(pk); if (v != null) pa += v;
-    }
-    s += Math.max(-1.5, Math.min(1.5, pa * 0.15));
+  let sum = 0, n = 0;
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+    const pk = ids[i] < ids[j] ? ids[i] + "|" + ids[j] : ids[j] + "|" + ids[i];
+    const r = ratingContext.pair.get(pk);            // avg(rating−3)
+    const cw = coWearMap.get(pk) || 0;               // times worn together
+    let v = 0, has = false;
+    if (r != null) { v += r * 0.5; has = true; }
+    if (cw > 0) { v += Math.min(1, cw * 0.25); has = true; }
+    if (has) { sum += v; n++; }
   }
-  return s;
+  return n ? Math.max(-1.5, Math.min(1.5, sum / n)) : 0;
+}
+function scoreComponents(items) {
+  const top = dominantTop(items), bottom = items.find(i => i.category === "bottom");
+  // contrast — tonal distance between dominant top and bottom, ceilinged
+  let contrast = 0;
+  if (top && bottom) contrast = Math.min(Math.abs(litOf(top.colorHex) - litOf(bottom.colorHex)), rules.contrastCeiling) / rules.contrastCeiling;
+  const temperature = temperatureCoherence(items, contrast);
+  const distinct = new Set(items.map(i => i.texture)).size;
+  const texture = distinct <= 1 ? 0 : distinct === 2 ? 0.7 : distinct === 3 ? 1 : 0.6;
+  const silhouette = (top && bottom) ? silhouetteBalance(top, bottom) : 0.5;
+  const learnedPair = learnedPairScore(items);
+  const avgWorn = items.reduce((a, i) => a + (i.timesWorn || 0), 0) / items.length;
+  const wear = 1 - 1 / (1 + avgWorn * 0.5);          // proven pieces, diminishing returns
+  const key = [...items.map(i => i.id)].sort().join(",");
+  const rating = ratingContext.exact[key] != null ? (ratingContext.exact[key] - 3) / 2 : 0;   // −1..1
+  // legacy niceties
+  let base = 0;
+  if (items.some(i => i.colorFamily === "neutralDark" || i.colorFamily === "warmNeutral")) base += 0.5;
+  if (items.filter(i => i.colorFamily === "accent").length === 1) base += 0.5;
+  if (items.filter(i => i.category in TIER).length === 2) base += 0.4;
+  return { contrast, temperature, texture, silhouette, learnedPair, wear, rating, base };
+}
+function scoreOutfit(items) {
+  const c = scoreComponents(items), w = rules.scoreWeights;
+  return w.contrast * c.contrast + w.temperature * c.temperature + w.texture * c.texture
+       + w.silhouette * c.silhouette + w.learnedPair * c.learnedPair + w.wear * c.wear
+       + w.rating * c.rating + w.base * c.base;
+}
+
+/* Why this outfit scored well — a short, human phrase from the strongest signals (item 6). */
+function explainOutfit(items) {
+  const c = scoreComponents(items);
+  const parts = [];
+  if (c.contrast >= 0.75) parts.push("high contrast");
+  else if (c.contrast <= 0.2) parts.push("tonal");
+  const distinct = new Set(items.map(i => i.texture)).size;
+  if (distinct >= 3) parts.push("three textures");
+  else if (distinct === 2) parts.push("two textures");
+  if (c.temperature >= 1 && items.some(i => tempOf(i.colorHex) !== "neutral")) {
+    parts.push(items.some(i => tempOf(i.colorHex) === "warm") ? "warm tones" : "cool tones");
+  }
+  if (c.silhouette >= 0.9) parts.push("balanced proportions");
+  if (c.learnedPair >= 0.5) parts.push("a pairing you rate");
+  else if (c.wear >= 0.6) parts.push("proven pieces");
+  return parts.slice(0, 3);
 }
 
 // Unlock counter: outfits before vs after adding `garment`.
@@ -1757,6 +2001,7 @@ function freshWizard(mode) {
     category: null, subcategory: null, subcategoryCustom: "",
     color: null, colorFamily: null, colorCustom: "", colorHex: "",
     fit: null, formality: 3, season: null, weight: null, visualWeight: null,
+    texture: null, silhouette: null,
     name: "", imageData: null, cost: "", notes: "",
   } };
 }
@@ -1778,10 +2023,10 @@ function wizardFromItem(mode, item) {
   if (item.subcategory && subs.includes(item.subcategory)) d.subcategory = item.subcategory;
   else if (item.subcategory) { d.subcategory = "__custom__"; d.subcategoryCustom = item.subcategory; }
   const cm = WIZ_COLORS.find(c => c.name === (item.color || "").toLowerCase());
-  if (cm) { d.color = cm.name; d.colorFamily = cm.family; d.colorHex = cm.hex; }
-  else if (item.color) { d.color = "custom"; d.colorCustom = item.color; d.colorFamily = item.colorFamily; }
-  else d.colorFamily = item.colorFamily;
+  if (cm) { d.color = cm.name; d.colorHex = cm.hex; d.colorFamily = familyFromHex(cm.hex); }
+  else { d.color = "custom"; d.colorCustom = item.color || ""; d.colorHex = item.colorHex || nameToHex(item.color) || "#3a3f47"; d.colorFamily = familyFromHex(d.colorHex); }
   d.fit = item.fit; d.formality = item.formality; d.season = item.season; d.weight = item.weight;
+  d.texture = item.texture; d.silhouette = item.silhouette;
   d.visualWeight = item.visualWeight; d.name = item.name; d.imageData = item.imageData; d.cost = item.cost || ""; d.notes = item.notes || "";
   return w;
 }
@@ -1969,8 +2214,11 @@ window.openBulkPicker = function (field) {
 };
 window.bulkApply = function (field, value) {
   const ids = [...selected];
-  const val = field === "formality" ? parseInt(value, 10) : value;
-  ids.forEach(id => updateGarment(id, { [field]: val }));
+  // colorFamily is derived from the hex now, so a family choice maps to a representative shade
+  const patch = field === "colorFamily" ? { colorHex: FAMILY_TO_HEX[value] || "#3a3f47" }
+    : field === "formality" ? { formality: parseInt(value, 10) }
+    : { [field]: value };
+  ids.forEach(id => updateGarment(id, patch));
   const o = document.getElementById("bulk-overlay"); if (o) o.remove();
   haptic(14); exitSelect();
   showToast(`Updated ${ids.length} garment${ids.length === 1 ? "" : "s"}`, null, null, 2600);
@@ -2011,7 +2259,6 @@ window.ctxDelete = function (id) { closeCtx(); confirmDelete(id); };
 /* ---------- shared garment-attribute fields (Add form + Wishlist form) ---------- */
 function garmentAttrFieldsHTML(g) {
   const isShoe = (g.category || "base") === "shoe";
-  const formLbl = ["sweatpants", "casual", "smart-casual", "refined", "tailored"];
   return `
     <div class="row wrap" style="gap:12px;">
       <div class="field grow">
@@ -2025,18 +2272,32 @@ function garmentAttrFieldsHTML(g) {
     </div>
     <div class="row wrap" style="gap:12px;">
       <div class="field grow">
-        <label>Color</label>
+        <label>Colour name</label>
         <input type="text" name="color" value="${esc(g.color || "")}" placeholder="charcoal" />
       </div>
-      <div class="field grow">
-        <label>Color family</label>
-        <select name="colorFamily">${COLOR_FAMILIES.map(c => opt(c, FAMILY_LBL[c], g.colorFamily || "neutralDark")).join("")}</select>
+      <div class="field">
+        <label>Shade</label>
+        <input type="color" name="colorHex" value="${esc(normalizeHex(g.colorHex) || nameToHex(g.color) || "#3a3f47")}" style="width:56px; height:40px; padding:2px;" />
       </div>
     </div>
     <div class="row wrap" style="gap:12px;">
       <div class="field grow">
-        <label>Formality (1–5)</label>
-        <select name="formality">${[1,2,3,4,5].map(n => opt(n, `${n} — ${formLbl[n-1]}`, g.formality || 3)).join("")}</select>
+        <label>Dressiness (1–5)</label>
+        <select name="dressiness">${[1,2,3,4,5].map(n => opt(n, `${n} — ${["lounge","casual","everyday","smart","dressy"][n-1]}`, g.dressiness || 3)).join("")}</select>
+      </div>
+      <div class="field grow">
+        <label>Casualness (1–5)</label>
+        <select name="casualness">${[1,2,3,4,5].map(n => opt(n, `${n} — ${["formal","tidy","relaxed","loose","loungy"][n-1]}`, g.casualness || 3)).join("")}</select>
+      </div>
+    </div>
+    <div class="row wrap" style="gap:12px;">
+      <div class="field grow">
+        <label>Texture</label>
+        <select name="texture">${TEXTURES.map(t => opt(t, TEXTURE_LBL[t], g.texture || textureFor(g.subcategory, g.category))).join("")}</select>
+      </div>
+      <div class="field grow">
+        <label>Silhouette</label>
+        <select name="silhouette">${SILHOUETTES.map(s => opt(s, SILHOUETTE_LBL[s], g.silhouette || silhouetteFor(g.subcategory, g.fit || "slim", g.category))).join("")}</select>
       </div>
       <div class="field grow">
         <label>Season</label>
@@ -2316,17 +2577,25 @@ function stepContent(id) {
         </div>`;
     }
     case "color": {
-      if (wizardState.showOtherColor) return `
+      if (wizardState.showOtherColor) {
+        const hex = /^#[0-9a-f]{6}$/i.test(d.colorHex) ? d.colorHex : "#6b4f3a";
+        return `
         <div class="wiz-q">Custom colour</div>
-        <div class="wiz-sub">Name it, then pick its family.</div>
-        <input id="wiz-colorname" type="text" placeholder="e.g. rust" value="${esc(d.colorCustom || "")}">
-        <div class="wiz-opts stagger" style="margin-top:12px;">
-          ${COLOR_FAMILIES.map((f, i) => `<button class="wiz-opt ${d.colorFamily === f ? "sel" : ""}" style="animation-delay:${i * 30}ms" onclick="wizPickCustomFamily('${f}',this)">${FAMILY_LBL[f]}</button>`).join("")}
+        <div class="wiz-sub">Pick the exact shade — we'll work out its family, temperature and tone.</div>
+        <div class="custom-color">
+          <label class="cc-swatch" style="background:${hex}">
+            <input id="wiz-colorpick" type="color" value="${hex}" oninput="wizPickCustomHex(this.value)">
+          </label>
+          <div class="grow">
+            <div class="tiny muted">${esc(hex)} · ${FAMILY_LBL[familyFromHex(hex)]} · ${cap(tempOf(hex))}</div>
+            <input id="wiz-colorname" type="text" placeholder="Optional name — e.g. rust" value="${esc(d.colorCustom || "")}" oninput="wizCustomColorName(this.value)" style="margin-top:8px;">
+          </div>
         </div>
-        <button class="btn primary" style="margin-top:14px; width:100%;" onclick="wizConfirmCustomColor()">Continue</button>`;
+        <button class="btn primary" style="margin-top:16px; width:100%;" onclick="wizConfirmCustomColor()">Continue</button>`;
+      }
       return `
         <div class="wiz-q">What's its main colour?</div>
-        <div class="wiz-sub">We'll sort the colour family for you.</div>
+        <div class="wiz-sub">Tap a swatch, or pick a custom shade.</div>
         <div class="swatch-grid stagger">
           ${WIZ_COLORS.map((c, i) => `<button class="swatch-opt ${d.color === c.name ? "sel" : ""}" style="animation-delay:${i * 24}ms" onclick="wizPickColor('${c.name}',this)"><div class="sw" style="background:${c.hex}"></div>${cap(c.name)}</button>`).join("")}
           <button class="swatch-opt" style="animation-delay:${WIZ_COLORS.length * 24}ms" onclick="wizShowOtherColor()"><div class="sw" style="background:conic-gradient(from 0deg,#e66,#ec6,#6d6,#6dd,#66e,#d6d,#e66)"></div>Custom</button>
@@ -2403,6 +2672,8 @@ function wizSummary() {
         ${shoe ? "" : `<div class="field grow"><label>Fit</label><select onchange="wizSecondary('fit',this.value)">${FITS.map(f => opt(f, cap(f), d.fit || "slim")).join("")}</select></div>`}
         ${shoe ? "" : `<div class="field grow"><label>Weight</label><select onchange="wizSecondary('weight',this.value)">${WEIGHTS.map(w => opt(w, cap(w), d.weight || "medium")).join("")}</select></div>`}
         <div class="field grow"><label>Season</label><select onchange="wizSecondary('season',this.value)">${SEASONS.map(sn => opt(sn, cap(sn), d.season || "all")).join("")}</select></div>
+        <div class="field grow"><label>Texture</label><select onchange="wizSecondary('texture',this.value)">${TEXTURES.map(t => opt(t, TEXTURE_LBL[t], d.texture || textureFor(sub, d.category))).join("")}</select></div>
+        <div class="field grow"><label>Silhouette</label><select onchange="wizSecondary('silhouette',this.value)">${SILHOUETTES.map(sl => opt(sl, SILHOUETTE_LBL[sl], d.silhouette || silhouetteFor(sub, d.fit || "slim", d.category))).join("")}</select></div>
         ${isWishlistMode() ? "" : `<div class="field grow"><label>Cost</label><input type="number" min="0" value="${d.cost || ""}" oninput="wizSecondaryText('cost',this.value)" placeholder="0"></div>`}
       </div>
       <div class="field" style="margin-top:10px;"><label>Notes</label><textarea oninput="wizSecondaryText('notes',this.value)" placeholder="Optional">${esc(d.notes || "")}</textarea></div>
@@ -2490,7 +2761,8 @@ window.wizPick = function (field, value, el) {
 };
 window.wizPickColor = function (name, el) {
   const c = WIZ_COLORS.find(x => x.name === name);
-  wizardState.data.color = name; wizardState.data.colorFamily = c.family; wizardState.data.colorHex = c.hex;
+  wizardState.data.color = name; wizardState.data.colorHex = c.hex; wizardState.data.colorFamily = familyFromHex(c.hex);
+  wizardState.data.colorCustom = "";
   haptic(12); if (el) el.classList.add("picked");
   wizardState.showOtherColor = false; saveWizard();
   setTimeout(() => wizGo(1), 175);
@@ -2501,16 +2773,24 @@ window.wizConfirmOtherSub = function () {
   wizardState.data.subcategory = "__custom__"; wizardState.data.subcategoryCustom = v;
   wizardState.showOtherSub = false; haptic(12); saveWizard(); wizGo(1);
 };
-window.wizShowOtherColor = function () { wizardState.showOtherColor = true; haptic(8); saveWizard(); renderForm(); };
-window.wizPickCustomFamily = function (f, el) {
-  wizardState.data.colorFamily = f;
-  document.querySelectorAll("#view .wiz-opt.sel").forEach(x => x.classList.remove("sel"));
-  if (el) el.classList.add("sel"); haptic(8); saveWizard();
+window.wizShowOtherColor = function () {
+  if (!/^#[0-9a-f]{6}$/i.test(wizardState.data.colorHex)) wizardState.data.colorHex = "#6b4f3a";
+  wizardState.showOtherColor = true; haptic(8); saveWizard(); renderForm();
 };
+window.wizPickCustomHex = function (hex) {
+  const d = wizardState.data;
+  d.colorHex = hex; d.colorFamily = familyFromHex(hex); d.color = "custom";
+  const sw = document.querySelector(".cc-swatch"); if (sw) sw.style.background = hex;
+  const info = document.querySelector(".custom-color .tiny"); if (info) info.textContent = `${hex} · ${FAMILY_LBL[familyFromHex(hex)]} · ${cap(tempOf(hex))}`;
+  saveWizard();   // live preview, no full re-render (keeps the native picker open)
+};
+window.wizCustomColorName = function (v) { wizardState.data.colorCustom = v; saveWizard(); };
 window.wizConfirmCustomColor = function () {
-  const v = (document.getElementById("wiz-colorname").value || "").trim(); if (!v) return;
-  if (!wizardState.data.colorFamily) wizardState.data.colorFamily = "warmNeutral";
-  wizardState.data.color = "custom"; wizardState.data.colorCustom = v; wizardState.data.colorHex = "";
+  const d = wizardState.data;
+  if (!/^#[0-9a-f]{6}$/i.test(d.colorHex)) d.colorHex = "#6b4f3a";
+  const name = (document.getElementById("wiz-colorname") || {}).value;
+  d.colorCustom = (name || d.colorCustom || "").trim();
+  d.color = "custom"; d.colorFamily = familyFromHex(d.colorHex);
   wizardState.showOtherColor = false; haptic(12); saveWizard(); wizGo(1);
 };
 window.wizFormality = function (v) {
@@ -2541,7 +2821,9 @@ function wizSpec() {
   return {
     name: (d.name || wizSuggestName() || "Untitled").trim(),
     category: d.category, subcategory: sub || "", color: color || "",
-    colorFamily: d.colorFamily || "neutralDark", formality: d.formality || 3,
+    colorHex: d.colorHex || null,               // primary colour; family derives from it
+    formality: d.formality || 3,                // → dressiness/casualness derive in normalizeGarment
+    texture: d.texture || null, silhouette: d.silhouette || null,   // null → derived from subcategory/fit
     season: d.season || "all", fit: d.fit || "slim", weight: d.weight || "medium",
     visualWeight: d.category === "shoe" ? (d.visualWeight || "standard") : null,
     cost: Number(d.cost) || 0, imageData: d.imageData || null, notes: (d.notes || "").trim(),
@@ -3008,6 +3290,7 @@ function heroCard(o, total, idx) {
       </div>
     </div>
     ${visualOutfit(o.items, "lg")}
+    ${whyLine(o.items)}
     <button class="btn primary wear" style="width:100%; margin-top:16px;" onclick="deckWear()">Wear this</button>
     <div class="row wrap" style="gap:8px; margin-top:10px; align-items:center;">
       <button class="btn sm" onclick="deckPrev()">←</button>
@@ -3141,12 +3424,19 @@ function outfitCard(o, idx) {
         </div>
       </div>
       ${visualOutfit(o.items)}
+      ${whyLine(o.items)}
       <div class="row wrap" style="gap:8px; align-items:center; margin-top:12px;">
         <button class="btn sm primary" onclick="woreOutfit('${o.garmentIds.join(",")}')">Wore this today</button>
         <button class="btn sm" onclick="saveOutfit('${o.garmentIds.join(",")}')">Save</button>
         ${ratingStars(o.garmentIds)}
       </div>
     </div>`;
+}
+// one-line reasoning under a suggested outfit (item 6)
+function whyLine(items) {
+  const parts = explainOutfit(items);
+  if (!parts.length) return "";
+  return `<div class="why" title="Why this scored well — tune the weights in the config block">✦ ${esc(parts.join(" · "))}</div>`;
 }
 // clickable 1–5 star row keyed to a garment set; click the current rating to clear
 function ratingStars(ids) {
@@ -3890,7 +4180,7 @@ window.applySuggestion = function () {
 window.wipeAll = function () {
   if (confirm("Erase ALL garments, outfits, wishlist and ratings from this device? This can't be undone.")) {
     haptic(30);
-    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, planner: { strictness: "consecutive", weeks: {} } };
+    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, planner: { strictness: "consecutive", weeks: {} } };
     saveToStorage(); rebuildRatingContext(); lastUnlock = null; ootd = null; render();
   }
 };
@@ -3920,6 +4210,7 @@ window.importData = function (input) {
         ratings: (parsed.ratings && typeof parsed.ratings === "object") ? parsed.ratings : {},
         rejections: Array.isArray(parsed.rejections) ? parsed.rejections : [],
         ruleOverrides: (parsed.ruleOverrides && typeof parsed.ruleOverrides === "object") ? parsed.ruleOverrides : {},
+        coWear: (parsed.coWear && typeof parsed.coWear === "object") ? parsed.coWear : {},
         planner: normalizePlanner(parsed.planner),
       };
       Object.assign(rules, state.ruleOverrides);
