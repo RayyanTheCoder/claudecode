@@ -527,6 +527,19 @@
   .occ-exlist { max-height: 180px; overflow: auto; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; padding: 4px 2px; }
   .occ-ex { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 
+  /* ---- confidence flag (item 6) ---- */
+  .conf { margin-top: 6px; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 4px; }
+  .conf.strong { color: color-mix(in srgb, var(--accent) 82%, var(--text)); }
+  .conf.note { color: var(--muted); }
+  /* ---- profile setup swatches ---- */
+  .prof-swatch { border: 1px solid var(--border); border-radius: 12px; padding: 8px; cursor: pointer; background: var(--bg-raise); text-align: center; font-size: 12.5px; color: var(--text); }
+  .prof-swatch .sw { width: 100%; height: 52px; border-radius: 8px; border: 1px solid rgba(128,128,128,.35); margin-bottom: 7px; }
+  .prof-swatch.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .prof-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 10px; }
+  .prof-summary-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+  .prof-summary-row:first-child { border-top: 0; }
+  .prof-chip { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border-2); flex: none; }
+
   /* ---- why-this-outfit reasoning line ---- */
   .why { margin-top: 12px; font-size: 12.5px; color: var(--muted); letter-spacing: .01em; display: flex; align-items: center; gap: 4px; }
   .hero .why { color: color-mix(in srgb, var(--accent) 78%, var(--muted)); font-weight: 500; }
@@ -632,12 +645,37 @@ const rules = {
     silhouette:  0.9,   // proportional balance between top and bottom
     vertical:    0.9,   // where light sits top→bottom (light near the face, descending, framing)
     echo:        0.7,   // a colour repeating at different heights reads as deliberate framing
+    profile:     0.9,   // flatters the wearer's skin/undertone/hair/eyes (needs a saved profile)
     learnedPair: 1.2,   // garment pairs you rate highly or wear together, up-weighted over time
     wear:        0.6,   // proven pieces — what actually gets worn, not just what's rated
+    novelty:     0.25,  // gentle boost for combos never worn together — keeps ranking from calcifying
     rating:      0.8,   // explicit star rating of the whole combo
     base:        0.5,   // legacy niceties (a neutral anchor, one accent, intentional layering)
+    // dressiness / comfort / simplicity default to 0 here — they only matter when an occasion asks for them (item 3)
   },
   contrastCeiling: 0.6,  // lightness delta (0–1 in HSL) past which more contrast stops helping
+  // Diversity pass (item 4): in the top results, an outfit sharing this many garments with a
+  // higher-ranked one loses `diversityPenalty` per extra shared piece, so the deck isn't near-dupes.
+  diversityShareThreshold: 2,
+  diversityPenalty: 0.6,
+  diversityWindow: 80,   // only the top N are diversified (keeps it cheap)
+  // Editable flattering-colour logic (item 2). Undertone → temperature preference; plus wash-out
+  // and deep-skin handling. Tune freely — nothing about flattery is hardcoded below.
+  skinFlatter: {
+    undertone: {          // bonus (+) / penalty (−) applied to each piece by its colour temperature
+      warm:    { warm: 0.6, cool: -0.5, neutral: 0.1 },
+      cool:    { warm: -0.5, cool: 0.6, neutral: 0.1 },
+      neutral: { warm: 0.2, cool: 0.2, neutral: 0.2 },
+    },
+    washOutDelta: 0.12,   // a colour within this lightness of the skin washes out → penalty
+    deepSkinBelow: 0.34,  // skin lightness under this carries high-saturation + very dark colours well
+    hairBreakBonus: 0.5,  // a top light enough to separate from the hair at the neckline
+    hairMergePenalty: 0.4,// a top as dark as dark hair → no separation at the neckline
+    eyeHueBonus: 0.25,    // small boost for a piece near the eye colour in hue
+    eyeHueTolerance: 26,  // degrees
+  },
+  confidenceStrongMean: 0.62,   // "strong across the board" needs this mean …
+  confidenceStrongVar: 0.035,   // … and variance below this across the aesthetic dimensions (item 6)
   // Visual-area weight per vertical position — the largest visible surface does the most
   // visual work, so it drives contrast / temperature / texture more than a collar or shoe.
   areaWeights: {
@@ -681,17 +719,19 @@ const gapCandidates = [
     scoreWeights {}              per-occasion scoring overrides, merged over rules.scoreWeights
   The live, editable copy is state.occasions (seeded from this on first run).
 */
+// scoreWeights here rescore WITHIN the filtered set (item 3). They merge over rules.scoreWeights;
+// `replace: true` starts from zero so only the listed dimensions count (gym/lazy ignore aesthetics).
 const OCCASION_DEFAULTS = [
-  { id: "campus",   label: "Campus",    minFormality: 2, maxFormality: 4 },
-  { id: "goingOut", label: "Going out", peakMin: 3, blockSubcategories: ["sweatpant"] },
-  { id: "gym",      label: "Gym",       maxFormality: 2 },
-  { id: "lazy",     label: "Lazy",      maxFormality: 2, requireRelaxed: true },
+  { id: "campus",   label: "Campus",    minFormality: 2, maxFormality: 4, scoreWeights: { contrast: 0.5, texture: 0.5, comfort: 1.0, simplicity: 0.9 } },
+  { id: "goingOut", label: "Going out", peakMin: 3, blockSubcategories: ["sweatpant"], scoreWeights: { contrast: 1.7, dressiness: 1.5, texture: 1.1 } },
+  { id: "gym",      label: "Gym",       maxFormality: 2, scoreWeights: { replace: true, comfort: 1.0 } },   // comfort only
+  { id: "lazy",     label: "Lazy",      maxFormality: 2, requireRelaxed: true, scoreWeights: { replace: true, comfort: 1.0 } },
   // ---- new occasions ----
-  { id: "school",   label: "School",    maxFormality: 4 }, // casual up to smart-casual; sweatpants allowed
-  { id: "date",     label: "Date",      minFormality: 2, peakMin: 3, scoreWeights: { contrast: 1.9, texture: 1.9 } }, // dressier end; lean on texture + contrast
-  { id: "family",   label: "Family",    minFormality: 2, maxFormality: 4, blockSubcategories: ["sweatpant", "tank"] }, // modest, mid-formality
-  { id: "errands",  label: "Errands",   maxFormality: 4 }, // anything comfortable; sweatpants allowed (no block)
-  { id: "filming",  label: "Filming",   avoidTextures: ["leather"], maxFormality: 4 }, // matte — no sheen (add "technical" to also drop synthetics)
+  { id: "school",   label: "School",    maxFormality: 4, scoreWeights: { contrast: 0.5, texture: 0.5, comfort: 1.0, simplicity: 0.9 } }, // casual up to smart-casual; sweatpants allowed
+  { id: "date",     label: "Date",      minFormality: 2, peakMin: 3, scoreWeights: { contrast: 1.9, texture: 1.9, dressiness: 1.4 } }, // dressier; contrast + texture + dressiness
+  { id: "family",   label: "Family",    minFormality: 2, maxFormality: 4, blockSubcategories: ["sweatpant", "tank"], scoreWeights: { comfort: 0.6, dressiness: 0.7 } }, // modest, mid-formality
+  { id: "errands",  label: "Errands",   maxFormality: 4, scoreWeights: { comfort: 0.9, simplicity: 0.6 } }, // anything comfortable; sweatpants allowed
+  { id: "filming",  label: "Filming",   avoidTextures: ["leather"], maxFormality: 4, scoreWeights: { texture: 1.4, contrast: 0.8, echo: 0.9 } }, // matte, textural — no sheen
 ];
 
 /*
@@ -958,9 +998,62 @@ function casualFor(subcategory, dressiness) {
 }
 
 /* ============================================================================
+   WEARER PROFILE  —  optional colouring info used to personalise scoring (item 1/2).
+   Stored as hex so the same HSL maths the engine already uses applies. Fully skippable;
+   defaults are neutral so an empty profile leaves ranking essentially unchanged.
+   ============================================================================ */
+const SKIN_SWATCHES = [
+  { id: "fair",       label: "Fair",        hex: "#f2d6c2" },
+  { id: "light",      label: "Light",       hex: "#e8c1a5" },
+  { id: "medium",     label: "Medium",      hex: "#c99a75" },
+  { id: "tan",        label: "Tan",         hex: "#a9754f" },
+  { id: "deep",       label: "Deep",        hex: "#7a4a30" },
+  { id: "veryDeep",   label: "Very deep",   hex: "#4a2c1d" },
+];
+const HAIR_SWATCHES = [
+  { id: "black",      label: "Black",       hex: "#1a1614" },
+  { id: "darkBrown",  label: "Dark brown",  hex: "#3b2a1e" },
+  { id: "brown",      label: "Brown",       hex: "#5c4230" },
+  { id: "lightBrown", label: "Light brown", hex: "#8a6a48" },
+  { id: "blonde",     label: "Blonde",      hex: "#c9a869" },
+  { id: "red",        label: "Red",         hex: "#8f4426" },
+  { id: "grey",       label: "Grey",        hex: "#b7b3ad" },
+];
+const EYE_SWATCHES = [
+  { id: "darkBrown",  label: "Dark brown",  hex: "#3a2417" },
+  { id: "brown",      label: "Brown",       hex: "#6b4423" },
+  { id: "hazel",      label: "Hazel",       hex: "#8a6b3a" },
+  { id: "green",      label: "Green",       hex: "#5b7a53" },
+  { id: "blue",       label: "Blue",        hex: "#5a7f9c" },
+  { id: "grey",       label: "Grey",        hex: "#8a9198" },
+];
+const UNDERTONES = [
+  ["warm",    "Warm",    "Veins look green; gold jewellery suits you; you tan easily."],
+  ["cool",    "Cool",    "Veins look blue; silver jewellery suits you; you burn easily."],
+  ["neutral", "Neutral", "A mix of both, or hard to tell — a safe default."],
+];
+// A neutral, unset default profile. `active:false` means scoring skips personalisation.
+function defaultProfile() {
+  return { active: false, skinHex: "#c99a75", undertone: "neutral", hairHex: "#3b2a1e", eyeHex: "#6b4423" };
+}
+function normalizeProfile(p) {
+  const d = defaultProfile();
+  if (!p || typeof p !== "object") return d;
+  return {
+    active: !!p.active,
+    skinHex: normalizeHex(p.skinHex) || d.skinHex,
+    undertone: ["warm", "cool", "neutral"].includes(p.undertone) ? p.undertone : d.undertone,
+    hairHex: normalizeHex(p.hairHex) || d.hairHex,
+    eyeHex: normalizeHex(p.eyeHex) || d.eyeHex,
+  };
+}
+// Derived: lightness gap between hair and skin (item 1). Not stored — always computed.
+function hairContrast(profile) { return Math.abs(litOf(profile.hairHex) - litOf(profile.skinHex)); }
+
+/* ============================================================================
    DATA LAYER
    ============================================================================ */
-let state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, occasions: defaultOccasions(), planner: { strictness: "consecutive", weeks: {} } };
+let state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, occasions: defaultOccasions(), profile: defaultProfile(), planner: { strictness: "consecutive", weeks: {} } };
 
 function uid() {
   if (crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -981,6 +1074,7 @@ function loadFromStorage() {
       state.ruleOverrides = (parsed.ruleOverrides && typeof parsed.ruleOverrides === "object") ? parsed.ruleOverrides : {};
       state.coWear = (parsed.coWear && typeof parsed.coWear === "object") ? parsed.coWear : {};
       state.occasions = normalizeOccasions(parsed.occasions);
+      state.profile = normalizeProfile(parsed.profile);
       // migration: a saved outfit's single `occasion` becomes an `occasions` array (item: multiple per outfit)
       state.outfits = state.outfits.map(o => ({ ...o, occasions: normalizeOutfitOccasions(o) }));
       // migration: re-normalize every garment so old records gain the upgraded fields
@@ -991,7 +1085,7 @@ function loadFromStorage() {
     }
   } catch (e) {
     console.error("load failed", e);
-    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, occasions: defaultOccasions(), planner: { strictness: "consecutive", weeks: {} } };
+    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, occasions: defaultOccasions(), profile: defaultProfile(), planner: { strictness: "consecutive", weeks: {} } };
   }
   Object.assign(rules, state.ruleOverrides);   // apply any confirmed config changes
 }
@@ -1543,6 +1637,59 @@ function learnedPairScore(items) {                   // ratings + real co-wear, 
   }
   return n ? Math.max(-1.5, Math.min(1.5, sum / n)) : 0;
 }
+
+/* Wearer-profile signals (item 2). Returns area-weighted flattery, a neckline hair-break
+   score, and an eye-colour echo. Inactive profile → all zero, so ranking is unchanged. */
+function profileSignals(items) {
+  const p = state.profile;
+  if (!p || !p.active) return { active: false, flatter: 0, hairBreak: 0, eye: 0 };
+  const F = rules.skinFlatter;
+  const skinL = litOf(p.skinHex);
+  const deep = skinL < F.deepSkinBelow;
+  const pref = F.undertone[p.undertone] || F.undertone.neutral;
+  let flatterSum = 0, areaSum = 0;
+  items.forEach(it => {
+    const a = areaWeightOf(it, items);
+    const { l, s } = hslOf(it.colorHex);
+    let v = pref[tempOf(it.colorHex)] || 0;            // undertone → colour-temperature preference
+    if (deep) { if (l < 0.25) v += 0.4; if (s > 0.5) v += 0.3; }  // deep skin carries very-dark / saturated
+    if (Math.abs(l - skinL) < F.washOutDelta) v -= 0.6;          // washes out against the skin
+    flatterSum += v * a; areaSum += a;
+  });
+  const flatter = areaSum ? flatterSum / areaSum : 0;
+  // hair break at the neckline — the top-of-frame piece against the hair
+  const prof = verticalProfile(items), topNode = prof[0];
+  let hairBreak = 0;
+  if (topNode) {
+    const sep = Math.abs(topNode.l - litOf(p.hairHex));
+    hairBreak = sep >= 0.25 ? F.hairBreakBonus * Math.min(1, sep) : -F.hairMergePenalty * (1 - sep / 0.25);
+  }
+  // eye-colour echo — a chromatic piece near the eye hue
+  const eyeHsl = hslOf(p.eyeHex);
+  let eye = 0;
+  if (eyeHsl.s >= 0.12 && items.some(it => {
+    const h = hslOf(it.colorHex); if (h.s < 0.2) return false;
+    return Math.min(Math.abs(h.h - eyeHsl.h), 360 - Math.abs(h.h - eyeHsl.h)) <= F.eyeHueTolerance;
+  })) eye = F.eyeHueBonus;
+  return { active: true, flatter, hairBreak, eye };
+}
+function profileFitScore(items) {
+  const s = profileSignals(items);
+  return s.active ? Math.max(-1, Math.min(1, s.flatter * 0.7 + s.hairBreak + s.eye)) : 0;
+}
+
+// Novelty (item 5): combos never worn together score highest; decays as pairs get co-worn.
+function noveltyScore(items) {
+  const ids = items.map(i => i.id);
+  let maxCw = 0;
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+    const pk = ids[i] < ids[j] ? ids[i] + "|" + ids[j] : ids[j] + "|" + ids[i];
+    maxCw = Math.max(maxCw, coWearMap.get(pk) || 0);
+  }
+  return 1 / (1 + maxCw);
+}
+
+const SOFT_TEXTURES = new Set(["jersey", "fleece", "knit"]);
 function scoreComponents(items) {
   const top = dominantTop(items), bottom = items.find(i => i.category === "bottom");
   // contrast — tonal distance between the two dominant surfaces (top covering + bottom), ceilinged
@@ -1564,20 +1711,39 @@ function scoreComponents(items) {
   const wear = 1 - 1 / (1 + avgWorn * 0.5);          // proven pieces, diminishing returns
   const key = [...items.map(i => i.id)].sort().join(",");
   const rating = ratingContext.exact[key] != null ? (ratingContext.exact[key] - 3) / 2 : 0;   // −1..1
+  const profile = profileFitScore(items);           // personalisation (item 2)
+  const novelty = noveltyScore(items);               // rotation (item 5)
+  // occasion-context dimensions — weight 0 in the base ranking, activated per occasion (item 3)
+  const dressiness = items.reduce((a, i) => a + i.dressiness, 0) / items.length / 5;
+  const softFrac = items.filter(i => SOFT_TEXTURES.has(i.texture)).length / items.length;
+  const relaxedFrac = items.filter(i => i.fit === "relaxed").length / items.length;
+  const casual = items.reduce((a, i) => a + i.casualness, 0) / items.length / 5;
+  const comfort = Math.min(1, 0.5 * casual + 0.3 * softFrac + 0.2 * relaxedFrac);
+  const distinctFam = new Set(items.map(i => i.colorFamily)).size;
+  const simplicity = Math.max(0, Math.min(1, 1 - ((distinctFam - 1) + (distinct - 1)) / 5));  // few colours/textures = simple
   // legacy niceties
   let base = 0;
   if (items.some(i => i.colorFamily === "neutralDark" || i.colorFamily === "warmNeutral")) base += 0.5;
   if (items.filter(i => i.colorFamily === "accent").length === 1) base += 0.5;
   if (items.filter(i => i.category in TIER).length === 2) base += 0.4;
-  return { contrast, temperature, texture, silhouette, vertical, echo, learnedPair, wear, rating, base };
+  return { contrast, temperature, texture, silhouette, vertical, echo, profile, learnedPair, wear, novelty, rating, base, dressiness, comfort, simplicity };
+}
+function occasionWeights(occasionId) {
+  let w = rules.scoreWeights;
+  if (occasionId) {
+    const r = getOccasion(occasionId);
+    if (r && r.scoreWeights) {
+      if (r.scoreWeights.replace) { w = { ...r.scoreWeights }; delete w.replace; }   // gym/lazy: only these count
+      else w = { ...w, ...r.scoreWeights };                                          // otherwise merge over the base
+    }
+  }
+  return w;
 }
 function scoreOutfit(items, occasionId) {
-  const c = scoreComponents(items);
-  let w = rules.scoreWeights;
-  if (occasionId) { const r = getOccasion(occasionId); if (r && r.scoreWeights) w = { ...w, ...r.scoreWeights }; }  // e.g. Date leans on contrast + texture
-  return w.contrast * c.contrast + w.temperature * c.temperature + w.texture * c.texture
-       + w.silhouette * c.silhouette + w.vertical * c.vertical + w.echo * c.echo
-       + w.learnedPair * c.learnedPair + w.wear * c.wear + w.rating * c.rating + w.base * c.base;
+  const c = scoreComponents(items), w = occasionWeights(occasionId);
+  let s = 0;
+  for (const k in c) s += (w[k] || 0) * c[k];
+  return s;
 }
 
 // human words for a vertical position (used by the echo descriptor)
@@ -1593,6 +1759,14 @@ function echoDescriptor(items) {
 function explainOutfit(items) {
   const c = scoreComponents(items);
   const parts = [];
+  // wearer-profile flattery leads when a profile is active
+  const ps = profileSignals(items);
+  if (ps.active) {
+    if (ps.flatter >= 0.35) parts.push(state.profile.undertone === "warm" ? "warm neutrals for your skin tone"
+      : state.profile.undertone === "cool" ? "cool tones for your skin tone" : "flatters your skin tone");
+    if (ps.hairBreak >= 0.3) parts.push("breaks against your hair");
+    if (ps.eye > 0) parts.push("picks up your eyes");
+  }
   // vertical light placement — the most distinctive spatial read, so it leads
   const prof = verticalProfile(items);
   if (prof.length >= 2) {
@@ -1615,6 +1789,52 @@ function explainOutfit(items) {
   if (c.learnedPair >= 0.5) parts.push("a pairing you rate");
   else if (c.wear >= 0.6) parts.push("proven pieces");
   return parts.slice(0, 3);
+}
+
+/* Confidence (item 6): strong-everywhere vs strong-on-average-with-a-weak-dimension.
+   Uses variance across the aesthetic dimensions, not just the mean. */
+const DIM_STRONG = { contrast: "great contrast", temperature: "cohesive palette", texture: "rich texture", silhouette: "balanced proportions", vertical: "good light placement", echo: "a colour echo" };
+const DIM_WEAK   = { contrast: "flat contrast", temperature: "mixed temperature", texture: "flat texture", silhouette: "off proportions", vertical: "bottom-heavy light", echo: "no colour echo" };
+function outfitConfidence(items) {
+  const c = scoreComponents(items);
+  const named = { contrast: c.contrast, temperature: c.temperature, texture: c.texture, silhouette: c.silhouette, vertical: c.vertical, echo: c.echo };
+  const vals = Object.values(named);
+  const mean = vals.reduce((a, v) => a + v, 0) / vals.length;
+  const variance = vals.reduce((a, v) => a + (v - mean) ** 2, 0) / vals.length;
+  let weakKey = null, weakVal = Infinity, strongKey = null, strongVal = -Infinity;
+  for (const k in named) { if (named[k] < weakVal) { weakVal = named[k]; weakKey = k; } if (named[k] > strongVal) { strongVal = named[k]; strongKey = k; } }
+  return { strong: mean >= rules.confidenceStrongMean && variance <= rules.confidenceStrongVar, mean, variance, weakKey, weakVal, strongKey, strongVal };
+}
+// UI note: null when unremarkable; otherwise { label, strong }.
+function confidenceNote(items) {
+  const cf = outfitConfidence(items);
+  if (cf.strong) return { strong: true, label: "Strong across the board" };
+  if (cf.strongVal >= 0.7 && cf.weakVal <= 0.35 && cf.strongKey !== cf.weakKey)
+    return { strong: false, label: `${DIM_STRONG[cf.strongKey]}, ${DIM_WEAK[cf.weakKey]}` };
+  return null;
+}
+
+/* Diversity pass (item 4): greedily re-rank the top window so an outfit sharing ≥threshold
+   garments with an already-picked, higher-ranked one is pushed down. Keeps the deck varied. */
+function diversify(pool, occasionId) {
+  if (pool.length < 3) return pool;
+  const scored = pool.map(o => ({ o, s: scoreOutfit(o.items, occasionId) })).sort((a, b) => b.s - a.s);
+  const window = Math.min(scored.length, rules.diversityWindow);
+  const remaining = scored.slice(0, window), tail = scored.slice(window), selected = [];
+  const thr = rules.diversityShareThreshold;
+  while (remaining.length) {
+    let bestIdx = 0, bestAdj = -Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      let adj = remaining[i].s;
+      for (const sel of selected) {
+        const shared = remaining[i].o.garmentIds.filter(id => sel.o.garmentIds.includes(id)).length;
+        if (shared >= thr) adj -= rules.diversityPenalty * (shared - thr + 1);
+      }
+      if (adj > bestAdj) { bestAdj = adj; bestIdx = i; }
+    }
+    selected.push(remaining.splice(bestIdx, 1)[0]);
+  }
+  return selected.concat(tail).map(x => x.o);
 }
 
 // Unlock counter: outfits before vs after adding `garment`.
@@ -1965,6 +2185,7 @@ let builderSel = new Set();      // garment ids selected in the manual builder
 let builderName = "";            // preserved across builder re-renders
 let builderOccasions = new Set();   // occasions tagged on the outfit being built (multiple allowed)
 let occasionEditor = false;          // occasions settings screen active
+let profileWiz = null;               // wearer-profile setup flow: { step, dir, data } or null
 let planMode = "week";           // "week" | "gaps" | "wishlist" | "packing"
 
 // session 3 view state
@@ -2260,6 +2481,7 @@ function render() {
   topActions.innerHTML = `
     <button class="iconbtn" title="Search" onclick="openSearch()">🔍</button>
     <button class="iconbtn" title="Theme" onclick="openThemePicker()">🎨</button>`;
+  if (profileWiz) { renderProfileWizard(); window.scrollTo(0, 0); return; }
   if (occasionEditor) { renderOccasionEditor(); window.scrollTo(0, 0); return; }
   if (searching) { renderSearch(); window.scrollTo(0, 0); return; }
   if (focusGarment) { renderGarmentOutfits(focusGarment); window.scrollTo(0, 0); return; }
@@ -3184,13 +3406,14 @@ function renderSuggested(garments, seg) {
   const { outfits, count, capped } = generateOutfits(garments, { store: OUTFIT_STORE });
   // rank with the active occasion's scoring lean (e.g. Date boosts contrast + texture)
   const occ = occasionFilter !== "all" ? occasionFilter : null;
-  outfits.sort((a, b) => scoreOutfit(b.items, occ) - scoreOutfit(a.items, occ));
 
   const weatherOn = weatherFilter && weather.status === "ok";
   let pool = weatherOn ? outfits.filter(o => outfitSuitsSeason(o.items, weather.season)) : outfits;
   if (occ) pool = pool.filter(o => matchesOccasionId(occ, o.items));
   // constrained shuffle — only outfits containing every "must include" garment (item 7)
   if (mustInclude.size) pool = pool.filter(o => [...mustInclude].every(id => o.garmentIds.includes(id)));
+  // score, then run the diversity pass so the top of the deck isn't near-duplicates (item 4)
+  pool = diversify(pool, occ);
 
   // today's pick leads the deck (weighted away from recently-worn)
   if (!ootd || !pool.some(o => o.garmentIds.join() === ootd.garmentIds.join())) ootd = pickOOTD(pool, "");
@@ -3265,7 +3488,8 @@ function occasionEditorCard(o) {
   const exSet = new Set(o.excludeItemIds || []);
   const g = getGarments();
   const exList = g.length ? g.map(x => `<label class="occ-ex"><input type="checkbox" ${exSet.has(x.id) ? "checked" : ""} onchange="occToggleExcludeItem('${o.id}','${x.id}',this.checked)"> ${esc(x.name)}</label>`).join("") : `<div class="tiny muted">No garments yet.</div>`;
-  const scoreNote = o.scoreWeights ? `<div class="tiny muted" style="margin-top:10px;">Scoring lean: ${Object.entries(o.scoreWeights).map(([k, v]) => `${esc(k)} ×${v}`).join(", ")} — tune in the config block.</div>` : "";
+  const swEntries = o.scoreWeights ? Object.entries(o.scoreWeights).filter(([k]) => k !== "replace") : [];
+  const scoreNote = swEntries.length ? `<div class="tiny muted" style="margin-top:10px;">Scoring lean${o.scoreWeights.replace ? " (only these)" : ""}: ${swEntries.map(([k, v]) => `${esc(k)} ×${v}`).join(", ")} — tune in the config block.</div>` : "";
   return `<div class="card" style="padding:14px;">
     <div class="row" style="gap:8px; align-items:center;">
       <input type="text" class="grow" value="${esc(o.label)}" onchange="occRename('${o.id}',this.value)" placeholder="Occasion name" style="font-weight:600;">
@@ -3327,6 +3551,101 @@ window.toggleOutfitOccasion = function (recId, o, elc) {
   setOutfitOccasions(recId, [...s]); haptic(6);
 };
 window.closeOutfitOccasions = function () { const o = document.getElementById("occ-overlay"); if (o) o.remove(); if (currentTab === "outfits") renderOutfits(); };
+
+/* ============================================================================
+   WEARER PROFILE SETUP  —  one-question-per-screen flow, styled like the garment
+   wizard. Skippable; on save it flips profile.active on so scoring personalises.
+   ============================================================================ */
+const PROFILE_STEPS = ["skin", "undertone", "hair", "eye", "summary"];
+window.startProfileSetup = function () {
+  const p = state.profile;
+  profileWiz = { step: 0, dir: 1, data: { skinHex: p.skinHex, undertone: p.undertone, hairHex: p.hairHex, eyeHex: p.eyeHex } };
+  haptic(8); render();
+};
+function renderProfileWizard() {
+  viewTitle.textContent = "Your profile";
+  viewSub.textContent = "Personalises colour scoring";
+  const steps = PROFILE_STEPS;
+  profileWiz.step = Math.max(0, Math.min(profileWiz.step, steps.length - 1));
+  const idx = profileWiz.step, id = steps[idx], total = steps.length;
+  const pct = (idx / (total - 1)) * 100;
+  const leftBtn = idx > 0
+    ? `<button class="btn sm ghost" onclick="profBack()">← Back</button>`
+    : `<button class="btn sm ghost" onclick="profCancel()">Cancel</button>`;
+  const head = `<div class="wiz-head">${leftBtn}<span class="tiny muted">Step ${idx + 1} of ${total}</span>
+    <button class="btn sm ghost" onclick="profSkip()">Skip</button></div>`;
+  view.innerHTML = `<div class="wiz-progress"><span style="width:${pct}%"></span></div>` + head +
+    `<div class="wiz-step ${profileWiz.dir >= 0 ? "in-right" : "in-left"}">${profileStep(id)}</div>`;
+  if (id === "hair") { const el = document.getElementById("prof-hair-custom"); /* color input present */ }
+}
+function profSwatchGrid(list, selHex, fn) {
+  return `<div class="prof-grid stagger">${list.map((c, i) => `
+    <button class="prof-swatch ${normalizeHex(selHex) === normalizeHex(c.hex) ? "sel" : ""}" style="animation-delay:${i * 26}ms" onclick="${fn}('${c.hex}',this)">
+      <div class="sw" style="background:${c.hex}"></div>${esc(c.label)}</button>`).join("")}</div>`;
+}
+function profileStep(id) {
+  const d = profileWiz.data;
+  switch (id) {
+    case "skin": return `
+      <div class="wiz-q">What's your skin tone?</div><div class="wiz-sub">Pick the closest — tap to continue.</div>
+      ${profSwatchGrid(SKIN_SWATCHES, d.skinHex, "profPickSkin")}`;
+    case "undertone": return `
+      <div class="wiz-q">What's your undertone?</div>
+      <div class="wiz-sub">Look at the veins on your wrist — green suggests warm, blue suggests cool.</div>
+      <div class="wiz-cards stagger">${UNDERTONES.map(([v, t, desc], i) => `
+        <button class="wiz-card ${d.undertone === v ? "sel" : ""}" style="animation-delay:${i * 30}ms" onclick="profPickUndertone('${v}',this)">
+          <span class="grow"><span class="t">${t}</span><div class="d">${esc(desc)}</div></span></button>`).join("")}</div>`;
+    case "hair": {
+      const custom = /^#[0-9a-f]{6}$/i.test(d.hairHex) && !HAIR_SWATCHES.some(c => normalizeHex(c.hex) === normalizeHex(d.hairHex));
+      return `
+      <div class="wiz-q">Hair colour?</div><div class="wiz-sub">Or pick a custom shade.</div>
+      ${profSwatchGrid(HAIR_SWATCHES, d.hairHex, "profPickHair")}
+      <div class="custom-color" style="margin-top:14px;">
+        <label class="cc-swatch" style="background:${custom ? d.hairHex : "#5c4230"}"><input type="color" value="${custom ? d.hairHex : "#5c4230"}" oninput="profPickHairCustom(this.value)"></label>
+        <div class="grow"><div class="tiny muted">Custom${custom ? " · " + esc(d.hairHex) : ""}</div></div>
+        <button class="btn sm" onclick="profNext()">Continue</button>
+      </div>`;
+    }
+    case "eye": return `
+      <div class="wiz-q">Eye colour?</div><div class="wiz-sub"></div>
+      ${profSwatchGrid(EYE_SWATCHES, d.eyeHex, "profPickEye")}`;
+    case "summary": {
+      const contrast = Math.round(Math.abs(litOf(d.hairHex) - litOf(d.skinHex)) * 100);
+      const row = (label, hex, extra) => `<div class="prof-summary-row"><span class="prof-chip" style="background:${hex}"></span><span class="grow"><b>${label}</b>${extra ? ` <span class="muted">${extra}</span>` : ""}</span></div>`;
+      return `
+      <div class="wiz-q">Looks right?</div><div class="wiz-sub">Everything's editable later from settings.</div>
+      <div class="card" style="padding:6px 14px; margin-top:10px;">
+        ${row("Skin", d.skinHex, "")}
+        ${row("Undertone", d.skinHex, cap(d.undertone))}
+        ${row("Hair", d.hairHex, "")}
+        ${row("Eyes", d.eyeHex, "")}
+      </div>
+      <div class="tiny muted" style="text-align:center; margin-top:10px;">Hair-to-skin contrast: ${contrast}% — used to score separation at the neckline.</div>
+      <button class="btn primary" style="margin-top:16px; width:100%;" onclick="profSave()">Save profile</button>
+      <button class="btn ghost" style="margin-top:8px; width:100%;" onclick="profSkip()">Skip personalisation</button>`;
+    }
+  }
+  return "";
+}
+function profAdvance() { profileWiz.dir = 1; profileWiz.step++; render(); }
+window.profPickSkin = function (hex) { profileWiz.data.skinHex = hex; haptic(12); setTimeout(profAdvance, 175); };
+window.profPickUndertone = function (v) { profileWiz.data.undertone = v; haptic(12); setTimeout(profAdvance, 175); };
+window.profPickHair = function (hex) { profileWiz.data.hairHex = hex; haptic(12); setTimeout(profAdvance, 175); };
+window.profPickHairCustom = function (hex) { profileWiz.data.hairHex = hex; const sw = document.querySelector(".custom-color .cc-swatch"); if (sw) sw.style.background = hex; };
+window.profPickEye = function (hex) { profileWiz.data.eyeHex = hex; haptic(12); setTimeout(profAdvance, 175); };
+window.profNext = function () { profileWiz.dir = 1; profileWiz.step++; haptic(6); render(); };
+window.profBack = function () { profileWiz.dir = -1; profileWiz.step = Math.max(0, profileWiz.step - 1); haptic(8); render(); };
+window.profCancel = function () { profileWiz = null; setTab("stats"); };
+window.profSkip = function () { profileWiz = null; haptic(8); setTab("stats"); };
+window.profSave = function () {
+  state.profile = normalizeProfile({ active: true, ...profileWiz.data });
+  saveToStorage(); profileWiz = null; haptic(20);
+  showToast("Profile saved — suggestions now personalised");
+  setTab("stats");
+};
+window.editProfileToggle = function () {
+  state.profile.active = !state.profile.active; saveToStorage(); haptic(10); render();
+};
 
 /* ---- "Refine" prompt: one question about one incomplete garment, once/session (item 2) ---- */
 function refineTarget() {
@@ -3597,6 +3916,7 @@ function heroCard(o, total, idx) {
     </div>
     ${visualOutfit(o.items, "lg")}
     ${whyLine(o.items)}
+    ${confLine(o.items)}
     <button class="btn primary wear" style="width:100%; margin-top:16px;" onclick="deckWear()">Wear this</button>
     <div class="row wrap" style="gap:8px; margin-top:10px; align-items:center;">
       <button class="btn sm" onclick="deckPrev()">←</button>
@@ -3731,6 +4051,7 @@ function outfitCard(o, idx) {
       </div>
       ${visualOutfit(o.items)}
       ${whyLine(o.items)}
+      ${confLine(o.items)}
       <div class="row wrap" style="gap:8px; align-items:center; margin-top:12px;">
         <button class="btn sm primary" onclick="woreOutfit('${o.garmentIds.join(",")}')">Wore this today</button>
         <button class="btn sm" onclick="saveOutfit('${o.garmentIds.join(",")}')">Save</button>
@@ -3743,6 +4064,12 @@ function whyLine(items) {
   const parts = explainOutfit(items);
   if (!parts.length) return "";
   return `<div class="why" title="Why this scored well — tune the weights in the config block">✦ ${esc(parts.join(" · "))}</div>`;
+}
+// confidence badge — strong-everywhere vs a call-out on the weak dimension (item 6)
+function confLine(items) {
+  const n = confidenceNote(items);
+  if (!n) return "";
+  return `<div class="conf ${n.strong ? "strong" : "note"}" title="Consistency across scoring dimensions">${n.strong ? "◆ " : "◇ "}${esc(n.label)}</div>`;
 }
 // clickable 1–5 star row keyed to a garment set; click the current rating to clear
 function ratingStars(ids) {
@@ -4450,6 +4777,20 @@ function renderStats() {
         </div>
       </div>
       <div class="card" style="padding:14px; margin-bottom:16px;">
+        <div class="sectitle" style="margin-bottom:8px;">Wearer profile</div>
+        <div class="row wrap" style="gap:8px; align-items:center;">
+          <span class="prof-chip" style="background:${state.profile.skinHex}"></span>
+          <span class="prof-chip" style="background:${state.profile.hairHex}"></span>
+          <span class="prof-chip" style="background:${state.profile.eyeHex}"></span>
+          <span class="grow"></span>
+          <button class="btn sm" onclick="startProfileSetup()">${state.profile.active ? "Edit profile" : "Set up profile"}</button>
+          ${state.profile.active ? `<button class="btn sm ghost" onclick="editProfileToggle()">Turn off</button>` : ""}
+        </div>
+        <div class="tiny muted" style="margin-top:8px;">${state.profile.active
+          ? `On — ${cap(state.profile.undertone)} undertone. Colours are scored for how they flatter your skin, hair and eyes.`
+          : "Off — set your skin tone, undertone, hair and eye colour so suggestions favour what flatters you. Skippable."}</div>
+      </div>
+      <div class="card" style="padding:14px; margin-bottom:16px;">
         <div class="sectitle" style="margin-bottom:8px;">Occasions</div>
         <div class="row wrap" style="gap:8px;">
           <button class="btn sm" onclick="openOccasionEditor()">⚙ Edit occasions</button>
@@ -4497,7 +4838,7 @@ window.applySuggestion = function () {
 window.wipeAll = function () {
   if (confirm("Erase ALL garments, outfits, wishlist and ratings from this device? This can't be undone.")) {
     haptic(30);
-    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, occasions: defaultOccasions(), planner: { strictness: "consecutive", weeks: {} } };
+    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, occasions: defaultOccasions(), profile: defaultProfile(), planner: { strictness: "consecutive", weeks: {} } };
     saveToStorage(); rebuildRatingContext(); lastUnlock = null; ootd = null; render();
   }
 };
@@ -4529,6 +4870,7 @@ window.importData = function (input) {
         ruleOverrides: (parsed.ruleOverrides && typeof parsed.ruleOverrides === "object") ? parsed.ruleOverrides : {},
         coWear: (parsed.coWear && typeof parsed.coWear === "object") ? parsed.coWear : {},
         occasions: normalizeOccasions(parsed.occasions),
+        profile: normalizeProfile(parsed.profile),
         planner: normalizePlanner(parsed.planner),
       };
       state.outfits = state.outfits.map(o => ({ ...o, occasions: normalizeOutfitOccasions(o) }));
