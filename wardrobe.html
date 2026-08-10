@@ -674,7 +674,7 @@ const OCCASION_DEFAULTS = [
   { id: "gym",      label: "Gym",       maxFormality: 2 },
   { id: "lazy",     label: "Lazy",      maxFormality: 2, requireRelaxed: true },
   // ---- new occasions ----
-  { id: "school",   label: "School",    minFormality: 2, maxFormality: 4, blockSubcategories: ["sweatpant"] }, // casual→smart-casual, no sweatpants unless re-allowed
+  { id: "school",   label: "School",    maxFormality: 4 }, // casual up to smart-casual; sweatpants allowed
   { id: "date",     label: "Date",      minFormality: 2, peakMin: 3, scoreWeights: { contrast: 1.9, texture: 1.9 } }, // dressier end; lean on texture + contrast
   { id: "family",   label: "Family",    minFormality: 2, maxFormality: 4, blockSubcategories: ["sweatpant", "tank"] }, // modest, mid-formality
   { id: "errands",  label: "Errands",   maxFormality: 4 }, // anything comfortable; sweatpants allowed (no block)
