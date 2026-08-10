@@ -630,12 +630,25 @@ const rules = {
     temperature: 0.8,   // warm/cool coherence (mixing is forgiven when contrast is high)
     texture:     1.0,   // 2–3 distinct textures reads considered; one texture is flat
     silhouette:  0.9,   // proportional balance between top and bottom
+    vertical:    0.9,   // where light sits top→bottom (light near the face, descending, framing)
+    echo:        0.7,   // a colour repeating at different heights reads as deliberate framing
     learnedPair: 1.2,   // garment pairs you rate highly or wear together, up-weighted over time
     wear:        0.6,   // proven pieces — what actually gets worn, not just what's rated
     rating:      0.8,   // explicit star rating of the whole combo
     base:        0.5,   // legacy niceties (a neutral anchor, one accent, intentional layering)
   },
   contrastCeiling: 0.6,  // lightness delta (0–1 in HSL) past which more contrast stops helping
+  // Visual-area weight per vertical position — the largest visible surface does the most
+  // visual work, so it drives contrast / temperature / texture more than a collar or shoe.
+  areaWeights: {
+    outer:      1.0,    // worn over everything
+    mid:        0.85,   // covers the torso
+    bottom:     0.8,
+    baseAlone:  0.85,   // base worn alone — a full torso surface
+    baseCollar: 0.25,   // base under a layer — only the collar shows
+    shoe:       0.25,
+  },
+  echoCap: 2,            // how many echo pairs count toward the cohesion bonus (3+ can't dominate)
 };
 
 /*
@@ -1431,12 +1444,90 @@ function silhouetteBalance(top, bottom) {
   if (vt === 0 && vb === 0) return 0.55;             // all fitted reads a touch severe
   return Math.min(1, 0.55 + 0.35 * Math.abs(vt - vb)); // contrast of proportion rewarded
 }
+// Visual-area weight of a piece: a base is a full torso when worn alone but only a
+// collar under a layer. Drives how much each piece influences contrast/temp/texture (item 3).
+function areaWeightOf(item, items) {
+  const w = rules.areaWeights;
+  switch (item.category) {
+    case "outer":  return w.outer;
+    case "mid":    return w.mid;
+    case "bottom": return w.bottom;
+    case "shoe":   return w.shoe;
+    case "base":   return items.some(i => i.category === "mid" || i.category === "outer") ? w.baseCollar : w.baseAlone;
+    default:       return 0.5;
+  }
+}
+
+/* Vertical profile: the visible lightness at each layer position, ordered top→bottom
+   (collar → torso → bottom → shoe). A base shows only at the collar when covered, but
+   becomes the torso surface when worn alone. Used by vertical placement + colour echo. */
+function verticalProfile(items) {
+  const base = items.find(i => i.category === "base");
+  const covering = items.find(i => i.category === "outer") || items.find(i => i.category === "mid");
+  const bottom = items.find(i => i.category === "bottom");
+  const shoe = items.find(i => i.category === "shoe");
+  const nodes = [];
+  if (base && covering) nodes.push({ pos: "neckline", item: base });   // collar peeking under a layer
+  const torso = covering || base;                                       // outermost torso surface (or base worn alone)
+  if (torso) nodes.push({ pos: "torso", item: torso });
+  if (bottom) nodes.push({ pos: "bottom", item: bottom });
+  if (shoe) nodes.push({ pos: "shoe", item: shoe });
+  return nodes.map(n => ({ ...n, l: litOf(n.item.colorHex) }));
+}
+
+/* Vertical light placement (item 1): light near the face and descending lightness score
+   high; light-at-both-ends over a dark middle is framing; light only at the feet is penalised. */
+function verticalPlacementScore(items) {
+  const prof = verticalProfile(items);
+  if (prof.length < 2) return 0.5;
+  const L = prof.map(p => p.l);
+  const top = L[0], shoe = L[L.length - 1], middle = L.slice(1, -1);
+  const light = l => l >= 0.6, dark = l => l <= 0.38;
+  let s = 0.5 + (top - shoe) * 0.8;                  // descending (lighter up top) rewarded; ascending penalised
+  if (light(top) && light(shoe) && (middle.length === 0 || middle.every(dark))) s = Math.max(s, 0.9); // framing
+  if (light(top)) s += 0.12;                         // light near the face
+  if (light(shoe) && L.slice(0, -1).every(dark)) s = Math.min(s, 0.18);   // light only at the feet
+  return Math.max(0, Math.min(1, s));
+}
+
+// Two hexes "echo" when their tone is close and they share a hue (or are both muted).
+// Cream and white register; white and black do not. Neutral hues are unstable, so
+// near-neutrals match on tone alone.
+function colorsEcho(a, b) {
+  const A = hslOf(a), B = hslOf(b);
+  if (Math.abs(A.l - B.l) > 0.3) return false;       // very different tone → not an echo
+  if (A.s < 0.22 && B.s < 0.22) return true;         // both muted + close tone (white / cream / grey)
+  const dh = Math.min(Math.abs(A.h - B.h), 360 - Math.abs(A.h - B.h));
+  return dh <= 35;                                   // similar hue + close tone
+}
+
+/* Colour echo / repetition (item 2): a colour recurring at different vertical positions
+   reads as deliberate framing. Bonus capped so 3+ repeats can't dominate. */
+function colorEchoScore(items) {
+  const nodes = verticalProfile(items);              // visible positions only
+  let echoes = 0;
+  for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++)
+    if (colorsEcho(nodes[i].item.colorHex, nodes[j].item.colorHex)) echoes++;
+  if (!echoes) return 0;
+  const capped = Math.min(echoes, rules.echoCap);
+  return Math.min(1, 0.55 + 0.45 * (capped - 1));    // 1 echo → 0.55, 2 → 1.0, capped
+}
+
+// Area-weighted temperature coherence (item 3): a warm shoe among a cool torso barely
+// dents coherence, but a warm torso among cool bottoms clashes.
 function temperatureCoherence(items, contrastNorm) {
-  const temps = items.map(i => tempOf(i.colorHex)).filter(t => t !== "neutral");
-  if (temps.length <= 1) return 1;                   // nothing to clash
-  const warm = temps.filter(t => t === "warm").length, cool = temps.length - warm;
-  if (warm === 0 || cool === 0) return 1;            // consistently warm or cool
-  return contrastNorm > 0.6 ? 0.7 : 0.3;             // mixed — forgiven only when it's a deliberate high-contrast look
+  let warm = 0, cool = 0;
+  items.forEach(it => {
+    const t = tempOf(it.colorHex); if (t === "neutral") return;
+    const a = areaWeightOf(it, items);
+    if (t === "warm") warm += a; else cool += a;
+  });
+  const total = warm + cool;
+  if (total <= 0) return 1;                           // all neutral — nothing to clash
+  const minor = Math.min(warm, cool) / total;         // area-fraction of the minority temperature
+  if (minor === 0) return 1;                          // consistently warm or cool
+  if (contrastNorm > 0.6) return Math.max(0.7, 1 - minor * 0.6);   // deliberate high contrast forgives a mix
+  return Math.max(0.3, 1 - minor * 1.4);
 }
 function learnedPairScore(items) {                   // ratings + real co-wear, −1.5..1.5
   const ids = items.map(i => i.id);
@@ -1454,12 +1545,19 @@ function learnedPairScore(items) {                   // ratings + real co-wear, 
 }
 function scoreComponents(items) {
   const top = dominantTop(items), bottom = items.find(i => i.category === "bottom");
-  // contrast — tonal distance between dominant top and bottom, ceilinged
+  // contrast — tonal distance between the two dominant surfaces (top covering + bottom), ceilinged
   let contrast = 0;
   if (top && bottom) contrast = Math.min(Math.abs(litOf(top.colorHex) - litOf(bottom.colorHex)), rules.contrastCeiling) / rules.contrastCeiling;
   const temperature = temperatureCoherence(items, contrast);
-  const distinct = new Set(items.map(i => i.texture)).size;
-  const texture = distinct <= 1 ? 0 : distinct === 2 ? 0.7 : distinct === 3 ? 1 : 0.6;
+  // texture variety, area-weighted — a distinct texture on a big surface counts more than one on a shoe (item 3)
+  const areaByTex = {}; let totalA = 0;
+  items.forEach(it => { const a = areaWeightOf(it, items); areaByTex[it.texture] = (areaByTex[it.texture] || 0) + a; totalA += a; });
+  const distinct = Object.keys(areaByTex).length;
+  const secondaryFrac = totalA > 0 ? (totalA - Math.max(...Object.values(areaByTex))) / totalA : 0;  // area NOT in the dominant texture
+  const texture = distinct <= 1 ? 0
+    : (distinct === 2 ? 0.75 : distinct === 3 ? 1 : 0.6) * (0.5 + 0.5 * Math.min(1, secondaryFrac * 2.2));
+  const vertical = verticalPlacementScore(items);   // where light sits, top→bottom (item 1)
+  const echo = colorEchoScore(items);               // colour repetition / framing (item 2)
   const silhouette = (top && bottom) ? silhouetteBalance(top, bottom) : 0.5;
   const learnedPair = learnedPairScore(items);
   const avgWorn = items.reduce((a, i) => a + (i.timesWorn || 0), 0) / items.length;
@@ -1471,21 +1569,40 @@ function scoreComponents(items) {
   if (items.some(i => i.colorFamily === "neutralDark" || i.colorFamily === "warmNeutral")) base += 0.5;
   if (items.filter(i => i.colorFamily === "accent").length === 1) base += 0.5;
   if (items.filter(i => i.category in TIER).length === 2) base += 0.4;
-  return { contrast, temperature, texture, silhouette, learnedPair, wear, rating, base };
+  return { contrast, temperature, texture, silhouette, vertical, echo, learnedPair, wear, rating, base };
 }
 function scoreOutfit(items, occasionId) {
   const c = scoreComponents(items);
   let w = rules.scoreWeights;
   if (occasionId) { const r = getOccasion(occasionId); if (r && r.scoreWeights) w = { ...w, ...r.scoreWeights }; }  // e.g. Date leans on contrast + texture
   return w.contrast * c.contrast + w.temperature * c.temperature + w.texture * c.texture
-       + w.silhouette * c.silhouette + w.learnedPair * c.learnedPair + w.wear * c.wear
-       + w.rating * c.rating + w.base * c.base;
+       + w.silhouette * c.silhouette + w.vertical * c.vertical + w.echo * c.echo
+       + w.learnedPair * c.learnedPair + w.wear * c.wear + w.rating * c.rating + w.base * c.base;
 }
 
-/* Why this outfit scored well — a short, human phrase from the strongest signals (item 6). */
+// human words for a vertical position (used by the echo descriptor)
+const POS_WORD = { neckline: "the collar", torso: "the torso", bottom: "the waist", shoe: "the shoe" };
+// name the lower position of the first colour echo, e.g. "colour echo at the shoe"
+function echoDescriptor(items) {
+  const nodes = verticalProfile(items);
+  for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++)
+    if (colorsEcho(nodes[i].item.colorHex, nodes[j].item.colorHex)) return "colour echo at " + POS_WORD[nodes[j].pos];
+  return "colour echo";
+}
+/* Why this outfit scored well — a short, human phrase from the strongest signals (items 1/2/6). */
 function explainOutfit(items) {
   const c = scoreComponents(items);
   const parts = [];
+  // vertical light placement — the most distinctive spatial read, so it leads
+  const prof = verticalProfile(items);
+  if (prof.length >= 2) {
+    const top = prof[0], shoe = prof[prof.length - 1], mids = prof.slice(1, -1);
+    if (top.l >= 0.6 && shoe.l >= 0.6 && mids.length && mids.every(m => m.l <= 0.38)) parts.push("light framing top and bottom");
+    else if (top.l >= 0.6 && shoe.l <= 0.4) parts.push("light at the collar, dark through the body");
+    else if (c.vertical <= 0.2 && shoe.l >= 0.6) parts.push("weight at the feet");
+    else if (c.vertical >= 0.72 && top.l >= 0.55) parts.push("light near the face");
+  }
+  if (c.echo > 0) parts.push(echoDescriptor(items));
   if (c.contrast >= 0.75) parts.push("high contrast");
   else if (c.contrast <= 0.2) parts.push("tonal");
   const distinct = new Set(items.map(i => i.texture)).size;
