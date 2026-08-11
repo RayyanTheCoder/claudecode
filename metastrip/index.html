@@ -1,0 +1,927 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>MetaStrip — Video Metadata Remover</title>
+  <meta name="description" content="Strip identifying metadata from videos entirely on your device. No uploads, no re-encoding.">
+  <meta name="theme-color" content="#121218">
+  <meta name="color-scheme" content="dark light">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MetaStrip">
+  <style>
+    /* ---- Design tokens: dark default, light via [data-theme="light"] ---- */
+    :root {
+      --accent: #7c6cff;
+      --accent-strong: #9a8dff;
+      --accent-soft: rgba(124, 108, 255, 0.14);
+      --bg: #121218;
+      --bg-elev: #1a1a24;
+      --bg-elev-2: #20202c;
+      --line: rgba(255, 255, 255, 0.08);
+      --line-strong: rgba(255, 255, 255, 0.16);
+      --text: #e9e9f2;
+      --text-dim: #a7a7b8;
+      --text-faint: #6f6f82;
+      --ok: #46d19e;
+      --warn: #f2b64c;
+      --err: #ff6b7a;
+      --shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+      --radius: 16px;
+      --radius-sm: 11px;
+      --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+      --sab: env(safe-area-inset-bottom, 0px);
+    }
+    [data-theme="light"] {
+      --accent: #6a4cff;
+      --accent-strong: #5a3cf0;
+      --accent-soft: rgba(106, 76, 255, 0.10);
+      --bg: #f5f5f8;
+      --bg-elev: #ffffff;
+      --bg-elev-2: #f0f0f5;
+      --line: rgba(20, 20, 40, 0.10);
+      --line-strong: rgba(20, 20, 40, 0.18);
+      --text: #1c1c26;
+      --text-dim: #565667;
+      --text-faint: #8a8a9a;
+      --ok: #17a673;
+      --warn: #b9791a;
+      --err: #d63a4c;
+      --shadow: 0 10px 40px rgba(30, 30, 60, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
+      overflow-x: hidden;
+      transition: background 0.3s var(--ease), color 0.3s var(--ease);
+    }
+    button { font: inherit; color: inherit; cursor: pointer; border: none; background: none; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+    .app { min-height: 100%; display: flex; flex-direction: column; }
+
+    /* ---- Header ---- */
+    header {
+      position: sticky; top: 0; z-index: 30;
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 18px calc(14px);
+      padding-top: max(14px, env(safe-area-inset-top));
+      background: color-mix(in srgb, var(--bg) 82%, transparent);
+      backdrop-filter: saturate(1.4) blur(14px);
+      -webkit-backdrop-filter: saturate(1.4) blur(14px);
+      border-bottom: 1px solid var(--line);
+    }
+    .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .brand .mark {
+      width: 34px; height: 34px; border-radius: 9px; flex: none;
+      background: linear-gradient(160deg, #2a2740, #17161f);
+      display: grid; place-items: center; box-shadow: inset 0 0 0 1px var(--line-strong);
+    }
+    .brand .mark svg { width: 21px; height: 21px; }
+    .brand h1 { font-size: 16px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+    .brand p { margin: 0; font-size: 11.5px; color: var(--text-faint); letter-spacing: 0.01em; }
+    .spacer { flex: 1; }
+    .iconbtn {
+      width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center;
+      color: var(--text-dim); transition: background 0.2s var(--ease), color 0.2s var(--ease);
+    }
+    .iconbtn:hover { background: var(--bg-elev-2); color: var(--text); }
+    .iconbtn svg { width: 20px; height: 20px; }
+    .ghostbtn {
+      display: none; align-items: center; gap: 7px; height: 38px; padding: 0 13px;
+      border-radius: 10px; font-size: 13px; font-weight: 550; color: var(--accent-strong);
+      background: var(--accent-soft); transition: filter 0.2s var(--ease);
+    }
+    .ghostbtn.show { display: inline-flex; }
+    .ghostbtn:hover { filter: brightness(1.12); }
+    .ghostbtn svg { width: 16px; height: 16px; }
+
+    /* ---- Main ---- */
+    main { flex: 1; width: 100%; max-width: 860px; margin: 0 auto; padding: 18px 16px 150px; }
+
+    /* ---- Drop zone (empty state) ---- */
+    .drop {
+      border: 1.5px dashed var(--line-strong); border-radius: var(--radius);
+      background: var(--bg-elev);
+      padding: 40px 24px; text-align: center;
+      transition: border-color 0.2s var(--ease), background 0.2s var(--ease), transform 0.2s var(--ease);
+    }
+    .drop.drag { border-color: var(--accent); background: var(--accent-soft); transform: scale(1.005); }
+    .drop .disc {
+      width: 76px; height: 76px; margin: 0 auto 18px; border-radius: 20px;
+      background: radial-gradient(120% 120% at 30% 20%, var(--accent-soft), transparent 70%), var(--bg-elev-2);
+      display: grid; place-items: center; box-shadow: inset 0 0 0 1px var(--line);
+    }
+    .drop .disc svg { width: 36px; height: 36px; color: var(--accent-strong); }
+    .drop h2 { margin: 0 0 6px; font-size: 20px; letter-spacing: -0.02em; }
+    .drop p { margin: 0 auto 20px; max-width: 42ch; color: var(--text-dim); font-size: 14px; }
+    .drop .cta { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      height: 46px; padding: 0 20px; border-radius: 12px; font-size: 14.5px; font-weight: 600;
+      transition: transform 0.12s var(--ease), filter 0.2s var(--ease), background 0.2s var(--ease);
+      white-space: nowrap;
+    }
+    .btn:active { transform: translateY(1px) scale(0.99); }
+    .btn svg { width: 18px; height: 18px; }
+    .btn.primary { background: var(--accent); color: #fff; box-shadow: 0 6px 18px -6px var(--accent); }
+    .btn.primary:hover { filter: brightness(1.08); }
+    .btn.primary:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; filter: none; }
+    .btn.secondary { background: var(--bg-elev-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+    .btn.secondary:hover { background: var(--line); }
+    .btn.secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+    .drop .hint { margin-top: 18px; font-size: 12px; color: var(--text-faint); }
+    .drop .hint b { color: var(--text-dim); font-weight: 600; }
+
+    /* Ghost preview of the queue under the empty-state drop zone */
+    .preview { margin-top: 22px; opacity: 0.5; pointer-events: none; user-select: none; }
+    .preview .plabel { font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em;
+      color: var(--text-faint); margin: 0 4px 10px; }
+    .ghost-row {
+      display: flex; align-items: center; gap: 12px; padding: 14px;
+      border-radius: var(--radius-sm); background: var(--bg-elev); margin-bottom: 8px;
+      border: 1px solid var(--line);
+    }
+    .ghost-row .g-ic { width: 34px; height: 34px; border-radius: 8px; background: var(--bg-elev-2); flex: none; }
+    .ghost-row .g-lines { flex: 1; }
+    .ghost-row .g-lines span { display: block; height: 9px; border-radius: 5px; background: var(--bg-elev-2); }
+    .ghost-row .g-lines span:first-child { width: 55%; margin-bottom: 7px; }
+    .ghost-row .g-lines span:last-child { width: 30%; height: 7px; }
+    .ghost-row .g-badge { width: 62px; height: 22px; border-radius: 11px; background: var(--bg-elev-2); flex: none; }
+
+    /* ---- Queue ---- */
+    .queue-head { display: flex; align-items: baseline; gap: 10px; margin: 4px 2px 14px; }
+    .queue-head h2 { font-size: 15px; margin: 0; font-weight: 650; }
+    .queue-head .counts { font-size: 12.5px; color: var(--text-faint); }
+    .queue-head .counts b { color: var(--text-dim); font-weight: 600; }
+    .overall {
+      margin: 0 2px 16px; height: 6px; border-radius: 4px; background: var(--bg-elev-2);
+      overflow: hidden; display: none;
+    }
+    .overall.show { display: block; }
+    .overall > i { display: block; height: 100%; width: 0%; border-radius: 4px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-strong)); transition: width 0.3s var(--ease); }
+
+    .row {
+      background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius-sm);
+      padding: 13px 14px; margin-bottom: 9px; position: relative; overflow: hidden;
+      transition: border-color 0.25s var(--ease), transform 0.25s var(--ease), box-shadow 0.25s var(--ease);
+    }
+    .row.done { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+    .row.failed { border-color: color-mix(in srgb, var(--err) 45%, var(--line)); }
+    @keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.012); } 100% { transform: scale(1); } }
+    .row.justdone { animation: pop 0.5s var(--ease); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }
+
+    .row-top { display: flex; align-items: center; gap: 12px; }
+    .ftype {
+      width: 38px; height: 38px; border-radius: 9px; flex: none; display: grid; place-items: center;
+      background: var(--bg-elev-2); color: var(--accent-strong);
+    }
+    .ftype svg { width: 20px; height: 20px; }
+    .meta { flex: 1; min-width: 0; }
+    .fname { font-size: 14px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fsub { font-size: 12px; color: var(--text-faint); margin-top: 1px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .fsub .thr { color: var(--accent-strong); }
+
+    .badge {
+      flex: none; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px;
+      letter-spacing: 0.01em; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+    }
+    .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .badge.queued { color: var(--text-dim); background: var(--bg-elev-2); }
+    .badge.processing { color: var(--accent-strong); background: var(--accent-soft); }
+    .badge.processing .dot { animation: blink 1s var(--ease) infinite; }
+    @keyframes blink { 50% { opacity: 0.25; } }
+    .badge.done { color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }
+    .badge.failed { color: var(--err); background: color-mix(in srgb, var(--err) 15%, transparent); }
+    .badge.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); }
+
+    .rowbtn {
+      width: 34px; height: 34px; border-radius: 9px; flex: none; display: grid; place-items: center;
+      color: var(--text-faint); transition: background 0.2s var(--ease), color 0.2s var(--ease);
+    }
+    .rowbtn:hover { background: var(--bg-elev-2); color: var(--text); }
+    .rowbtn.dl:hover { color: var(--accent-strong); }
+    .rowbtn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .rowbtn svg { width: 18px; height: 18px; }
+
+    .pbar { height: 5px; border-radius: 3px; background: var(--bg-elev-2); overflow: hidden; margin-top: 11px; display: none; }
+    .pbar.show { display: block; }
+    .pbar > i { display: block; height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+      transition: width 0.25s var(--ease); }
+
+    .rowmsg { font-size: 12px; margin-top: 8px; color: var(--err); display: none; }
+    .rowmsg.show { display: block; }
+    .rowmsg .retry { color: var(--accent-strong); font-weight: 600; margin-left: 6px; text-decoration: underline; }
+
+    /* Metadata before/after panel */
+    .metapanel { margin-top: 11px; display: none; gap: 10px; }
+    .metapanel.show { display: grid; grid-template-columns: 1fr 1fr; }
+    .metacard { background: var(--bg-elev-2); border-radius: 10px; padding: 10px 11px; min-width: 0; }
+    .metacard h4 { margin: 0 0 7px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-faint); display: flex; align-items: center; gap: 6px; }
+    .metacard.after h4 { color: var(--ok); }
+    .metacard dl { margin: 0; font-size: 11.5px; display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; }
+    .metacard dt { color: var(--text-faint); white-space: nowrap; }
+    .metacard dd { margin: 0; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .metacard .clean { color: var(--ok); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+    @media (max-width: 520px) { .metapanel.show { grid-template-columns: 1fr; } }
+
+    /* ---- Sticky action bar ---- */
+    .actionbar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+      background: color-mix(in srgb, var(--bg) 86%, transparent);
+      backdrop-filter: saturate(1.4) blur(16px); -webkit-backdrop-filter: saturate(1.4) blur(16px);
+      border-top: 1px solid var(--line);
+      padding: 12px 16px calc(12px + var(--sab));
+      transform: translateY(120%); transition: transform 0.3s var(--ease);
+    }
+    .actionbar.show { transform: translateY(0); }
+    .actionbar .inner { max-width: 860px; margin: 0 auto; }
+    .opts { display: flex; align-items: center; gap: 16px; margin-bottom: 11px; flex-wrap: wrap; font-size: 13px; }
+    .opt { display: inline-flex; align-items: center; gap: 8px; color: var(--text-dim); cursor: pointer; user-select: none; }
+    .switch { width: 38px; height: 22px; border-radius: 12px; background: var(--bg-elev-2); position: relative;
+      transition: background 0.2s var(--ease); flex: none; box-shadow: inset 0 0 0 1px var(--line); }
+    .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+      background: #fff; transition: transform 0.2s var(--ease); box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+    input[type="checkbox"] { position: absolute; opacity: 0; width: 0; height: 0; }
+    input:checked + .switch { background: var(--accent); }
+    input:checked + .switch::after { transform: translateX(16px); }
+    input:focus-visible + .switch { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .opt .suffix-in {
+      width: 92px; height: 30px; border-radius: 8px; background: var(--bg-elev); color: var(--text);
+      border: 1px solid var(--line); padding: 0 9px; font: inherit; font-size: 12.5px;
+    }
+    .opt .suffix-in:disabled { opacity: 0.5; }
+    .bar-actions { display: flex; gap: 9px; }
+    .bar-actions .btn { flex: 1; }
+    .bar-actions .btn.wide { flex: 1.4; }
+
+    .toast {
+      position: fixed; left: 50%; bottom: calc(96px + var(--sab)); transform: translateX(-50%) translateY(20px);
+      background: var(--bg-elev-2); color: var(--text); border: 1px solid var(--line-strong);
+      padding: 11px 16px; border-radius: 12px; font-size: 13px; box-shadow: var(--shadow);
+      opacity: 0; pointer-events: none; transition: opacity 0.25s var(--ease), transform 0.25s var(--ease); z-index: 60;
+      max-width: 90vw; text-align: center;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="brand">
+        <div class="mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="6" width="14" height="12" rx="2.5" stroke="url(#g)" stroke-width="1.7"/>
+            <path d="M8.5 9.5v5l4-2.5-4-2.5Z" fill="#9a8dff"/>
+            <path d="M4 19 20 5" stroke="#9a8dff" stroke-width="1.9" stroke-linecap="round"/>
+            <defs><linearGradient id="g" x1="3" y1="6" x2="17" y2="18">
+              <stop stop-color="#9a8dff"/><stop offset="1" stop-color="#7c6cff"/>
+            </linearGradient></defs>
+          </svg>
+        </div>
+        <div>
+          <h1>MetaStrip</h1>
+          <p>On-device metadata scrubber</p>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <button id="installBtn" class="ghostbtn" title="Install app">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        Install
+      </button>
+      <button id="themeBtn" class="iconbtn" title="Toggle theme" aria-label="Toggle light and dark theme"></button>
+    </header>
+
+    <main>
+      <!-- Empty state -->
+      <section id="empty">
+        <div id="drop" class="drop" role="button" tabindex="0" aria-label="Add video files">
+          <div class="disc" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 16V4m0 0L8 8m4-4 4 4"/><path d="M4 15v3a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-3"/>
+            </svg>
+          </div>
+          <h2>Drop videos to scrub</h2>
+          <p>Removes timestamps, GPS/location, device &amp; software tags and any custom metadata — without re-encoding. Nothing ever leaves this device.</p>
+          <div class="cta">
+            <button id="pickBtn" class="btn primary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14m-7-7h14"/></svg>
+              Choose files
+            </button>
+            <button id="folderBtn" class="btn secondary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>
+              Add folder
+            </button>
+          </div>
+          <div class="hint">Drag &amp; drop, or a whole folder · <b>mp4 · mov · mkv · webm · avi · m4v</b></div>
+        </div>
+
+        <div class="preview" aria-hidden="true">
+          <p class="plabel">Your queue will look like this</p>
+          <div class="ghost-row"><div class="g-ic"></div><div class="g-lines"><span></span><span></span></div><div class="g-badge"></div></div>
+          <div class="ghost-row"><div class="g-ic"></div><div class="g-lines"><span></span><span></span></div><div class="g-badge"></div></div>
+          <div class="ghost-row"><div class="g-ic"></div><div class="g-lines"><span></span><span></span></div><div class="g-badge"></div></div>
+        </div>
+      </section>
+
+      <!-- Queue -->
+      <section id="queueView" class="hidden">
+        <div class="queue-head">
+          <h2>Queue</h2>
+          <span class="counts" id="counts"></span>
+        </div>
+        <div class="overall" id="overall"><i></i></div>
+        <div id="list"></div>
+      </section>
+    </main>
+
+    <!-- Sticky action bar -->
+    <div class="actionbar" id="actionbar">
+      <div class="inner">
+        <div class="opts">
+          <label class="opt" title="Show the metadata found in each file before and after stripping">
+            <input type="checkbox" id="optVerify">
+            <span class="switch"></span> Show metadata
+          </label>
+          <label class="opt" title="Append a suffix to each output filename">
+            <input type="checkbox" id="optSuffix">
+            <span class="switch"></span> Add suffix
+            <input type="text" id="suffixVal" class="suffix-in" value="-clean" disabled aria-label="Filename suffix">
+          </label>
+        </div>
+        <div class="bar-actions">
+          <button id="clearBtn" class="btn secondary">Clear</button>
+          <button id="processBtn" class="btn primary wide">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v18l14-9L5 3Z"/></svg>
+            <span id="processLabel">Process all</span>
+          </button>
+          <button id="downloadBtn" class="btn secondary" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+            <span id="downloadLabel">Download</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </div>
+
+  <input id="fileInput" type="file" accept="video/*,.mkv,.avi,.mov,.mp4,.webm,.m4v" multiple class="sr">
+  <input id="folderInput" type="file" webkitdirectory multiple class="sr">
+
+  <!-- ffmpeg.wasm (vendored locally — the one dependency, served same-origin so it
+       works fully offline). The heavy 32 MB core is only fetched on first Process. -->
+  <script src="vendor/util/ffmpeg-util.js"></script>
+  <script src="vendor/ffmpeg/ffmpeg.js"></script>
+
+  <script type="module">
+  'use strict';
+
+  /* ============================ helpers ============================ */
+  const $ = (s) => document.querySelector(s);
+  const fmtSize = (b) => {
+    if (b < 1024) return b + ' B';
+    const u = ['KB', 'MB', 'GB']; let i = -1;
+    do { b /= 1024; i++; } while (b >= 1024 && i < 2);
+    return b.toFixed(b < 10 && i > 0 ? 1 : 0) + ' ' + u[i];
+  };
+  const uid = (() => { let n = 0; return () => 'f' + (++n) + Date.now().toString(36); })();
+  const VIDEO_RE = /\.(mp4|mov|m4v|mkv|webm|avi|3gp|ogv|mpg|mpeg|ts|flv)$/i;
+  const MP4_LIKE = /\.(mp4|mov|m4v|m4a|3gp)$/i;
+  const WARN_BYTES = 500 * 1024 * 1024;   // caution
+  const RISK_BYTES = 1024 * 1024 * 1024;  // likely to exhaust wasm memory
+
+  function toast(msg, ms = 2200) {
+    const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), ms);
+  }
+  function haptic(pattern) { try { navigator.vibrate && navigator.vibrate(pattern); } catch (_) {} }
+
+  /* ============================ theme ============================ */
+  const SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>';
+  const MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.6 6.6 0 0 0 9.8 9.8Z"/></svg>';
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    $('#themeBtn').innerHTML = t === 'dark' ? MOON : SUN;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', t === 'dark' ? '#121218' : '#f5f5f8');
+  }
+  let theme = localStorage.getItem('metastrip-theme')
+    || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  applyTheme(theme);
+  $('#themeBtn').addEventListener('click', () => {
+    theme = theme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('metastrip-theme', theme); applyTheme(theme);
+  });
+
+  /* ============================ state ============================ */
+  /** @type {Array<{id,file,name,size,ext,status,progress,out,outName,error,before,after,startedAt,throughput,large}>} */
+  let queue = [];
+  let processing = false;
+
+  const el = {
+    empty: $('#empty'), queueView: $('#queueView'), list: $('#list'),
+    counts: $('#counts'), overall: $('#overall'), actionbar: $('#actionbar'),
+    processBtn: $('#processBtn'), processLabel: $('#processLabel'),
+    downloadBtn: $('#downloadBtn'), downloadLabel: $('#downloadLabel'), clearBtn: $('#clearBtn'),
+  };
+
+  /* ============================ file intake ============================ */
+  function addFiles(files) {
+    let added = 0, skipped = 0;
+    for (const file of files) {
+      if (!VIDEO_RE.test(file.name) && !/^video\//.test(file.type)) { skipped++; continue; }
+      if (queue.some((q) => q.name === file.name && q.size === file.size)) continue; // de-dup
+      const m = file.name.match(/\.[^.]+$/);
+      queue.push({
+        id: uid(), file, name: file.name, size: file.size,
+        ext: m ? m[0] : '.mp4', status: 'queued', progress: 0,
+        out: null, outName: null, error: null, before: null, after: null,
+        startedAt: 0, throughput: null, large: file.size >= WARN_BYTES,
+      });
+      added++;
+    }
+    if (added) { render(); haptic(10); }
+    if (skipped) toast(`${skipped} non-video file${skipped > 1 ? 's' : ''} skipped`);
+  }
+
+  // Recursive folder traversal for whole-folder drops (where supported).
+  async function walkEntry(entry, out) {
+    if (entry.isFile) {
+      await new Promise((res) => entry.file((f) => { out.push(f); res(); }, () => res()));
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      await new Promise((res) => {
+        const readBatch = () => reader.readEntries(async (ents) => {
+          if (!ents.length) return res();
+          for (const e of ents) await walkEntry(e, out);
+          readBatch();
+        }, () => res());
+        readBatch();
+      });
+    }
+  }
+
+  async function handleDrop(dt) {
+    const items = dt.items ? Array.from(dt.items) : [];
+    const entries = items.map((it) => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
+    if (entries.length && entries.some((e) => e.isDirectory)) {
+      const collected = [];
+      for (const e of entries) await walkEntry(e, collected);
+      addFiles(collected);
+    } else {
+      addFiles(dt.files);
+    }
+  }
+
+  /* ---- drop zone wiring ---- */
+  const drop = $('#drop');
+  ['dragenter', 'dragover'].forEach((ev) => document.addEventListener(ev, (e) => {
+    e.preventDefault(); drop.classList.add('drag');
+  }));
+  ['dragleave', 'drop'].forEach((ev) => document.addEventListener(ev, (e) => {
+    e.preventDefault();
+    if (ev === 'dragleave' && e.relatedTarget) return;
+    drop.classList.remove('drag');
+  }));
+  document.addEventListener('drop', (e) => { e.preventDefault(); if (e.dataTransfer) handleDrop(e.dataTransfer); });
+
+  $('#pickBtn').addEventListener('click', () => $('#fileInput').click());
+  drop.addEventListener('click', (e) => { if (e.target === drop || e.target.closest('.disc, h2, p, .hint')) $('#fileInput').click(); });
+  drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#fileInput').click(); } });
+  $('#folderBtn').addEventListener('click', () => $('#folderInput').click());
+  $('#fileInput').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
+  $('#folderInput').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
+
+  /* ============================ rendering ============================ */
+  const FILM_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4" stroke-linecap="round"/></svg>';
+
+  function badge(item) {
+    if (item.status === 'processing') return `<span class="badge processing"><span class="dot"></span>Processing</span>`;
+    if (item.status === 'done') return `<span class="badge done"><span class="dot"></span>Done</span>`;
+    if (item.status === 'failed') return `<span class="badge failed"><span class="dot"></span>Failed</span>`;
+    if (item.large) return `<span class="badge warn" title="Large file — may strain browser memory"><span class="dot"></span>Large</span>`;
+    return `<span class="badge queued"><span class="dot"></span>Queued</span>`;
+  }
+
+  function metaRows(obj) {
+    const keys = Object.keys(obj || {});
+    if (!keys.length) return '<div class="clean">✓ No metadata</div>';
+    return '<dl>' + keys.slice(0, 8).map((k) =>
+      `<dt>${esc(k)}</dt><dd title="${esc(obj[k])}">${esc(obj[k])}</dd>`).join('') + '</dl>';
+  }
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function metaPanel(item) {
+    const show = $('#optVerify').checked && (item.before || item.after);
+    if (!show) return '';
+    return `<div class="metapanel show">
+      <div class="metacard before"><h4>Before</h4>${metaRows(item.before)}</div>
+      <div class="metacard after"><h4>After</h4>${metaRows(item.after)}</div>
+    </div>`;
+  }
+
+  function rowHTML(item) {
+    const sub = [];
+    sub.push(fmtSize(item.size));
+    if (item.throughput) sub.push(`<span class="thr">${item.throughput}</span>`);
+    if (item.status === 'queued' && item.size >= RISK_BYTES) sub.push('⚠ very large');
+    const pbarShow = item.status === 'processing' ? ' show' : '';
+    const msgShow = item.status === 'failed' ? ' show' : '';
+    return `
+      <div class="row ${item.status}${item._just ? ' justdone' : ''}" data-id="${item.id}">
+        <div class="row-top">
+          <div class="ftype">${FILM_SVG}</div>
+          <div class="meta">
+            <div class="fname" title="${esc(item.name)}">${esc(item.name)}</div>
+            <div class="fsub">${sub.join('<span>·</span>')}</div>
+          </div>
+          ${badge(item)}
+          ${item.status === 'done'
+            ? `<button class="rowbtn dl" data-act="dl" title="Download">
+                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+               </button>` : ''}
+          <button class="rowbtn" data-act="remove" title="Remove" ${processing && item.status === 'processing' ? 'disabled' : ''}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
+        </div>
+        <div class="pbar${pbarShow}"><i style="width:${item.progress}%"></i></div>
+        <div class="rowmsg${msgShow}">${item.error ? esc(item.error) : ''}<a class="retry" data-act="retry" href="#">Retry</a></div>
+        ${metaPanel(item)}
+      </div>`;
+  }
+
+  function render() {
+    const has = queue.length > 0;
+    el.empty.classList.toggle('hidden', has);
+    el.queueView.classList.toggle('hidden', !has);
+    el.actionbar.classList.toggle('show', has);
+    if (has) {
+      el.list.innerHTML = queue.map(rowHTML).join('');
+    }
+    updateCounts();
+  }
+
+  function updateCounts() {
+    const done = queue.filter((q) => q.status === 'done').length;
+    const failed = queue.filter((q) => q.status === 'failed').length;
+    const total = queue.length;
+    el.counts.innerHTML = `<b>${total}</b> file${total !== 1 ? 's' : ''}` +
+      (done ? ` · <b>${done}</b> done` : '') + (failed ? ` · <b>${failed}</b> failed` : '');
+    el.downloadBtn.disabled = done === 0;
+    el.downloadLabel.textContent = done > 1 ? `Download all (${done})` : 'Download';
+    el.processLabel.textContent = processing ? 'Processing…' : (done + failed > 0 && done + failed === total ? 'Reprocess' : 'Process all');
+    const anyQueued = queue.some((q) => q.status === 'queued');
+    el.processBtn.disabled = processing || !anyQueued;
+  }
+
+  // Lightweight in-place updates during processing to avoid re-rendering the list.
+  function patchRow(item) {
+    const row = el.list.querySelector(`.row[data-id="${item.id}"]`);
+    if (!row) return;
+    const bar = row.querySelector('.pbar > i');
+    if (bar) bar.style.width = item.progress + '%';
+    const pbar = row.querySelector('.pbar');
+    if (pbar) pbar.classList.toggle('show', item.status === 'processing');
+  }
+
+  function updateOverall() {
+    const total = queue.length;
+    if (!total) { el.overall.classList.remove('show'); return; }
+    const per = queue.reduce((a, q) =>
+      a + (q.status === 'done' || q.status === 'failed' ? 100 : q.progress), 0) / total;
+    el.overall.classList.toggle('show', processing);
+    el.overall.firstElementChild.style.width = per + '%';
+  }
+
+  /* ============================ ffmpeg engine ============================ */
+  let ffmpeg = null, ffmpegLoading = null;
+  let logBuf = [];
+
+  async function loadFFmpeg() {
+    if (ffmpeg) return ffmpeg;
+    if (ffmpegLoading) return ffmpegLoading;
+    ffmpegLoading = (async () => {
+      if (!window.FFmpegWASM) throw new Error('ffmpeg engine failed to load');
+      const inst = new window.FFmpegWASM.FFmpeg();
+      inst.on('log', ({ message }) => { logBuf.push(message); });
+      const base = new URL('vendor/core/', location.href).href;
+      await inst.load({
+        coreURL: base + 'ffmpeg-core.js',
+        wasmURL: base + 'ffmpeg-core.wasm',
+      });
+      ffmpeg = inst;
+      return inst;
+    })();
+    return ffmpegLoading;
+  }
+
+  // Parse the ffmpeg log for Input/Output "Metadata:" blocks so we can show a
+  // before/after comparison. Keys under Input #0 → before, under Output #0 → after.
+  function parseMeta(lines) {
+    const before = {}, after = {};
+    let target = null;          // current object (before/after) or null
+    let state = 'idle';         // 'idle' | 'await-meta' | 'in-meta' | 'done'
+    const SKIP = new Set(['major_brand', 'minor_version', 'compatible_brands']);
+    for (const raw of lines) {
+      const line = raw.replace(/\s+$/, '');
+      if (/^Input #0/.test(line)) { target = before; state = 'await-meta'; continue; }
+      if (/^Output #0/.test(line)) { target = after; state = 'await-meta'; continue; }
+      if (state === 'await-meta') {
+        if (/^\s*Metadata:\s*$/.test(line)) state = 'in-meta';
+        else if (/^\s*(Duration|Stream #)/.test(line)) state = 'done';
+        continue;
+      }
+      if (state === 'in-meta') {
+        // Only the container-level Metadata block; stop at Duration/Stream/etc.
+        if (/^\s*(Duration|Stream #|Chapter|Program|Side data|Output #|Input #)/.test(line)) { state = 'done'; continue; }
+        const m = line.match(/^\s{2,}([^:]+?)\s*:\s(.+)$/);
+        if (m) {
+          const key = m[1].trim();
+          if (!SKIP.has(key)) target[key] = m[2].trim();
+        } else {
+          state = 'done';
+        }
+      }
+    }
+    return { before, after };
+  }
+
+  async function processItem(item) {
+    const ff = await loadFFmpeg();
+    const inName = 'in_' + item.id + item.ext;
+    const outExt = item.ext.toLowerCase();
+    const outName = 'out_' + item.id + outExt;
+
+    item.startedAt = performance.now();
+    logBuf = [];
+
+    // Feed the file into the wasm FS.
+    const buf = new Uint8Array(await item.file.arrayBuffer());
+    await ff.writeFile(inName, buf);
+
+    // Progress → row.
+    const onProg = ({ progress }) => {
+      item.progress = Math.max(item.progress, Math.min(99, Math.round((progress || 0) * 100)));
+      patchRow(item); updateOverall();
+    };
+    ff.on('progress', onProg);
+
+    // Container rewrite with a stream copy: strips global + per-stream metadata,
+    // drops chapters, and (for mp4/mov) suppresses the muxer's encoder/date tags.
+    const args = ['-i', inName, '-map_metadata', '-1', '-map_metadata:s', '-1',
+                  '-map_chapters', '-1', '-c', 'copy', '-fflags', '+bitexact'];
+    if (MP4_LIKE.test(outExt)) args.push('-movflags', '+faststart');
+    args.push(outName);
+
+    let code = 0;
+    try {
+      code = await ff.exec(args);
+    } catch (_) {
+      code = -1; // fall through to the minimal-flags retry below
+    } finally {
+      ff.off('progress', onProg);
+    }
+    if (code !== 0) {
+      // Retry once without the mp4-specific flags (some odd containers reject them).
+      logBuf.push('— retrying with minimal flags —');
+      code = await ff.exec(['-i', inName, '-map_metadata', '-1', '-c', 'copy', '-fflags', '+bitexact', outName]);
+      if (code !== 0) throw new Error('ffmpeg could not rewrite this file (code ' + code + ')');
+    }
+
+    const data = await ff.readFile(outName);
+    const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+    if (!bytes.length) throw new Error('empty output — file may be unsupported');
+
+    const meta = parseMeta(logBuf);
+    item.before = meta.before;
+    item.after = meta.after;
+    item.out = new Blob([bytes], { type: item.file.type || 'video/mp4' });
+    item.outName = outputName(item);
+    item.progress = 100;
+
+    const secs = (performance.now() - item.startedAt) / 1000;
+    if (secs > 0.05) item.throughput = fmtSize(item.size / secs) + '/s';
+
+    // Free wasm FS memory before the next file.
+    try { await ff.deleteFile(inName); await ff.deleteFile(outName); } catch (_) {}
+  }
+
+  function outputName(item) {
+    let name = item.name;
+    if ($('#optSuffix').checked) {
+      const suffix = ($('#suffixVal').value || '').trim();
+      if (suffix) name = name.replace(/(\.[^.]+)$/, suffix + '$1');
+    }
+    return name;
+  }
+
+  /* ============================ batch runner ============================ */
+  async function processAll() {
+    if (processing) return;
+    const pending = queue.filter((q) => q.status === 'queued');
+    if (!pending.length) return;
+
+    processing = true;
+    render(); // reflect disabled buttons + processing UI
+    el.processLabel.textContent = 'Loading engine…';
+
+    try { await loadFFmpeg(); }
+    catch (e) {
+      processing = false; render();
+      toast('Could not start the video engine.'); return;
+    }
+
+    for (const item of pending) {
+      if (item.status !== 'queued') continue; // may have been removed
+      item.status = 'processing'; item.progress = 0;
+      updateCounts(); render();
+      try {
+        await processItem(item);
+        item.status = 'done'; item._just = true;
+        haptic([12, 40, 12]);
+        render();
+        setTimeout(() => { item._just = false; const r = el.list.querySelector(`.row[data-id="${item.id}"]`); r && r.classList.remove('justdone'); }, 600);
+      } catch (err) {
+        item.status = 'failed';
+        item.error = (err && err.message) ? err.message : 'Processing failed';
+        if (item.size >= RISK_BYTES) item.error += ' — file may be too large for in-browser memory.';
+        render();
+      }
+      updateOverall();
+    }
+
+    processing = false;
+    render();
+    updateOverall();
+    const done = queue.filter((q) => q.status === 'done').length;
+    const failed = queue.filter((q) => q.status === 'failed').length;
+    haptic(failed ? [20, 60, 20] : 30);
+    const plural = done === 1 ? 'file' : 'files';
+    toast(failed ? `${done} done · ${failed} failed`
+                 : (done === 1 ? '1 file scrubbed ✓' : `All ${done} ${plural} scrubbed ✓`));
+  }
+
+  /* ============================ downloads ============================ */
+  function saveBlob(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 4000);
+  }
+
+  async function downloadAll() {
+    const done = queue.filter((q) => q.status === 'done' && q.out);
+    if (!done.length) return;
+    if (done.length === 1) { saveBlob(done[0].out, done[0].outName); return; }
+    // Bundle multiple outputs into a single .zip (STORE method — video is already
+    // compressed, so this is instant and needs no external library).
+    toast('Bundling zip…', 4000);
+    try {
+      const names = new Set();
+      const entries = done.map((q) => {
+        let n = q.outName; let i = 2;
+        while (names.has(n)) n = q.outName.replace(/(\.[^.]+)?$/, ` (${i++})$1`);
+        names.add(n);
+        return { name: n, blob: q.out };
+      });
+      const zip = await buildZip(entries);
+      saveBlob(zip, `metastrip-${done.length}-files.zip`);
+      toast(`Downloaded ${done.length} files`);
+    } catch (e) {
+      toast('Zip failed — downloading individually');
+      for (const q of done) saveBlob(q.out, q.outName);
+    }
+  }
+
+  /* ---- Minimal ZIP (STORE / no compression) writer ---- */
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(u8) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+  async function buildZip(entries) {
+    const enc = new TextEncoder();
+    const parts = [];            // Blob parts, in order
+    const central = [];
+    let offset = 0;
+    const u16 = (v) => new Uint8Array([v & 255, (v >> 8) & 255]);
+    const u32 = (v) => new Uint8Array([v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255]);
+
+    for (const e of entries) {
+      const nameBytes = enc.encode(e.name);
+      const data = new Uint8Array(await e.blob.arrayBuffer());
+      const crc = crc32(data);
+      const size = data.length;
+
+      const local = concat([
+        u32(0x04034b50), u16(20), u16(0x0800), u16(0), u16(0), u16(0),
+        u32(crc), u32(size), u32(size), u16(nameBytes.length), u16(0), nameBytes,
+      ]);
+      parts.push(local, data);
+      central.push(concat([
+        u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0), u16(0), u16(0),
+        u32(crc), u32(size), u32(size), u16(nameBytes.length), u16(0), u16(0),
+        u16(0), u16(0), u32(0), u32(offset), nameBytes,
+      ]));
+      offset += local.length + size;
+    }
+    const cd = concat(central);
+    const end = concat([
+      u32(0x06054b50), u16(0), u16(0), u16(entries.length), u16(entries.length),
+      u32(cd.length), u32(offset), u16(0),
+    ]);
+    return new Blob([...parts, cd, end], { type: 'application/zip' });
+
+    function concat(chunks) {
+      let len = 0; for (const c of chunks) len += c.length;
+      const out = new Uint8Array(len); let p = 0;
+      for (const c of chunks) { out.set(c, p); p += c.length; }
+      return out;
+    }
+  }
+
+  /* ============================ row / bar actions ============================ */
+  el.list.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    const row = e.target.closest('.row'); if (!row) return;
+    const id = row.dataset.id;
+    const item = queue.find((q) => q.id === id); if (!item) return;
+    const act = btn.dataset.act;
+    if (act === 'remove') {
+      if (processing && item.status === 'processing') return;
+      queue = queue.filter((q) => q.id !== id); render(); haptic(8);
+    } else if (act === 'dl') {
+      if (item.out) saveBlob(item.out, item.outName);
+    } else if (act === 'retry') {
+      e.preventDefault();
+      item.status = 'queued'; item.progress = 0; item.error = null;
+      item.before = item.after = item.throughput = null;
+      render();
+    }
+  });
+
+  el.processBtn.addEventListener('click', processAll);
+  el.downloadBtn.addEventListener('click', downloadAll);
+  el.clearBtn.addEventListener('click', () => {
+    if (processing) { toast('Finish processing first'); return; }
+    if (!queue.length) return;
+    queue = []; render(); haptic(8);
+  });
+
+  $('#optVerify').addEventListener('change', render);
+  $('#optSuffix').addEventListener('change', (e) => {
+    $('#suffixVal').disabled = !e.target.checked;
+    queue.forEach((q) => { if (q.status === 'done') q.outName = outputName(q); });
+  });
+
+  /* ============================ PWA ============================ */
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+  let deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault(); deferredPrompt = e; $('#installBtn').classList.add('show');
+  });
+  $('#installBtn').addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt(); await deferredPrompt.userChoice;
+    deferredPrompt = null; $('#installBtn').classList.remove('show');
+  });
+  window.addEventListener('appinstalled', () => $('#installBtn').classList.remove('show'));
+
+  // Warn before losing an in-progress batch.
+  window.addEventListener('beforeunload', (e) => {
+    if (processing) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  render();
+  </script>
+</body>
+</html>
