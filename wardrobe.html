@@ -117,7 +117,7 @@
   }
   .tab .ico { font-size: 19px; line-height: 1; }
   .tab.active { color: var(--text); }
-  .tab.active .ico { filter: drop-shadow(0 0 8px rgba(124,141,255,.5)); }
+  .tab.active .ico { filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 50%, transparent)); }
 
   /* ---------- generic components ---------- */
   .card {
@@ -203,7 +203,7 @@
   /* ---------- unlock banner ---------- */
   .unlock {
     border: 1px solid var(--accent); border-radius: var(--radius);
-    background: linear-gradient(160deg, rgba(124,141,255,.16), rgba(124,141,255,.04));
+    background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent) 4%, transparent));
     padding: 16px; margin-bottom: 16px;
   }
   .unlock .big { font-size: 34px; font-weight: 700; letter-spacing: -.5px; }
@@ -267,7 +267,7 @@
   /* ---------- outfit of the day ---------- */
   .ootd {
     border: 1px solid var(--border-2); border-radius: var(--radius);
-    background: linear-gradient(160deg, rgba(124,141,255,.12), rgba(20,22,27,.4));
+    background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--bg-raise2) 55%, transparent));
     padding: 16px; margin-bottom: 18px;
   }
   .ootd .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); font-weight: 600; }
@@ -289,7 +289,7 @@
   }
   .pick .mini { width: 26px; height: 26px; border-radius: 6px; background: var(--bg-raise2); overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 13px; flex: none; }
   .pick .mini img { width: 100%; height: 100%; object-fit: cover; }
-  .pick.on { border-color: var(--accent); background: rgba(124,141,255,.12); }
+  .pick.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
   .validity { padding: 12px 14px; border-radius: 11px; margin: 4px 0 14px; font-size: 13px; }
   .validity.ok { background: rgba(78,201,138,.1); border: 1px solid #23402f; color: var(--good); }
   .validity.bad { background: rgba(230,184,75,.09); border: 1px solid #4a3f22; color: var(--warn); }
@@ -327,6 +327,40 @@
     --text:#ffffff; --muted:#a0a0a0; --muted-2:#6e6e6e; --accent:#22d3ee; --accent-ink:#00181c;
     --good:#3ddc84; --warn:#ffcc4d; --bad:#ff6b5e; --bar:rgba(0,0,0,.92); --shadow:rgba(0,0,0,.85);
   }
+  /* ===== NEUTRAL themes — no hue anywhere on the chrome, so garment colours read true ===== */
+  :root[data-theme="greyscale"] {
+    --bg:#1a1a1a; --bg-raise:#242424; --bg-raise2:#2e2e2e; --border:#3a3a3a; --border-2:#4a4a4a;
+    --text:#eaeaea; --muted:#9a9a9a; --muted-2:#6e6e6e; --accent:#8c8c8c; --accent-ink:#141414;
+    --good:#c8c8c8; --warn:#9a9a9a; --bad:#767676; --bar:rgba(26,26,26,.92); --shadow:rgba(0,0,0,.6);
+  }
+  :root[data-theme="studio"] {
+    /* ~18% grey backdrop (photographer's neutral), off-white surfaces, dark grey text */
+    --bg:#787878; --bg-raise:#f4f3f1; --bg-raise2:#e9e8e5; --border:#c9c8c5; --border-2:#b2b1ae;
+    --text:#1e1e1e; --muted:#4a4a4a; --muted-2:#5f5f5f; --accent:#4d4d4d; --accent-ink:#f4f3f1;
+    --good:#3f7a55; --warn:#7d6224; --bad:#8f4032; --bar:rgba(120,120,120,.94); --shadow:rgba(0,0,0,.22);
+  }
+  :root[data-theme="canvas"] {
+    /* very light warm-neutral, minimal contrast, thin dark text — gallery-like */
+    --bg:#f2f0ea; --bg-raise:#f9f8f4; --bg-raise2:#eceae2; --border:#e3e0d7; --border-2:#d2cec2;
+    --text:#2a2824; --muted:#6f6b61; --muted-2:#9a968b; --accent:#6b6459; --accent-ink:#f9f8f4;
+    --good:#3f7a55; --warn:#8a6a2a; --bad:#9a4436; --bar:rgba(249,248,244,.85); --shadow:rgba(70,60,45,.14);
+  }
+  /* ===== PREMIUM themes ===== */
+  :root[data-theme="obsidian"] {
+    --bg:#08080a; --bg-raise:#111113; --bg-raise2:#18181b; --border:#28282c; --border-2:#3a3a3f;
+    --text:#f4f1ea; --muted:#a29c90; --muted-2:#6f6a60; --accent:#c9a227; --accent-ink:#0a0a0a;
+    --good:#4ec98a; --warn:#e6b84b; --bad:#e07a6b; --bar:rgba(8,8,10,.94); --shadow:rgba(0,0,0,.85);
+  }
+  :root[data-theme="onyx"] {
+    --bg:#08080a; --bg-raise:#111113; --bg-raise2:#18181b; --border:#28282c; --border-2:#3a3a3f;
+    --text:#f0ede7; --muted:#9d988e; --muted-2:#6b675e; --accent:#cdbb96; --accent-ink:#14120d;
+    --good:#4ec98a; --warn:#e6b84b; --bad:#e07a6b; --bar:rgba(8,8,10,.94); --shadow:rgba(0,0,0,.85);
+  }
+  :root[data-theme="bronze"] {
+    --bg:#120d09; --bg-raise:#1b140e; --bg-raise2:#241a12; --border:#342619; --border-2:#463322;
+    --text:#f0e6d4; --muted:#b0a189; --muted-2:#7c6f5b; --accent:#b87333; --accent-ink:#160f08;
+    --good:#5aa86a; --warn:#d09a3a; --bad:#cc6a52; --bar:rgba(18,13,9,.94); --shadow:rgba(0,0,0,.8);
+  }
   /* 300ms cross-fade applied only while a theme switch is in flight */
   html.theming, html.theming * {
     transition: background-color .3s ease, border-color .3s ease, color .3s ease, box-shadow .3s ease, fill .3s ease !important;
@@ -348,7 +382,8 @@
   @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
   .sheet { background: var(--bg-raise); border: 1px solid var(--border); border-radius: 18px 18px 0 0; width: 100%; max-width: 520px; padding: 18px 16px calc(20px + env(safe-area-inset-bottom)); }
   @media (min-width: 560px) { .overlay { align-items: center; } .sheet { border-radius: 18px; } }
-  .theme-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+  .theme-cat { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; color: var(--muted); margin: 18px 0 2px; }
+  .theme-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
   .theme-card { border: 1px solid var(--border); border-radius: 14px; padding: 10px; cursor: pointer; text-align: left; background: var(--bg); }
   .theme-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .theme-prev { height: 46px; border-radius: 9px; overflow: hidden; display: flex; margin-bottom: 8px; border: 1px solid var(--border); }
@@ -2257,13 +2292,24 @@ function haptic(ms) {
 // bg + surface + accent are for the swatch preview and status-bar colour; the
 // full palette lives in CSS under :root[data-theme="…"].
 const THEMES = [
-  { id: "charcoal", name: "Charcoal", bg: "#0b0c0e", surface: "#14161b", accent: "#7c8dff" },
-  { id: "paper",    name: "Paper",    bg: "#f5f4f0", surface: "#ffffff", accent: "#4f57e8" },
-  { id: "ink",      name: "Ink",      bg: "#0c1020", surface: "#141a2e", accent: "#8b7bff" },
-  { id: "sand",     name: "Sand",     bg: "#efe7d8", surface: "#faf6ec", accent: "#b45f3a" },
-  { id: "slate",    name: "Slate",    bg: "#1a2029", surface: "#232b36", accent: "#6fa0d6" },
-  { id: "noir",     name: "Noir",     bg: "#000000", surface: "#0c0c0c", accent: "#22d3ee" },
+  // Neutral — hueless / near-hueless chrome, for judging garment colours accurately
+  { id: "greyscale", name: "Greyscale", cat: "Neutral", bg: "#1a1a1a", surface: "#242424", accent: "#8c8c8c" },
+  { id: "studio",    name: "Studio",    cat: "Neutral", bg: "#787878", surface: "#f4f3f1", accent: "#4d4d4d" },
+  { id: "canvas",    name: "Canvas",    cat: "Neutral", bg: "#f2f0ea", surface: "#f9f8f4", accent: "#6b6459" },
+  // Dark
+  { id: "charcoal",  name: "Charcoal",  cat: "Dark",    bg: "#0b0c0e", surface: "#14161b", accent: "#7c8dff" },
+  { id: "ink",       name: "Ink",       cat: "Dark",    bg: "#0c1020", surface: "#141a2e", accent: "#8b7bff" },
+  { id: "slate",     name: "Slate",     cat: "Dark",    bg: "#1a2029", surface: "#232b36", accent: "#6fa0d6" },
+  { id: "noir",      name: "Noir",      cat: "Dark",    bg: "#000000", surface: "#0c0c0c", accent: "#22d3ee" },
+  // Light
+  { id: "paper",     name: "Paper",     cat: "Light",   bg: "#f5f4f0", surface: "#ffffff", accent: "#4f57e8" },
+  { id: "sand",      name: "Sand",      cat: "Light",   bg: "#efe7d8", surface: "#faf6ec", accent: "#b45f3a" },
+  // Premium
+  { id: "obsidian",  name: "Obsidian",  cat: "Premium", bg: "#08080a", surface: "#111113", accent: "#c9a227" },
+  { id: "onyx",      name: "Onyx",      cat: "Premium", bg: "#08080a", surface: "#111113", accent: "#cdbb96" },
+  { id: "bronze",    name: "Bronze",    cat: "Premium", bg: "#120d09", surface: "#1b140e", accent: "#b87333" },
 ];
+const THEME_CATEGORIES = ["Neutral", "Dark", "Light", "Premium"];
 const THEME_BG = Object.fromEntries(THEMES.map(t => [t.id, t.bg]));
 
 function applyTheme() {
@@ -2296,21 +2342,27 @@ window.openThemePicker = function () {
   el.className = "overlay";
   el.id = "theme-overlay";
   el.onclick = e => { if (e.target === el) closeThemePicker(); };
-  el.innerHTML = `<div class="sheet">
+  el.innerHTML = `<div class="sheet" style="max-height:86vh; overflow:auto;">
     <div class="row" style="justify-content:space-between; align-items:center;">
       <b style="font-size:16px;">Theme</b>
       <button class="btn sm ghost" onclick="closeThemePicker()">Done</button>
     </div>
-    <div class="tiny muted" style="margin-top:4px;">One accent per theme — your garment photos and colours are the rest.</div>
-    <div class="theme-grid">
-      ${THEMES.map(t => `<button class="theme-card ${t.id === theme ? "on" : ""}" onclick="setTheme('${t.id}')">
-        <div class="theme-prev"><span style="background:${t.bg}"></span><span style="background:${t.surface}"></span><span class="a" style="background:${t.accent}"></span></div>
-        <div class="row" style="justify-content:space-between; align-items:center;">
-          <span style="font-weight:600; font-size:13px;">${t.name}</span>
-          ${t.id === theme ? '<span style="color:var(--accent); font-size:13px;">✓</span>' : ""}
-        </div>
-      </button>`).join("")}
-    </div>
+    <div class="tiny muted" style="margin-top:4px;">Neutral themes give the most accurate read on garment colours — a coloured accent can subtly bias how you perceive a colour.</div>
+    ${THEME_CATEGORIES.map(cat => {
+      const group = THEMES.filter(t => t.cat === cat);
+      if (!group.length) return "";
+      const note = cat === "Neutral" ? ` <span class="tiny muted" style="font-weight:400;">· truest colour</span>` : "";
+      return `<div class="theme-cat">${cat}${note}</div>
+      <div class="theme-grid">
+        ${group.map(t => `<button class="theme-card ${t.id === theme ? "on" : ""}" onclick="setTheme('${t.id}')">
+          <div class="theme-prev"><span style="background:${t.bg}"></span><span style="background:${t.surface}"></span><span class="a" style="background:${t.accent}"></span></div>
+          <div class="row" style="justify-content:space-between; align-items:center;">
+            <span style="font-weight:600; font-size:13px;">${t.name}</span>
+            ${t.id === theme ? '<span style="color:var(--accent); font-size:13px;">✓</span>' : ""}
+          </div>
+        </button>`).join("")}
+      </div>`;
+    }).join("")}
   </div>`;
   document.body.appendChild(el);
 };
