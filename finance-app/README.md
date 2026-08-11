@@ -81,11 +81,15 @@ This folder is a self-contained installable PWA:
 
 ### Deploy (GitHub Pages)
 
-`.github/workflows/pages.yml` deploys the repo to GitHub Pages via GitHub Actions
-on push to the working branch. The root `index.html` redirects a bare URL to
-`./finance-app/`. The workflow self-enables Pages with **Source: GitHub Actions**
-— if your repo has Pages set to *Deploy from a branch* instead, switch it to
-*GitHub Actions* (Settings → Pages) once.
+Served with GitHub Pages' **Deploy from a branch** mode — no build step:
+
+1. Repo **Settings → Pages → Build and deployment**.
+2. **Source:** *Deploy from a branch*.
+3. **Branch:** the branch this lives on, folder **/ (root)** → **Save**.
+
+The site publishes at `https://<user>.github.io/<repo>/`; the root `index.html`
+redirects a bare URL to `./finance-app/`. Bump the `CACHE` constant in `sw.js`
+on each deploy so clients pick up the new version via the update prompt.
 
 Run locally over http (needed for the service worker):
 
