@@ -1,8 +1,73 @@
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
-<title>Wardrobe</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="0; url=./wardrobe.html">
-<link rel="canonical" href="./wardrobe.html">
-<style>html{background:#0b0c0e;color:#e7e9ee;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}</style>
-<p style="padding:24px">Opening Wardrobe… <a href="./wardrobe.html" style="color:#7c8dff">tap here</a> if it doesn't redirect.</p>
+<title>Apps</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0c0e">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%97%82%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg:#0b0c0e; --surface:#14161b; --surface-2:#191c22; --border:#262a31; --border-2:#333843;
+    --text:#e7e9ee; --muted:#8b909b; --accent:#7c8dff;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji",sans-serif;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; }
+  body {
+    background:var(--bg); color:var(--text); font-family:var(--font);
+    min-height:100dvh; -webkit-font-smoothing:antialiased;
+    padding:calc(48px + env(safe-area-inset-top)) 20px calc(48px + env(safe-area-inset-bottom));
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .wrap { width:100%; max-width:760px; }
+  header { margin-bottom:28px; }
+  h1 { font-size:26px; letter-spacing:-.5px; margin:0 0 6px; }
+  .sub { color:var(--muted); font-size:14px; margin:0; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:14px; }
+  .app {
+    display:flex; align-items:flex-start; gap:14px; text-decoration:none; color:inherit;
+    background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:18px;
+    transition:border-color .15s ease, transform .15s ease, background .15s ease;
+  }
+  .app:hover { border-color:var(--accent); transform:translateY(-2px); background:var(--surface-2); }
+  .app .ico {
+    flex:none; width:52px; height:52px; border-radius:13px; background:var(--surface-2);
+    border:1px solid var(--border-2); display:flex; align-items:center; justify-content:center; font-size:26px;
+  }
+  .app .body { min-width:0; }
+  .app .name { font-weight:600; font-size:16px; margin:2px 0 4px; display:flex; align-items:center; gap:8px; }
+  .app .desc { color:var(--muted); font-size:13px; line-height:1.45; margin:0; }
+  .app .arrow { color:var(--muted); margin-left:auto; align-self:center; transition:color .15s, transform .15s; }
+  .app:hover .arrow { color:var(--accent); transform:translateX(2px); }
+  .soon { pointer-events:none; opacity:.5; }
+  .soon .arrow { display:none; }
+  .tag { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); border:1px solid var(--border-2); border-radius:6px; padding:1px 6px; }
+  footer { color:var(--muted); font-size:12px; margin-top:32px; text-align:center; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Apps</h1>
+      <p class="sub">Self-contained tools, each in its own folder.</p>
+    </header>
+
+    <div class="grid">
+      <!-- Add a card per app: copy this block, point href at the app's folder, and swap the icon/name/desc. -->
+      <a class="app" href="./wardrobe/">
+        <span class="ico">👕</span>
+        <span class="body">
+          <span class="name">Wardrobe</span>
+          <p class="desc">Personal wardrobe and outfit engine — offline, on-device. Installable.</p>
+        </span>
+        <span class="arrow" aria-hidden="true">→</span>
+      </a>
+
+      <!-- finance and metadata apps will get their own cards here once they exist. -->
+    </div>
+
+    <footer>Each app lives in its own subfolder and can be opened directly.</footer>
+  </div>
+</body>
+</html>
