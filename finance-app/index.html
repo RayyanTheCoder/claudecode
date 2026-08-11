@@ -8,8 +8,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Pocket" />
 <meta name="description" content="Pocket — a gold & black personal finance tracker with charts, budgets and offline support." />
+<meta name="mobile-web-app-capable" content="yes" />
 <link rel="manifest" href="manifest.webmanifest" />
-<link rel="apple-touch-icon" href="icon.svg" />
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+<link rel="icon" sizes="192x192" href="icon-192.png" />
+<!-- Inline favicon so a bare load never 404s on /favicon.ico -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%230a0806'/%3E%3Cpath%20d='M16%205L27%2016L16%2027L5%2016Z'%20fill='%23e8c477'/%3E%3C/svg%3E" />
 <title>Pocket — Personal Finance</title>
 <!--
   Pocket — single-file interactive Design Component. Gold & black theme.
@@ -953,13 +957,48 @@
 
   // ---------------- PWA ----------------
   function setupPWA(){
-    const icon="data:image/svg+xml,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='112' fill='#0a0806'/><path d='M256 116 396 256 256 396 116 256Z' fill='#e8c477'/></svg>`);
-    try{ if(!document.querySelector('link[rel="manifest"][data-runtime]')){
-      const manifest={name:"Pocket — Personal Finance",short_name:"Pocket",description:"Gold & black finance tracker",start_url:".",scope:".",display:"standalone",background_color:"#0a0806",theme_color:"#0a0806",icons:[{src:icon,sizes:"512x512",type:"image/svg+xml",purpose:"any maskable"}]};
-      const link=document.createElement("link"); link.rel="manifest"; link.setAttribute("data-runtime","1");
+    // Fallback manifest for contexts that strip the <head> (e.g. embedded preview);
+    // skipped whenever a real <link rel="manifest"> is present (the GitHub Pages build).
+    try{ if(!document.querySelector('link[rel="manifest"]')){
+      const icon="data:image/svg+xml,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='112' fill='#0a0806'/><path d='M256 116 396 256 256 396 116 256Z' fill='#e8c477'/></svg>`);
+      const manifest={name:"Pocket — Personal Finance",short_name:"Pocket",start_url:".",scope:".",display:"standalone",background_color:"#0a0806",theme_color:"#0a0806",icons:[{src:icon,sizes:"512x512",type:"image/svg+xml",purpose:"any maskable"}]};
+      const link=document.createElement("link"); link.rel="manifest";
       link.href=URL.createObjectURL(new Blob([JSON.stringify(manifest)],{type:"application/manifest+json"})); document.head.appendChild(link);
     }}catch{}
-    if("serviceWorker" in navigator && location.protocol==="https:"){ try{ navigator.serviceWorker.register("sw.js").catch(()=>{}); }catch{} }
+
+    // Register the service worker only when served over http(s); on file:// we skip
+    // it entirely so opening index.html directly from disk still works.
+    if(!("serviceWorker" in navigator) || !/^https?:$/.test(location.protocol)) return;
+    navigator.serviceWorker.register("sw.js").then(reg=>{
+      // A worker already waiting (installed on a previous visit) → offer the update.
+      if(reg.waiting && navigator.serviceWorker.controller) showUpdatePrompt(reg);
+      // A new worker started installing this session → offer it once installed.
+      reg.addEventListener("updatefound",()=>{
+        const nw=reg.installing; if(!nw) return;
+        nw.addEventListener("statechange",()=>{
+          if(nw.state==="installed" && navigator.serviceWorker.controller) showUpdatePrompt(reg);
+        });
+      });
+    }).catch(()=>{});
+
+    // When the fresh worker takes control (after SKIP_WAITING), reload once to run it.
+    let reloaded=false;
+    navigator.serviceWorker.addEventListener("controllerchange",()=>{ if(reloaded) return; reloaded=true; location.reload(); });
+  }
+
+  function showUpdatePrompt(reg){
+    if(document.getElementById("updbar")) return;
+    const bar=document.createElement("div"); bar.id="updbar";
+    Object.assign(bar.style,{position:"fixed",top:"16px",left:"50%",transform:"translateX(-50%)",zIndex:"120",
+      display:"flex",alignItems:"center",gap:"12px",maxWidth:"92vw",
+      background:"linear-gradient(180deg,#1c150c,#120d07)",border:"1px solid rgba(232,196,119,.4)",color:"#f4ede0",
+      padding:"10px 12px 10px 16px",borderRadius:"14px",boxShadow:"0 14px 40px rgba(0,0,0,.55)",font:"600 13px var(--sans)"});
+    const msg=document.createElement("span"); msg.textContent="New version available";
+    const btn=document.createElement("button"); btn.textContent="Tap to refresh";
+    Object.assign(btn.style,{border:"none",borderRadius:"10px",padding:"8px 12px",cursor:"pointer",
+      font:"700 13px var(--sans)",color:"#1a1305",background:"linear-gradient(135deg,#f9e2a0,#e8c477 42%,#c39a4a)"});
+    btn.onclick=()=>{ btn.textContent="Refreshing…"; if(reg.waiting) reg.waiting.postMessage({type:"SKIP_WAITING"}); else location.reload(); };
+    bar.appendChild(msg); bar.appendChild(btn); document.body.appendChild(bar);
   }
 
   function boot(){

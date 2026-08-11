@@ -1,0 +1,49 @@
+name: Deploy Pocket to GitHub Pages
+
+# Deploys the repo (root index.html redirect + /finance-app/ PWA) to GitHub Pages.
+# Runs from the working branch so a push here publishes the site.
+on:
+  push:
+    branches: ["claude/finance-app-auth-ffwj1f"]
+    paths:
+      - "finance-app/**"
+      - "index.html"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; newer pushes cancel in-progress runs.
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages (enable if needed, source = GitHub Actions)
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Disable Jekyll processing
+        run: touch .nojekyll
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "."
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
