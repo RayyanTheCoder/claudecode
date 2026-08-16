@@ -5510,47 +5510,24 @@ window.addEventListener("resize", () => { const p = isPhone(); if (p !== _wasPho
 
 initShake();   // shake-for-random-outfit (item 1)
 
-/* ---- update prompt ---- */
-function showUpdatePrompt(onRefresh) {
-  if (document.getElementById("sw-update")) return;
-  const wrap = document.createElement("div");
-  wrap.className = "toast-wrap"; wrap.id = "sw-update";
-  wrap.innerHTML = `<div class="toast">
-    <span class="msg">New version available</span>
-    <button class="btn sm primary" id="sw-refresh">Refresh</button>
-    <button class="btn sm ghost" id="sw-later">Later</button>
-  </div>`;
-  document.body.appendChild(wrap);
-  document.getElementById("sw-refresh").onclick = () => { document.getElementById("sw-refresh").textContent = "Refreshing…"; onRefresh(); };
-  document.getElementById("sw-later").onclick = () => wrap.remove();
-}
-
 // PWA: register the service worker only when served over http(s). On file:// this
 // is a no-op — the app still works, it just can't be installed/offline-cached there.
-// Detects a waiting worker and prompts to refresh instead of needing a manual cache clear.
+// The worker now auto-updates (network-first HTML + skipWaiting), so a deployed
+// version takes over on its own. When a *new* worker claims control mid-session we
+// reload once so the running page picks up the fresh HTML — no manual cache clear.
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-  let updating = false;
+  const hadController = !!navigator.serviceWorker.controller;   // false on the very first visit
+  let reloaded = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    // ignore the first-install clients.claim(); only reload for a user-triggered update
-    if (updating) location.reload();
-  });
-  const onUpdateReady = worker => showUpdatePrompt(() => {
-    updating = true;
-    worker.postMessage("SKIP_WAITING");
-    setTimeout(() => { if (updating) location.reload(); }, 1800); // fallback if controllerchange is missed
+    if (reloaded) return;
+    if (!hadController) return;        // first-ever install claiming control — nothing stale to replace
+    reloaded = true;
+    location.reload();
   });
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").then(reg => {
-      if (reg.waiting && navigator.serviceWorker.controller) onUpdateReady(reg.waiting);   // update already waiting from a prior visit
-      reg.addEventListener("updatefound", () => {
-        const nw = reg.installing; if (!nw) return;
-        nw.addEventListener("statechange", () => {
-          // "installed" + an existing controller ⇒ this is an update, not a first install
-          if (nw.state === "installed" && navigator.serviceWorker.controller) onUpdateReady(reg.waiting || nw);
-        });
-      });
-      reg.update().catch(() => {});   // proactively check for a newer SW on load
-    }).catch(() => {});
+    navigator.serviceWorker.register("sw.js")
+      .then(reg => { reg.update().catch(() => {}); })   // proactively check for a newer worker on load
+      .catch(() => {});
   });
 }
 </script>
