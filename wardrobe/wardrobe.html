@@ -616,6 +616,26 @@
   .pl-hrow:first-child { border-top: 0; }
   .pl-hdow { font-weight: 700; font-size: 12.5px; color: var(--muted); }
   .pl-hthumbs { display: flex; gap: 4px; flex-wrap: wrap; }
+  /* multi-week + day-state controls */
+  .pl-day.important { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+  .pl-day.excluded { opacity: .55; border-style: dashed; background: var(--bg); }
+  .pl-day.excluded .pl-thumbs, .pl-day.excluded .pl-temp { display: none; }
+  .pl-star { font-size: 12px; color: var(--accent); }
+  .pl-exclude { font-size: 14px; color: var(--muted-2); cursor: pointer; line-height: 1; padding: 0 1px; border-radius: 6px; }
+  .pl-exclude:hover { color: var(--accent); }
+  .pl-weektabs { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .pl-weektab { flex: 1 0 auto; min-width: 72px; background: var(--bg-raise); border: 1px solid var(--border); color: var(--text); border-radius: 11px; padding: 7px 10px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 1px; font-weight: 600; font-size: 13px; }
+  .pl-weektab.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .pl-weektab-sub { font-weight: 500; font-size: 10.5px; color: var(--muted); }
+  /* planner settings panel */
+  .pl-set-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border); }
+  .pl-set-row:first-of-type { border-top: 0; }
+  .pl-stepper { display: flex; align-items: center; gap: 10px; flex: none; }
+  .pl-stepper b { min-width: 20px; text-align: center; font-variant-numeric: tabular-nums; }
+  .pl-switch { width: 44px; height: 26px; border-radius: 999px; border: 1px solid var(--border-2); background: var(--bg-raise2); position: relative; cursor: pointer; flex: none; transition: background .15s; }
+  .pl-switch span { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--muted); transition: transform .15s, background .15s; }
+  .pl-switch.on { background: color-mix(in srgb, var(--accent) 40%, var(--bg-raise2)); border-color: var(--accent); }
+  .pl-switch.on span { transform: translateX(18px); background: var(--accent); }
 </style>
 
 <div class="app">
@@ -722,6 +742,31 @@ const rules = {
     shoe:       0.25,
   },
   echoCap: 2,            // how many echo pairs count toward the cohesion bonus (3+ can't dominate)
+  // ---- weekly planner (all editable from the Planner settings panel; these are the defaults) ----
+  planner: {
+    // Max times a garment of each category may appear across the whole planned period.
+    // Some categories tolerate more repetition — a base under a hoodie is barely seen,
+    // a distinctive shoe or branded bottom is noticeable. (part 1)
+    maxWeeklyRepeats: { base: 2, mid: 2, outer: 2, bottom: 2, shoe: 3 },
+    // No two active days may share more than this many garments — two days that differ
+    // only by shoe read as the same outfit. (part 4)
+    overlapThreshold: 2,
+    // Spacing between repeats of the same garment across active days. (part 3)
+    //   "maximise" — spread repeats as far apart as possible (Mon + Fri, not Mon + Wed)
+    //   "consecutive" — only avoid back-to-back active days
+    //   "none" — no spacing constraint
+    spacing: "maximise",
+    // Low-visibility garments (e.g. a plain tee hidden under a hoodie) skip repeat limits. (part 2)
+    lowVisibilityExempt: true,
+    // Default days switched off from planning, per week (0 = Mon … 6 = Sun). (part 7)
+    defaultExcludedDays: [5, 6],   // weekend
+    // Default number of weeks a single Auto-plan covers. (part 6)
+    horizon: 1,
+    // High-visibility garments get a stricter limit; low-visibility a looser one. (part 2)
+    visibilityRepeatDelta: { high: -1, medium: 0, low: 1 },
+    // Default per-garment visibility by category when the user hasn't set it. (part 2)
+    defaultVisibility: { base: "medium", mid: "high", outer: "high", bottom: "high", shoe: "high" },
+  },
 };
 
 /*
@@ -1088,7 +1133,7 @@ function hairContrast(profile) { return Math.abs(litOf(profile.hairHex) - litOf(
 /* ============================================================================
    DATA LAYER
    ============================================================================ */
-let state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, occasions: defaultOccasions(), profile: defaultProfile(), planner: { strictness: "consecutive", weeks: {} } };
+let state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, occasions: defaultOccasions(), profile: defaultProfile(), planner: { strictness: "consecutive", settings: defaultPlannerSettings(), weeks: {} } };
 
 function uid() {
   if (crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -1120,7 +1165,7 @@ function loadFromStorage() {
     }
   } catch (e) {
     console.error("load failed", e);
-    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, occasions: defaultOccasions(), profile: defaultProfile(), planner: { strictness: "consecutive", weeks: {} } };
+    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, occasions: defaultOccasions(), profile: defaultProfile(), planner: { strictness: "consecutive", settings: defaultPlannerSettings(), weeks: {} } };
   }
   Object.assign(rules, state.ruleOverrides);   // apply any confirmed config changes
 }
@@ -1163,6 +1208,9 @@ function normalizeGarment(g) {
     formality,                        // derived blend, kept for back-compat
     texture: TEXTURES.includes(g.texture) ? g.texture : textureFor(subcategory, g.category),   // NEW (item 2)
     silhouette: SILHOUETTES.includes(g.silhouette) ? g.silhouette : silhouetteFor(subcategory, fit, g.category), // NEW (item 4)
+    // how noticeable a repeat is — drives planner repeat limits. Default by category; user can flag
+    // a branded piece "high" regardless. Base worn under a layer is treated as low at plan time.
+    visibility: ["high", "medium", "low"].includes(g.visibility) ? g.visibility : ((rules.planner.defaultVisibility || {})[g.category] || "high"),
     season: g.season || "all",
     fit,
     weight: g.weight || "medium",
@@ -2003,10 +2051,43 @@ function weekRelLabel(monIso) {
   return fmtShort(monIso);
 }
 
-function emptyDay() { return { outfit: null, locked: false, worn: false, carriedOver: false }; }
-function emptyWeek() { return { days: Array.from({ length: 7 }, emptyDay) }; }
+// ---- planner settings (seeded from rules.planner; user-editable in the preferences panel, part 8) ----
+function defaultPlannerSettings() {
+  const p = rules.planner;
+  return {
+    maxWeeklyRepeats: { ...p.maxWeeklyRepeats },
+    overlapThreshold: p.overlapThreshold,
+    spacing: p.spacing,
+    lowVisibilityExempt: p.lowVisibilityExempt,
+    defaultExcludedDays: p.defaultExcludedDays.slice(),
+    horizon: p.horizon,
+  };
+}
+function normalizePlannerSettings(s) {
+  const d = defaultPlannerSettings();
+  if (!s || typeof s !== "object") return d;
+  const mwr = {};
+  ["base", "mid", "outer", "bottom", "shoe"].forEach(c => { mwr[c] = clampInt(s.maxWeeklyRepeats && s.maxWeeklyRepeats[c], 1, 14, d.maxWeeklyRepeats[c]); });
+  return {
+    maxWeeklyRepeats: mwr,
+    overlapThreshold: clampInt(s.overlapThreshold, 0, 4, d.overlapThreshold),
+    spacing: ["maximise", "consecutive", "none"].includes(s.spacing) ? s.spacing : d.spacing,
+    lowVisibilityExempt: typeof s.lowVisibilityExempt === "boolean" ? s.lowVisibilityExempt : d.lowVisibilityExempt,
+    defaultExcludedDays: Array.isArray(s.defaultExcludedDays) ? [...new Set(s.defaultExcludedDays.filter(n => n >= 0 && n <= 6))] : d.defaultExcludedDays,
+    horizon: clampInt(s.horizon, 1, 4, d.horizon),
+  };
+}
+function plannerSettings() { return (state.planner && state.planner.settings) || defaultPlannerSettings(); }
+
+function emptyDay(excluded) { return { outfit: null, locked: false, worn: false, carriedOver: false, excluded: !!excluded, importance: "normal" }; }
+function emptyWeek() {
+  const ex = (state.planner && state.planner.settings ? state.planner.settings.defaultExcludedDays : rules.planner.defaultExcludedDays) || [];
+  return { days: Array.from({ length: 7 }, (_, i) => emptyDay(ex.includes(i))) };
+}
 function normalizePlanner(p) {
-  const out = { strictness: (p && p.strictness === "weekly") ? "weekly" : "consecutive", weeks: {} };
+  const settings = normalizePlannerSettings(p && p.settings);
+  const out = { strictness: (p && p.strictness === "weekly") ? "weekly" : "consecutive", settings, weeks: {} };
+  const ex = settings.defaultExcludedDays;
   if (p && p.weeks && typeof p.weeks === "object") {
     for (const k of Object.keys(p.weeks)) {
       const days = Array.isArray(p.weeks[k] && p.weeks[k].days) ? p.weeks[k].days : [];
@@ -2015,6 +2096,8 @@ function normalizePlanner(p) {
         return {
           outfit: (d.outfit && Array.isArray(d.outfit.garmentIds)) ? { garmentIds: d.outfit.garmentIds.slice() } : null,
           locked: !!d.locked, worn: !!d.worn, carriedOver: !!d.carriedOver,
+          excluded: typeof d.excluded === "boolean" ? d.excluded : ex.includes(i),
+          importance: d.importance === "important" ? "important" : "normal",
         };
       }) };
     }
@@ -2080,90 +2163,222 @@ function weightedPick(scored, opts = {}) {
 // A day is "fixed" (never regenerated) if it's locked or already marked worn.
 function dayFixed(d) { return d.locked || d.worn; }
 
-/* Fill every non-fixed day with a valid outfit, honoring the repeat rule + weather. */
-function autoPlanWeek(monIso) {
-  const week = getWeek(monIso);
+/* ---------- repetition + visibility + overlap (parts 1, 2, 4) ---------- */
+// A garment's effective visibility within a given outfit: a base under a layer is barely
+// seen (low); a base worn alone reads full (high); a user-flagged branded piece is always
+// high. Everything else keeps its stored visibility (part 2).
+function effectiveVisibility(g, items) {
+  if (g.visibility === "high") return "high";
+  if (g.category === "base") return items.some(i => i.category === "mid" || i.category === "outer") ? "low" : "high";
+  return g.visibility || "high";
+}
+// How many times this garment may appear across the planned period, adjusted for visibility.
+function effectiveRepeatLimit(g, items, settings) {
+  const base = (settings.maxWeeklyRepeats || {})[g.category];
+  const lim = (base == null) ? 2 : base;
+  const vis = effectiveVisibility(g, items);
+  if (vis === "low") return settings.lowVisibilityExempt ? Infinity : lim + 1;
+  const delta = (rules.planner.visibilityRepeatDelta || {})[vis] || 0;   // high stricter, medium neutral
+  return Math.max(1, lim + delta);
+}
+function overlapCount(idsA, idsB) { const b = new Set(idsB); let n = 0; for (const id of idsA) if (b.has(id)) n++; return n; }
+
+/* ---------- active-day model across a multi-week block (parts 6, 7) ---------- */
+function horizonWeeks(startMonIso, weeksCount) { return Array.from({ length: Math.max(1, weeksCount) }, (_, w) => isoAddDays(startMonIso, w * 7)); }
+// Flat, ordered list of the days the generator may touch — excluded days are skipped
+// entirely, so spacing/adjacency counts across ACTIVE days only (part 7). `pos` is the
+// continuous active-sequence index, which makes Fri→Mon across a week boundary adjacent (part 6).
+function buildActiveNodes(weekIsos) {
+  const nodes = [];
+  weekIsos.forEach(wk => {
+    const week = getWeek(wk), dates = weekDates(wk);
+    week.days.forEach((day, idx) => { if (day.excluded) return; nodes.push({ weekIso: wk, idx, date: dates[idx], day }); });
+  });
+  nodes.forEach((n, i) => n.pos = i);
+  return nodes;
+}
+function seedAccumulator(contextNodes) {
+  const counts = new Map(), placedLooks = new Set(), placements = [];
+  contextNodes.forEach(n => {
+    const hy = hydrateOutfit(n.day.outfit); if (!hy) return;
+    hy.garmentIds.forEach(id => counts.set(id, (counts.get(id) || 0) + 1));
+    placedLooks.add(lookKey(hy));
+    placements.push({ pos: n.pos, garmentIds: hy.garmentIds });
+  });
+  return { counts, placedLooks, placements };
+}
+
+/*
+  Shared greedy placement. Fills `targetNodes` given `contextNodes` (already-decided days,
+  e.g. locked/worn or other weeks' plans). Enforces, in order of relaxation:
+    0 — whole-look uniqueness, overlap ≤ threshold, per-garment repeat limits, no-adjacent-repeat
+    1 — drops repeat limits + adjacency
+    2 — drops overlap too (last resort so an active day is never left empty)
+  Important days pick the top-ranked valid outfit; normal days pick weighted-random for variety (part 5).
+*/
+function placeNodes(targetNodes, contextNodes, scored, settings) {
+  const { counts, placedLooks, placements } = seedAccumulator(contextNodes);
+  const topOf = cands => { const b = cands.reduce((a, x) => x.s > a.s ? x : a); return { garmentIds: b.o.garmentIds.slice(), items: b.o.items }; };
+  const violates = (o, node, relax) => {
+    if (placedLooks.has(lookKey(o))) return true;                                  // no outfit repeats across the block
+    if (relax < 2) for (const p of placements) if (overlapCount(o.garmentIds, p.garmentIds) > settings.overlapThreshold) return true;
+    if (relax < 1) {
+      for (const g of o.items) if ((counts.get(g.id) || 0) + 1 > effectiveRepeatLimit(g, o.items, settings)) return true;
+      if (settings.spacing !== "none") for (const p of placements) if (Math.abs(p.pos - node.pos) === 1 && overlapCount(o.garmentIds, p.garmentIds) > 0) return true;
+    }
+    return false;
+  };
+  const ordered = targetNodes.filter(n => n.day.importance === "important").concat(targetNodes.filter(n => n.day.importance !== "important"));
+  for (const node of ordered) {
+    const dayPool = poolForDay(scored, forecastSeason(node.date));
+    let pick = null;
+    for (let relax = 0; relax <= 2 && !pick; relax++) {
+      const cands = dayPool.filter(x => !violates(x.o, node, relax));
+      if (!cands.length) continue;
+      pick = node.day.importance === "important" ? topOf(cands) : weightedPick(cands, {});
+    }
+    if (!pick) pick = topOf(dayPool.length ? dayPool : scored);
+    node.day.outfit = { garmentIds: pick.garmentIds.slice() }; node.day.worn = false; node.day.carriedOver = false;
+    pick.garmentIds.forEach(id => counts.set(id, (counts.get(id) || 0) + 1));
+    placedLooks.add(lookKey(pick));
+    placements.push({ pos: node.pos, garmentIds: pick.garmentIds });
+  }
+}
+
+// Count of same-garment repeats landing on adjacent active days — the thing spacing fights.
+function adjacencyCount(nodes) {
+  const pos = new Map();
+  nodes.forEach(n => { const hy = hydrateOutfit(n.day.outfit); if (hy) hy.garmentIds.forEach(id => { (pos.get(id) || pos.set(id, []).get(id)).push(n.pos); }); });
+  let c = 0;
+  for (const arr of pos.values()) { arr.sort((a, b) => a - b); for (let i = 1; i < arr.length; i++) if (arr[i] - arr[i - 1] === 1) c++; }
+  return c;
+}
+/* Placement is randomised (weighted picks for variety), and a single local-search pass can
+   get stuck, so run a few whole placements and keep the one with the fewest adjacencies —
+   then, for "maximise", the best spread. Cheap and much more reliable on small wardrobes. */
+function bestOfPlacements(open, fixed, allNodes, scored, settings) {
+  if (!open.length) return;
+  const trials = settings.spacing === "none" ? 1 : 6;
+  let best = null, bestAdj = Infinity, bestSpread = -Infinity;
+  for (let t = 0; t < trials; t++) {
+    open.forEach(n => { n.day.outfit = null; });
+    placeNodes(open, fixed, scored, settings);
+    if (settings.spacing !== "none") repairSpacing(allNodes, settings);
+    const adj = adjacencyCount(allNodes);
+    const spread = spacingObjective(allNodes, settings.spacing);
+    if (adj < bestAdj || (adj === bestAdj && spread > bestSpread)) {
+      best = open.map(n => n.day.outfit); bestAdj = adj; bestSpread = spread;
+    }
+    if (adj === 0 && settings.spacing !== "maximise") break;   // good enough for avoid-consecutive
+  }
+  open.forEach((n, i) => { n.day.outfit = best[i]; });
+}
+
+/* Plan a whole block of `weeksCount` weeks in one pass (part 6). Constraints span the
+   full period; locked/worn days are kept and seed the constraints. */
+function planHorizon(startMonIso, weeksCount) {
   const scored = plannerPool();
   if (!scored.length) return false;
-  const strict = state.planner.strictness;
-  const dates = weekDates(monIso);
-  const usedKeys = new Set();     // whole-look keys already placed
-  const weeklyIds = new Set();    // every garment id used so far this week
-  let prevIds = new Set();        // garment ids from the immediately previous day
-
-  week.days.forEach((d) => {      // seed constraint sets from fixed days
-    if (!dayFixed(d)) return;
-    const hy = hydrateOutfit(d.outfit);
-    if (hy) { usedKeys.add(lookKey(hy)); hy.garmentIds.forEach(id => weeklyIds.add(id)); }
-  });
-
-  for (let i = 0; i < 7; i++) {
-    const d = week.days[i];
-    if (dayFixed(d)) { const hy = hydrateOutfit(d.outfit); prevIds = hy ? new Set(hy.garmentIds) : new Set(); continue; }
-    const dayPool = poolForDay(scored, forecastSeason(dates[i]));
-    const blocked = strict === "weekly" ? weeklyIds : prevIds;
-    const pick = weightedPick(dayPool, { blocked, avoidKeys: usedKeys });
-    d.outfit = pick ? { garmentIds: pick.garmentIds.slice() } : null;
-    d.worn = false; d.carriedOver = false;
-    if (pick) { usedKeys.add(lookKey(pick)); pick.garmentIds.forEach(id => weeklyIds.add(id)); prevIds = new Set(pick.garmentIds); }
-    else prevIds = new Set();
-  }
+  const settings = plannerSettings();
+  const nodes = buildActiveNodes(horizonWeeks(startMonIso, weeksCount));
+  if (!nodes.length) return false;
+  const fixed = nodes.filter(n => dayFixed(n.day));
+  const open = nodes.filter(n => !dayFixed(n.day));
+  bestOfPlacements(open, fixed, nodes, scored, settings);
   saveToStorage();
   return true;
 }
 
+/* Maximum-spacing pass (part 3): swap outfits between non-fixed active days to push
+   repeats of the same garment as far apart as possible, keeping weather-suit intact.
+   The set of outfits is unchanged, so repeat/overlap limits stay satisfied. */
+// Objective for the swap pass. In both modes adjacency (gap 1) between active days is a
+// heavy cost; "maximise" additionally rewards larger minimum gaps so repeats spread out,
+// while "consecutive" only cares about removing back-to-back repeats.
+function spacingObjective(nodes, mode) {
+  const pos = new Map();
+  nodes.forEach(n => { const hy = hydrateOutfit(n.day.outfit); if (hy) hy.garmentIds.forEach(id => { (pos.get(id) || pos.set(id, []).get(id)).push(n.pos); }); });
+  let score = 0;
+  for (const arr of pos.values()) {
+    if (arr.length < 2) continue;
+    arr.sort((a, b) => a - b);
+    let minGap = Infinity;
+    for (let i = 1; i < arr.length; i++) minGap = Math.min(minGap, arr[i] - arr[i - 1]);
+    if (mode === "maximise") score += minGap;
+    if (minGap === 1) score -= 100;   // adjacency across active days is always a cost (part 3 + boundary continuity)
+  }
+  return score;
+}
+function repairSpacing(nodes, settings) {
+  const mode = settings.spacing;
+  const swappable = nodes.filter(n => !dayFixed(n.day) && n.day.outfit);
+  const suits = n => { const season = forecastSeason(n.date); if (!season) return true; const hy = hydrateOutfit(n.day.outfit); return hy ? outfitSuitsSeason(hy.items, season) : true; };
+  let improved = true, guard = 0;
+  while (improved && guard++ < 40) {
+    improved = false;
+    for (let a = 0; a < swappable.length; a++) for (let b = a + 1; b < swappable.length; b++) {
+      const na = swappable[a], nb = swappable[b], oa = na.day.outfit, ob = nb.day.outfit;
+      const before = spacingObjective(nodes, mode);
+      na.day.outfit = ob; nb.day.outfit = oa;
+      if (suits(na) && suits(nb) && spacingObjective(nodes, mode) > before) improved = true;
+      else { na.day.outfit = oa; nb.day.outfit = ob; }   // revert
+    }
+  }
+}
+
+/* Regenerate just one week's non-fixed days, keeping every other week's plan (and all
+   locked days everywhere) as fixed context (part 6). */
+function regenerateWeek(weekIso, blockWeekIsos) {
+  const scored = plannerPool();
+  if (!scored.length) return false;
+  const settings = plannerSettings();
+  const weeks = (blockWeekIsos && blockWeekIsos.length) ? blockWeekIsos : [weekIso];
+  if (!weeks.includes(weekIso)) weeks.push(weekIso);
+  const nodes = buildActiveNodes(weeks);
+  const target = nodes.filter(n => n.weekIso === weekIso && !dayFixed(n.day));
+  const context = nodes.filter(n => !target.includes(n));   // other weeks + this week's fixed days
+  if (!target.length) return false;
+  bestOfPlacements(target, context, nodes, scored, settings);
+  saveToStorage();
+  return true;
+}
+
+// Backward-compatible single-week plan.
+function autoPlanWeek(monIso) { return planHorizon(monIso, 1); }
+
 /*
-  Swap one day's outfit, then repair the days after it so the no-repeat rule still
-  holds. Fixed (locked/worn) days are never touched but still count as constraints.
-  Returns the indices of every day that actually changed, so the UI can flag them.
+  Reshuffle a single day to a different valid outfit, honouring every constraint against
+  the rest of the block (part 6). Returns the day index for the flash highlight.
 */
-function shuffleDay(monIso, dayIdx) {
-  const week = getWeek(monIso);
+function shuffleDay(monIso, dayIdx, blockWeekIsos) {
   const scored = plannerPool();
   if (!scored.length) return [];
-  const strict = state.planner.strictness;
-  const dates = weekDates(monIso);
-  const changed = [];
-
-  const idsExcept = idx => {
-    const s = new Set();
-    week.days.forEach((d, i) => { if (i === idx) return; const hy = hydrateOutfit(d.outfit); if (hy) hy.garmentIds.forEach(id => s.add(id)); });
-    return s;
+  const settings = plannerSettings();
+  const week = getWeek(monIso), target = week.days[dayIdx];
+  if (dayFixed(target) || target.excluded) return [];
+  const weeks = (blockWeekIsos && blockWeekIsos.length) ? blockWeekIsos.slice() : [monIso];
+  if (!weeks.includes(monIso)) weeks.push(monIso);
+  const nodes = buildActiveNodes(weeks);
+  const targetNode = nodes.find(n => n.weekIso === monIso && n.idx === dayIdx);
+  const { counts, placedLooks, placements } = seedAccumulator(nodes.filter(n => n !== targetNode));
+  const cur = hydrateOutfit(target.outfit);
+  const dayPool = poolForDay(scored, forecastSeason(weekDates(monIso)[dayIdx]));
+  const violates = (o, relax) => {
+    if (cur && o.garmentIds.join() === cur.garmentIds.join()) return true;   // force a change
+    if (placedLooks.has(lookKey(o))) return true;
+    if (relax < 2) for (const p of placements) if (overlapCount(o.garmentIds, p.garmentIds) > settings.overlapThreshold) return true;
+    if (relax < 1) {
+      for (const g of o.items) if ((counts.get(g.id) || 0) + 1 > effectiveRepeatLimit(g, o.items, settings)) return true;
+      if (settings.spacing !== "none" && targetNode) for (const p of placements) if (Math.abs(p.pos - targetNode.pos) === 1 && overlapCount(o.garmentIds, p.garmentIds) > 0) return true;
+    }
+    return false;
   };
-  const prevIdsOf = idx => {
-    for (let j = idx - 1; j >= 0; j--) { const hy = hydrateOutfit(week.days[j].outfit); if (hy) return new Set(hy.garmentIds); if (!week.days[j].outfit) break; }
-    return new Set();
-  };
-  const usedKeysExcept = idx => {
-    const s = new Set();
-    week.days.forEach((d, i) => { if (i === idx) return; const hy = hydrateOutfit(d.outfit); if (hy) s.add(lookKey(hy)); });
-    return s;
-  };
-  function regen(idx, forceDifferent) {
-    const d = week.days[idx];
-    if (dayFixed(d)) return false;
-    const dayPool = poolForDay(scored, forecastSeason(dates[idx]));
-    const blocked = strict === "weekly" ? idsExcept(idx) : prevIdsOf(idx);
-    const cur = hydrateOutfit(d.outfit);
-    const excludeKey = forceDifferent && cur ? cur.garmentIds.join() : null;
-    const pick = weightedPick(dayPool, { blocked, excludeKey, avoidKeys: usedKeysExcept(idx) });
-    if (!pick) return false;
-    d.outfit = { garmentIds: pick.garmentIds.slice() }; d.worn = false; d.carriedOver = false;
-    return true;
-  }
-
-  if (regen(dayIdx, true)) changed.push(dayIdx);
-  for (let i = dayIdx + 1; i < 7; i++) {
-    const d = week.days[i];
-    if (dayFixed(d)) continue;
-    const hy = hydrateOutfit(d.outfit);
-    if (!hy) continue;
-    const blocked = strict === "weekly" ? idsExcept(i) : prevIdsOf(i);
-    if (sharesGarment(hy, blocked)) { if (regen(i, false)) changed.push(i); }
-    else if (strict === "consecutive") break;   // chain is clean; later days are unaffected
-  }
+  let pick = null;
+  for (let relax = 0; relax <= 2 && !pick; relax++) { const cands = dayPool.filter(x => !violates(x.o, relax)); if (cands.length) pick = weightedPick(cands, {}); }
+  if (!pick) return [];
+  target.outfit = { garmentIds: pick.garmentIds.slice() }; target.worn = false; target.carriedOver = false;
   saveToStorage();
-  return changed;
+  return [dayIdx];
 }
 
 /*
@@ -2181,11 +2396,11 @@ function applyCarryOver(monIso) {
   for (let i = 0; i < 7; i++) {
     if (dates[i] >= today) break;
     const src = week.days[i];
-    if (src.locked || src.worn || !src.outfit) continue;
+    if (src.locked || src.worn || src.excluded || !src.outfit) continue;
     for (let j = i + 1; j < 7; j++) {
       if (dates[j] < today) continue;
       const tgt = week.days[j];
-      if (tgt.locked || tgt.outfit) continue;
+      if (tgt.locked || tgt.excluded || tgt.outfit) continue;
       tgt.outfit = src.outfit; tgt.carriedOver = true; tgt.worn = false;
       src.outfit = null; src.carriedOver = false;
       moved = true; break;
@@ -2232,10 +2447,13 @@ let packResult = null;
 
 // weekly planner view state
 let plannerWeek = null;                              // ISO Monday currently viewed (lazy-init to current week)
+let plannerBlockStart = null;                        // ISO Monday of the first week in the planned block
+let plannerHorizon = null;                           // number of weeks in the block (1–4; lazy-init from settings)
 let plannerHistory = false;                          // week grid vs. history view
 let plannerSheetDay = 0;                             // day index the open day-sheet acts on
 let plannerChanged = new Set();                      // day indices to flash after a shuffle
 let plannerForecast = { status: "idle", byDate: {} }; // 7-day highs by ISO date; idle|loading|ok|error
+function plannerBlockList() { return horizonWeeks(plannerBlockStart || currentMonday(), plannerHorizon || 1); }
 
 // session 4 view state
 let theme = "charcoal";          // one of THEMES ids
@@ -2481,7 +2699,7 @@ function freshWizard(mode) {
     category: null, subcategory: null, subcategoryCustom: "",
     color: null, colorFamily: null, colorCustom: "", colorHex: "",
     fit: null, formality: 3, season: null, weight: null, visualWeight: null,
-    texture: null, silhouette: null,
+    texture: null, silhouette: null, visibility: null,
     name: "", imageData: null, cost: "", notes: "",
   } };
 }
@@ -2506,7 +2724,7 @@ function wizardFromItem(mode, item) {
   if (cm) { d.color = cm.name; d.colorHex = cm.hex; d.colorFamily = familyFromHex(cm.hex); }
   else { d.color = "custom"; d.colorCustom = item.color || ""; d.colorHex = item.colorHex || nameToHex(item.color) || "#3a3f47"; d.colorFamily = familyFromHex(d.colorHex); }
   d.fit = item.fit; d.formality = item.formality; d.season = item.season; d.weight = item.weight;
-  d.texture = item.texture; d.silhouette = item.silhouette;
+  d.texture = item.texture; d.silhouette = item.silhouette; d.visibility = item.visibility;
   d.visualWeight = item.visualWeight; d.name = item.name; d.imageData = item.imageData; d.cost = item.cost || ""; d.notes = item.notes || "";
   return w;
 }
@@ -3156,8 +3374,10 @@ function wizSummary() {
         <div class="field grow"><label>Season</label><select onchange="wizSecondary('season',this.value)">${SEASONS.map(sn => opt(sn, cap(sn), d.season || "all")).join("")}</select></div>
         <div class="field grow"><label>Texture</label><select onchange="wizSecondary('texture',this.value)">${TEXTURES.map(t => opt(t, TEXTURE_LBL[t], d.texture || textureFor(sub, d.category))).join("")}</select></div>
         <div class="field grow"><label>Silhouette</label><select onchange="wizSecondary('silhouette',this.value)">${SILHOUETTES.map(sl => opt(sl, SILHOUETTE_LBL[sl], d.silhouette || silhouetteFor(sub, d.fit || "slim", d.category))).join("")}</select></div>
+        <div class="field grow"><label>Visibility</label><select onchange="wizSecondary('visibility',this.value)">${["high", "medium", "low"].map(v => opt(v, cap(v), d.visibility || (rules.planner.defaultVisibility[d.category] || "high"))).join("")}</select></div>
         ${isWishlistMode() ? "" : `<div class="field grow"><label>Cost</label><input type="number" min="0" value="${d.cost || ""}" oninput="wizSecondaryText('cost',this.value)" placeholder="0"></div>`}
       </div>
+      <div class="tiny muted" style="margin-top:8px;">Visibility drives the planner's repeat limits — set a branded or distinctive piece to <b>High</b> so it repeats less often.</div>
       <div class="field" style="margin-top:10px;"><label>Notes</label><textarea oninput="wizSecondaryText('notes',this.value)" placeholder="Optional">${esc(d.notes || "")}</textarea></div>
     </div>`
     : `<button class="btn" style="margin-top:14px; width:100%;" onclick="wizToggleDetail()">Add more detail</button>
@@ -3306,6 +3526,7 @@ function wizSpec() {
     colorHex: d.colorHex || null,               // primary colour; family derives from it
     formality: d.formality || 3,                // → dressiness/casualness derive in normalizeGarment
     texture: d.texture || null, silhouette: d.silhouette || null,   // null → derived from subcategory/fit
+    visibility: d.visibility || null,               // null → default by category
     season: d.season || "all", fit: d.fit || "slim", weight: d.weight || "medium",
     visualWeight: d.category === "shoe" ? (d.visualWeight || "standard") : null,
     cost: Number(d.cost) || 0, imageData: d.imageData || null, notes: (d.notes || "").trim(),
@@ -4293,7 +4514,10 @@ window.setPlanMode = function (m) { planMode = m; renderPlan(); };
    WEEKLY PLANNER — view
    ============================================================================ */
 function renderWeekPlanner(garments, seg) {
-  if (!plannerWeek) plannerWeek = currentMonday();
+  if (!plannerBlockStart) plannerBlockStart = currentMonday();
+  if (plannerHorizon == null) plannerHorizon = plannerSettings().horizon;
+  const block = plannerBlockList();
+  if (!plannerWeek || !block.includes(plannerWeek)) plannerWeek = block[0];
   if (plannerHistory) return renderWeekHistory(garments, seg);
 
   if (!canBuildOutfits(garments)) {
@@ -4309,34 +4533,39 @@ function renderWeekPlanner(garments, seg) {
   applyCarryOver(monIso);                         // roll unworn past days forward (current week only)
   const dates = weekDates(monIso);
   const week = getWeek(monIso);
-  viewSub.textContent = `${fmtShort(dates[0])} – ${fmtShort(dates[6])}`;
+  viewSub.textContent = plannerHorizon > 1
+    ? `${plannerHorizon}-week block · ${fmtShort(weekDates(block[0])[0])} – ${fmtShort(weekDates(block[block.length - 1])[6])}`
+    : `${fmtShort(dates[0])} – ${fmtShort(dates[6])}`;
 
-  const strict = state.planner.strictness;
-  const strictSeg = `<div class="seg sm">
-    <button class="seg-btn ${strict === "consecutive" ? "on" : ""}" onclick="setStrictness('consecutive')">No back-to-back</button>
-    <button class="seg-btn ${strict === "weekly" ? "on" : ""}" onclick="setStrictness('weekly')">Once per week</button>
-  </div>`;
+  // horizon selector (part 6) + settings entry
+  const horizonSel = `<div class="pl-strict"><span class="tiny muted">Plan</span><div class="seg sm">
+    ${[1, 2, 3, 4].map(n => `<button class="seg-btn ${plannerHorizon === n ? "on" : ""}" onclick="setPlannerHorizon(${n})">${n} wk</button>`).join("")}
+  </div><button class="btn sm ghost" onclick="openPlannerSettings()" title="Planner settings">⚙</button></div>`;
 
-  const nav = `<div class="pl-nav">
-    <button class="btn sm ghost" onclick="plannerShiftWeek(-1)" title="Previous week">←</button>
-    <button class="pl-week-label" onclick="plannerGoCurrent()" title="Jump to this week">${esc(weekRelLabel(monIso))}</button>
-    <button class="btn sm ghost" onclick="plannerShiftWeek(1)" title="Next week">→</button>
-  </div>`;
+  // week tabs when the block spans more than one week (part 6)
+  const tabs = plannerHorizon > 1
+    ? `<div class="pl-weektabs">${block.map((wk, i) => `<button class="pl-weektab ${wk === monIso ? "on" : ""}" onclick="plannerViewWeek('${wk}')">W${i + 1}<span class="pl-weektab-sub">${fmtShort(weekDates(wk)[0])}</span></button>`).join("")}</div>`
+    : `<div class="pl-nav">
+        <button class="btn sm ghost" onclick="plannerShiftWeek(-1)" title="Previous week">←</button>
+        <button class="pl-week-label" onclick="plannerGoCurrent()" title="Jump to this week">${esc(weekRelLabel(monIso))}</button>
+        <button class="btn sm ghost" onclick="plannerShiftWeek(1)" title="Next week">→</button>
+      </div>`;
 
-  const strictRow = `<div class="pl-strict"><span class="tiny muted">Repeat rule</span>${strictSeg}</div>`;
   const wx = plannerWeatherControl();
-
-  const filled = week.days.filter(d => d.outfit).length;
+  const blockFilled = block.some(wk => getWeek(wk).days.some(d => d.outfit));
+  const planLabel = plannerHorizon > 1 ? `✨ Auto-plan ${plannerHorizon} weeks` : "✨ Auto-plan week";
   const controls = `<div class="row wrap" style="gap:8px; margin:12px 0 2px;">
-    <button class="btn sm primary" onclick="autoPlanUI()">✨ Auto-plan week</button>
-    ${filled ? `<button class="btn sm" onclick="clearWeekUI()">Clear week</button>` : ""}
-    <button class="btn sm ghost" onclick="togglePlannerHistory()">Week history</button>
+    <button class="btn sm primary" onclick="autoPlanUI()">${planLabel}</button>
+    ${plannerHorizon > 1 ? `<button class="btn sm" onclick="regenWeekUI()">↻ This week</button>` : ""}
+    ${blockFilled ? `<button class="btn sm" onclick="clearWeekUI()">Clear week</button>` : ""}
+    <button class="btn sm ghost" onclick="togglePlannerHistory()">History</button>
   </div>`;
 
   const grid = `<div class="pl-grid" id="pl-grid">${dates.map((_, i) => plannerDayCell(monIso, i)).join("")}</div>`;
-  const hint = filled ? "" : `<div class="tiny muted" style="text-align:center; margin-top:12px;">Empty week — tap <b>Auto-plan</b> to fill all seven days, or tap any day to assign one yourself.</div>`;
+  const active = week.days.filter(d => !d.excluded).length;
+  const hint = week.days.some(d => d.outfit) ? "" : `<div class="tiny muted" style="text-align:center; margin-top:12px;">Tap <b>${esc(planLabel)}</b> to fill ${active} active day${active === 1 ? "" : "s"}, or tap any day to assign one yourself. Tap a day's ⊘ to switch it off.</div>`;
 
-  view.innerHTML = seg + nav + strictRow + wx + controls + grid + hint;
+  view.innerHTML = seg + horizonSel + tabs + wx + controls + grid + hint;
   wirePlannerSwipe();
 }
 
@@ -4345,18 +4574,21 @@ function plannerDayCell(monIso, i) {
   const isToday = iso === todayISO();
   const hy = hydrateOutfit(d.outfit);
   const temp = plannerForecast.status === "ok" ? plannerForecast.byDate[iso] : undefined;
-  const tempTag = (typeof temp === "number") ? `<span class="pl-temp">${temp}°</span>` : "";
-  const lock = d.locked ? `<span class="pl-lock" title="Locked">🔒</span>` : "";
+  const tempTag = (typeof temp === "number" && !d.excluded) ? `<span class="pl-temp">${temp}°</span>` : "";
+  const meta = [];
+  if (d.importance === "important") meta.push(`<span class="pl-star" title="Important day">★</span>`);
+  if (d.locked) meta.push(`<span class="pl-lock" title="Locked">🔒</span>`);
   const badges = [];
   if (d.carriedOver) badges.push(`<span class="pl-badge carry">Carried over</span>`);
   if (d.worn) badges.push(`<span class="pl-badge worn">✓ Worn</span>`);
-  const body = hy
-    ? `<div class="pl-thumbs">${planThumbs(hy.items)}</div>`
-    : `<div class="pl-empty">＋ Empty</div>`;
-  return `<button class="pl-day ${isToday ? "today" : ""} ${d.locked ? "locked" : ""} ${hy ? "" : "is-empty"} ${plannerChanged.has(i) ? "changed" : ""}" onclick="openDaySheet(${i})">
+  const excludeBtn = `<span class="pl-exclude" title="${d.excluded ? "Switch on" : "Switch off"}" onclick="event.stopPropagation(); toggleDayExcluded(${i})">${d.excluded ? "○" : "⊘"}</span>`;
+  const body = d.excluded
+    ? `<div class="pl-empty">Off</div>`
+    : hy ? `<div class="pl-thumbs">${planThumbs(hy.items)}</div>` : `<div class="pl-empty">＋ Empty</div>`;
+  return `<button class="pl-day ${isToday ? "today" : ""} ${d.locked ? "locked" : ""} ${d.excluded ? "excluded" : (hy ? "" : "is-empty")} ${d.importance === "important" ? "important" : ""} ${plannerChanged.has(i) ? "changed" : ""}" onclick="openDaySheet(${i})">
     <div class="pl-day-head">
       <span class="pl-dow">${WEEKDAYS[i]}<span class="pl-date">${fmtDayNum(iso)}</span></span>
-      <span class="pl-day-meta">${tempTag}${lock}</span>
+      <span class="pl-day-meta">${tempTag}${meta.join("")}${excludeBtn}</span>
     </div>
     ${body}
     ${badges.length ? `<div class="pl-badges">${badges.join("")}</div>` : ""}
@@ -4391,7 +4623,7 @@ function wirePlannerSwipe() {
     if (x0 == null) return;
     const dx = e.clientX - x0, dy = e.clientY - y0;
     x0 = y0 = null;
-    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) plannerShiftWeek(dx < 0 ? 1 : -1);
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) plannerSwipeNav(dx < 0 ? 1 : -1);
   }, { passive: true });
   grid.addEventListener("pointercancel", () => { x0 = y0 = null; });
 }
@@ -4403,14 +4635,20 @@ window.openDaySheet = function (i) {
   const hy = hydrateOutfit(d.outfit);
   const temp = plannerForecast.status === "ok" ? plannerForecast.byDate[iso] : undefined;
   const title = `${WEEKDAYS_FULL[i]} <span class="muted small" style="font-weight:500;">${fmtShort(iso)}${typeof temp === "number" ? ` · ${temp}°` : ""}</span>`;
-  const bodyHtml = hy ? visualOutfit(hy.items) : `<div class="empty muted" style="padding:26px 0;">No outfit assigned yet.</div>`;
+  const bodyHtml = d.excluded
+    ? `<div class="empty muted" style="padding:26px 0;">This day is switched off — the generator skips it.</div>`
+    : hy ? visualOutfit(hy.items) : `<div class="empty muted" style="padding:26px 0;">No outfit assigned yet.</div>`;
   const actions = [];
-  if (hy && !d.worn) actions.push(`<button class="btn primary" onclick="dayWore()">Wore this</button>`);
-  if (hy && d.worn) actions.push(`<button class="btn" disabled>✓ Worn</button>`);
-  actions.push(`<button class="btn" onclick="dayAssign()">${hy ? "Replace" : "Assign"} outfit</button>`);
-  if (hy && !d.worn) actions.push(`<button class="btn" onclick="dayShuffleFromSheet()">Shuffle</button>`);
-  actions.push(`<button class="btn" onclick="dayToggleLock()">${d.locked ? "🔓 Unlock" : "🔒 Lock"}</button>`);
-  if (hy) actions.push(`<button class="btn ghost danger" onclick="dayClear()">Clear</button>`);
+  if (!d.excluded) {
+    if (hy && !d.worn) actions.push(`<button class="btn primary" onclick="dayWore()">Wore this</button>`);
+    if (hy && d.worn) actions.push(`<button class="btn" disabled>✓ Worn</button>`);
+    actions.push(`<button class="btn" onclick="dayAssign()">${hy ? "Replace" : "Assign"} outfit</button>`);
+    if (hy && !d.worn) actions.push(`<button class="btn" onclick="dayShuffleFromSheet()">Shuffle</button>`);
+    actions.push(`<button class="btn" onclick="dayToggleImportance()">${d.importance === "important" ? "★ Important" : "☆ Mark important"}</button>`);
+    actions.push(`<button class="btn" onclick="dayToggleLock()">${d.locked ? "🔓 Unlock" : "🔒 Lock"}</button>`);
+    if (hy) actions.push(`<button class="btn ghost danger" onclick="dayClear()">Clear</button>`);
+  }
+  actions.push(`<button class="btn ${d.excluded ? "primary" : "ghost"}" onclick="dayToggleExcludedSheet()">${d.excluded ? "Switch day on" : "⊘ Switch day off"}</button>`);
 
   const el = document.createElement("div");
   el.className = "overlay"; el.id = "day-overlay";
@@ -4419,6 +4657,7 @@ window.openDaySheet = function (i) {
       <b style="font-size:16px;">${title}</b>
       <button class="btn sm ghost" onclick="closeDaySheet()">Close</button>
     </div>
+    ${d.importance === "important" ? `<div class="tiny muted" style="margin-top:3px;">★ Important — gets a top-ranked outfit when you auto-plan.</div>` : ""}
     ${d.locked ? `<div class="tiny muted" style="margin-top:3px;">🔒 Locked — kept when you auto-plan or shuffle.</div>` : ""}
     ${d.carriedOver ? `<div class="tiny muted" style="margin-top:3px;">↪ Carried over from an earlier unworn day.</div>` : ""}
     <div style="margin-top:12px;">${bodyHtml}</div>
@@ -4445,14 +4684,26 @@ window.dayClear = function () {
   closeDaySheet(); renderPlan();
 };
 window.dayShuffleFromSheet = function () {
-  const changed = shuffleDay(plannerWeek, plannerSheetDay);
+  const changed = shuffleDay(plannerWeek, plannerSheetDay, plannerBlockList());
   plannerChanged = new Set(changed); haptic(16);
   closeDaySheet(); renderPlan();
-  if (changed.length > 1) showToast(`Reshuffled — ${changed.length} days updated`);
-  else if (changed.length) showToast("Day reshuffled");
+  if (changed.length) showToast("Day reshuffled");
+  else showToast("No different outfit fits the constraints");
   setTimeout(() => { plannerChanged = new Set(); if (currentTab === "plan" && planMode === "week" && !plannerHistory) renderPlan(); }, 1500);
 };
 window.dayAssign = function () { openAssignPicker(plannerSheetDay); };
+window.dayToggleImportance = function () {
+  const d = getWeek(plannerWeek).days[plannerSheetDay];
+  d.importance = d.importance === "important" ? "normal" : "important";
+  saveToStorage(); haptic(10); closeDaySheet(); renderPlan();
+};
+window.dayToggleExcludedSheet = function () { toggleDayExcluded(plannerSheetDay); closeDaySheet(); };
+window.toggleDayExcluded = function (i) {
+  const d = getWeek(plannerWeek).days[i];
+  d.excluded = !d.excluded;
+  if (d.excluded) { d.outfit = null; d.worn = false; d.carriedOver = false; }   // switched-off days hold no plan
+  saveToStorage(); haptic(10); renderPlan();
+};
 
 /* ----- manual assignment: pick a saved or generated outfit for a day ----- */
 window.openAssignPicker = function (i) {
@@ -4495,15 +4746,102 @@ window.assignOutfit = function (idsStr) {
 window.closeAssign = function () { const o = document.getElementById("assign-overlay"); if (o) o.remove(); };
 
 /* ----- planner controls ----- */
-window.plannerShiftWeek = function (n) { plannerWeek = mondayOf(isoAddDays(plannerWeek || currentMonday(), n * 7)); haptic(8); renderPlan(); };
-window.plannerGoCurrent = function () { plannerWeek = currentMonday(); haptic(8); renderPlan(); };
-window.setStrictness = function (v) { state.planner.strictness = v === "weekly" ? "weekly" : "consecutive"; saveToStorage(); haptic(10); renderPlan(); };
-window.autoPlanUI = function () { const ok = autoPlanWeek(plannerWeek); haptic(20); renderPlan(); if (ok) showToast("Week planned"); };
+// single-week mode: arrows move the block by a week; multi-week mode uses the tabs instead
+window.plannerShiftWeek = function (n) {
+  plannerBlockStart = mondayOf(isoAddDays(plannerBlockStart || currentMonday(), n * 7));
+  plannerWeek = plannerBlockStart; haptic(8); renderPlan();
+};
+window.plannerGoCurrent = function () { plannerBlockStart = currentMonday(); plannerWeek = currentMonday(); haptic(8); renderPlan(); };
+window.plannerViewWeek = function (wk) { if (plannerBlockList().includes(wk)) plannerWeek = wk; haptic(8); renderPlan(); };
+window.plannerSwipeNav = function (dir) {
+  const block = plannerBlockList(), idx = block.indexOf(plannerWeek), next = idx + dir;
+  if (next >= 0 && next < block.length) { plannerWeek = block[next]; haptic(8); renderPlan(); }
+  else plannerShiftWeek(dir);
+};
+window.setPlannerHorizon = function (n) {
+  plannerHorizon = Math.min(4, Math.max(1, n));
+  if (!plannerBlockStart) plannerBlockStart = currentMonday();
+  const block = plannerBlockList();
+  if (!block.includes(plannerWeek)) plannerWeek = block[0];
+  haptic(8); renderPlan();
+};
+window.autoPlanUI = function () {
+  const ok = planHorizon(plannerBlockStart, plannerHorizon); haptic(20); renderPlan();
+  if (ok) showToast(plannerHorizon > 1 ? `Planned ${plannerHorizon} weeks` : "Week planned");
+};
+window.regenWeekUI = function () {
+  const ok = regenerateWeek(plannerWeek, plannerBlockList()); haptic(16); renderPlan();
+  if (ok) showToast("This week regenerated");
+};
 window.clearWeekUI = function () {
   if (!confirm("Clear all unlocked days this week? Locked days stay put.")) return;
   getWeek(plannerWeek).days.forEach(d => { if (!d.locked) { d.outfit = null; d.worn = false; d.carriedOver = false; } });
   saveToStorage(); haptic(12); renderPlan();
 };
+
+/* ----- planner preferences panel (part 8): every rule editable, all persisted ----- */
+window.openPlannerSettings = function () {
+  const s = plannerSettings();
+  const numRow = (label, key, val, min, max, hint) => `<div class="pl-set-row">
+    <div class="grow"><div>${label}</div>${hint ? `<div class="tiny muted">${hint}</div>` : ""}</div>
+    <div class="pl-stepper"><button class="btn sm" onclick="plSetNum('${key}',-1,${min},${max})">−</button><b>${val}</b><button class="btn sm" onclick="plSetNum('${key}',1,${min},${max})">+</button></div>
+  </div>`;
+  const catRow = c => `<div class="pl-set-row">
+    <div class="grow">${CATEGORY_LBL[c]}</div>
+    <div class="pl-stepper"><button class="btn sm" onclick="plSetCat('${c}',-1)">−</button><b>${s.maxWeeklyRepeats[c]}</b><button class="btn sm" onclick="plSetCat('${c}',1)">+</button></div>
+  </div>`;
+  const spacingSeg = `<div class="seg sm">
+    ${[["maximise", "Maximise gaps"], ["consecutive", "Avoid consecutive"], ["none", "No constraint"]].map(([v, l]) =>
+      `<button class="seg-btn ${s.spacing === v ? "on" : ""}" onclick="plSetSpacing('${v}')">${l}</button>`).join("")}</div>`;
+  const dayToggles = `<div class="row wrap" style="gap:6px;">${WEEKDAYS.map((w, i) =>
+    `<button class="chip btn-chip ${s.defaultExcludedDays.includes(i) ? "on" : ""}" onclick="plToggleExDay(${i})">${w}</button>`).join("")}</div>`;
+  const horizonSeg = `<div class="seg sm">${[1, 2, 3, 4].map(n =>
+    `<button class="seg-btn ${s.horizon === n ? "on" : ""}" onclick="plSetDefHorizon(${n})">${n}</button>`).join("")}</div>`;
+
+  const el = document.createElement("div");
+  el.className = "overlay"; el.id = "plset-overlay";
+  el.innerHTML = `<div class="sheet" style="max-height:88vh; overflow:auto;">
+    <div class="row" style="justify-content:space-between; align-items:center;"><b style="font-size:16px;">Planner settings</b><button class="btn sm ghost" onclick="closePlannerSettings()">Done</button></div>
+    <div class="tiny muted" style="margin:4px 0 8px;">Everything here is stored in the config block and editable without touching code.</div>
+
+    <div class="sectitle" style="margin:14px 0 6px;">Max weekly appearances per category</div>
+    <div class="tiny muted" style="margin-bottom:6px;">Some categories tolerate more repetition — a base under a hoodie is barely seen; a distinctive shoe is noticed.</div>
+    ${["base", "mid", "outer", "bottom", "shoe"].map(catRow).join("")}
+
+    <div class="sectitle" style="margin:16px 0 6px;">Combination overlap</div>
+    ${numRow("Max shared garments between two days", "overlapThreshold", s.overlapThreshold, 0, 4, "Two days that differ only by a shoe (share 3) read as the same outfit.")}
+
+    <div class="sectitle" style="margin:16px 0 6px;">Spacing between repeats</div>
+    <div style="margin-top:6px;">${spacingSeg}</div>
+
+    <div class="pl-set-row" style="margin-top:16px;">
+      <div class="grow"><div>Low-visibility garments exempt from limits</div><div class="tiny muted">A plain tee hidden under a hoodie can repeat freely.</div></div>
+      <button class="pl-switch ${s.lowVisibilityExempt ? "on" : ""}" onclick="plToggleLowVis()" aria-label="toggle"><span></span></button>
+    </div>
+
+    <div class="sectitle" style="margin:16px 0 6px;">Default excluded days</div>
+    <div class="tiny muted" style="margin-bottom:6px;">Applied to new weeks; override any day per week with its ⊘.</div>
+    ${dayToggles}
+
+    <div class="sectitle" style="margin:16px 0 6px;">Default planning horizon</div>
+    <div>${horizonSeg} <span class="tiny muted">week(s) per Auto-plan</span></div>
+  </div>`;
+  el.addEventListener("click", e => { if (e.target === el) closePlannerSettings(); });
+  document.body.appendChild(el); haptic(8);
+};
+window.closePlannerSettings = function () { const o = document.getElementById("plset-overlay"); if (o) o.remove(); };
+function plSave() { saveToStorage(); }
+function plReopen() { closePlannerSettings(); openPlannerSettings(); }
+window.plSetCat = function (c, d) { const s = plannerSettings(); s.maxWeeklyRepeats[c] = Math.min(14, Math.max(1, s.maxWeeklyRepeats[c] + d)); plSave(); haptic(6); plReopen(); };
+window.plSetNum = function (key, d, min, max) { const s = plannerSettings(); s[key] = Math.min(max, Math.max(min, s[key] + d)); plSave(); haptic(6); plReopen(); };
+window.plSetSpacing = function (v) { plannerSettings().spacing = v; plSave(); haptic(8); plReopen(); };
+window.plToggleLowVis = function () { const s = plannerSettings(); s.lowVisibilityExempt = !s.lowVisibilityExempt; plSave(); haptic(8); plReopen(); };
+window.plToggleExDay = function (i) {
+  const s = plannerSettings(), set = new Set(s.defaultExcludedDays);
+  set.has(i) ? set.delete(i) : set.add(i);
+  s.defaultExcludedDays = [...set].sort((a, b) => a - b); plSave(); haptic(6); plReopen();
+};
+window.plSetDefHorizon = function (n) { plannerSettings().horizon = n; plannerHorizon = n; const b = plannerBlockList(); if (!b.includes(plannerWeek)) plannerWeek = b[0]; plSave(); haptic(8); plReopen(); };
 window.togglePlannerHistory = function () { plannerHistory = !plannerHistory; haptic(8); renderPlan(); };
 window.clearPlannerForecast = function () { plannerForecast = { status: "idle", byDate: {} }; renderPlan(); };
 window.fetchPlannerForecast = function () {
@@ -4890,7 +5228,7 @@ window.applySuggestion = function () {
 window.wipeAll = function () {
   if (confirm("Erase ALL garments, outfits, wishlist and ratings from this device? This can't be undone.")) {
     haptic(30);
-    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, occasions: defaultOccasions(), profile: defaultProfile(), planner: { strictness: "consecutive", weeks: {} } };
+    state = { garments: [], outfits: [], wishlist: [], ratings: {}, rejections: [], ruleOverrides: {}, coWear: {}, occasions: defaultOccasions(), profile: defaultProfile(), planner: { strictness: "consecutive", settings: defaultPlannerSettings(), weeks: {} } };
     saveToStorage(); rebuildRatingContext(); lastUnlock = null; ootd = null; render();
   }
 };
