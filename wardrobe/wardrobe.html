@@ -767,6 +767,13 @@ const rules = {
     visibilityRepeatDelta: { high: -1, medium: 0, low: 1 },
     // Default per-garment visibility by category when the user hasn't set it. (part 2)
     defaultVisibility: { base: "medium", mid: "high", outer: "high", bottom: "high", shoe: "high" },
+    // Per-subcategory rules, applied automatically in the planner. Keyed by lowercase
+    // subcategory. maxPerWeek caps how many days per CALENDAR week may use that subcategory
+    // (across all such garments); minWeeksApart forces a gap between wears of the SAME garment
+    // (2 = every other week). Add any subcategory you want to hold back.
+    subcategoryRules: {
+      sweatpants: { maxPerWeek: 1, minWeeksApart: 2 },   // sweatpants once a week; the same pair every other week
+    },
   },
 };
 
@@ -2187,6 +2194,10 @@ function effectiveRepeatLimit(g, items, settings) {
   return Math.max(1, lim + delta);
 }
 function overlapCount(idsA, idsB) { const b = new Set(idsB); let n = 0; for (const id of idsA) if (b.has(id)) n++; return n; }
+// Per-subcategory planner rule (e.g. sweatpants), or null.
+function subcatRule(sub) { return (rules.planner.subcategoryRules || {})[(sub || "").trim().toLowerCase()] || null; }
+// Whole-week distance between two Monday-ISO weeks (0 = same week, 1 = adjacent weeks…).
+function weeksApart(a, b) { return Math.abs(Math.round((new Date(a + "T00:00:00Z") - new Date(b + "T00:00:00Z")) / (7 * 86400000))); }
 
 /* ---------- active-day model across a multi-week block (parts 6, 7) ---------- */
 function horizonWeeks(startMonIso, weeksCount) { return Array.from({ length: Math.max(1, weeksCount) }, (_, w) => isoAddDays(startMonIso, w * 7)); }
@@ -2202,36 +2213,51 @@ function buildActiveNodes(weekIsos) {
   nodes.forEach((n, i) => n.pos = i);
   return nodes;
 }
+// Accumulator tracks state needed by every constraint, at calendar-week granularity so
+// "per week" limits mean per week (not per whole block): gWeek = a garment's count within a
+// week, gWeeks = which weeks a garment appears in (for minWeeksApart), subWeek = how many days
+// per week use a subcategory (for maxPerWeek). placedLooks/placements stay block-wide.
 function seedAccumulator(contextNodes) {
-  const counts = new Map(), placedLooks = new Set(), placements = [];
-  contextNodes.forEach(n => {
-    const hy = hydrateOutfit(n.day.outfit); if (!hy) return;
-    hy.garmentIds.forEach(id => counts.set(id, (counts.get(id) || 0) + 1));
-    placedLooks.add(lookKey(hy));
-    placements.push({ pos: n.pos, garmentIds: hy.garmentIds });
-  });
-  return { counts, placedLooks, placements };
+  const acc = { gWeek: new Map(), gWeeks: new Map(), subWeek: new Map(), placedLooks: new Set(), placements: [] };
+  contextNodes.forEach(n => { const hy = hydrateOutfit(n.day.outfit); if (hy) accApply(acc, n.weekIso, n.pos, hy); });
+  return acc;
 }
-
+function accApply(acc, weekIso, pos, hy) {
+  hy.items.forEach(g => {
+    acc.gWeek.set(g.id + "|" + weekIso, (acc.gWeek.get(g.id + "|" + weekIso) || 0) + 1);
+    if (!acc.gWeeks.has(g.id)) acc.gWeeks.set(g.id, new Set());
+    acc.gWeeks.get(g.id).add(weekIso);
+  });
+  new Set(hy.items.map(i => (i.subcategory || "").trim().toLowerCase())).forEach(sub => {
+    if (sub) acc.subWeek.set(sub + "|" + weekIso, (acc.subWeek.get(sub + "|" + weekIso) || 0) + 1);
+  });
+  acc.placedLooks.add(lookKey(hy));
+  acc.placements.push({ pos, garmentIds: hy.garmentIds });
+}
 /*
-  Shared greedy placement. Fills `targetNodes` given `contextNodes` (already-decided days,
-  e.g. locked/worn or other weeks' plans). Enforces, in order of relaxation:
-    0 — whole-look uniqueness, overlap ≤ threshold, per-garment repeat limits, no-adjacent-repeat
-    1 — drops repeat limits + adjacency
-    2 — drops overlap too (last resort so an active day is never left empty)
-  Important days pick the top-ranked valid outfit; normal days pick weighted-random for variety (part 5).
+  Shared greedy placement. Fills `targetNodes` given `contextNodes` (already-decided days).
+  Relaxation order — deliberate rules (explicit caps, subcategory rules) are protected longest:
+    0 — whole-look uniqueness, overlap, all weekly caps + subcategory rules, no-adjacent-repeat
+    1 — drop category-default caps + adjacency
+    2 — drop overlap
+    3 — drop explicit + subcategory rules too (absolute last resort so a day is never empty)
+  Important days take the top-ranked valid outfit; normal days pick weighted-random (part 5).
 */
 function placeNodes(targetNodes, contextNodes, scored, settings) {
-  const { counts, placedLooks, placements } = seedAccumulator(contextNodes);
+  const acc = seedAccumulator(contextNodes);
   const topOf = cands => { const b = cands.reduce((a, x) => x.s > a.s ? x : a); return { garmentIds: b.o.garmentIds.slice(), items: b.o.items }; };
   const violates = (o, node, relax) => {
-    if (placedLooks.has(lookKey(o))) return true;                                  // no outfit repeats across the block
-    // an explicit per-garment limit is a deliberate choice — protected until the very last resort
-    if (relax < 3) for (const g of o.items) if (g.maxWeeklyRepeats != null && (counts.get(g.id) || 0) + 1 > g.maxWeeklyRepeats) return true;
-    if (relax < 2) for (const p of placements) if (overlapCount(o.garmentIds, p.garmentIds) > settings.overlapThreshold) return true;
+    if (acc.placedLooks.has(lookKey(o))) return true;                              // no outfit repeats across the block
+    if (relax < 3) {                                                               // explicit + subcategory rules
+      for (const g of o.items) if (g.maxWeeklyRepeats != null && (acc.gWeek.get(g.id + "|" + node.weekIso) || 0) + 1 > g.maxWeeklyRepeats) return true;
+      for (const g of o.items) { const rule = subcatRule(g.subcategory); if (rule && rule.minWeeksApart > 1) { const ws = acc.gWeeks.get(g.id); if (ws) for (const w of ws) if (weeksApart(w, node.weekIso) < rule.minWeeksApart) return true; } }
+      const subs = new Set(o.items.map(i => (i.subcategory || "").trim().toLowerCase()));
+      for (const sub of subs) { const rule = subcatRule(sub); if (rule && rule.maxPerWeek != null && (acc.subWeek.get(sub + "|" + node.weekIso) || 0) + 1 > rule.maxPerWeek) return true; }
+    }
+    if (relax < 2) for (const p of acc.placements) if (overlapCount(o.garmentIds, p.garmentIds) > settings.overlapThreshold) return true;
     if (relax < 1) {
-      for (const g of o.items) if (g.maxWeeklyRepeats == null && (counts.get(g.id) || 0) + 1 > effectiveRepeatLimit(g, o.items, settings)) return true;
-      if (settings.spacing !== "none") for (const p of placements) if (Math.abs(p.pos - node.pos) === 1 && overlapCount(o.garmentIds, p.garmentIds) > 0) return true;
+      for (const g of o.items) if (g.maxWeeklyRepeats == null && !subcatRule(g.subcategory) && (acc.gWeek.get(g.id + "|" + node.weekIso) || 0) + 1 > effectiveRepeatLimit(g, o.items, settings)) return true;
+      if (settings.spacing !== "none") for (const p of acc.placements) if (Math.abs(p.pos - node.pos) === 1 && overlapCount(o.garmentIds, p.garmentIds) > 0) return true;
     }
     return false;
   };
@@ -2246,9 +2272,7 @@ function placeNodes(targetNodes, contextNodes, scored, settings) {
     }
     if (!pick) pick = topOf(dayPool.length ? dayPool : scored);
     node.day.outfit = { garmentIds: pick.garmentIds.slice() }; node.day.worn = false; node.day.carriedOver = false;
-    pick.garmentIds.forEach(id => counts.set(id, (counts.get(id) || 0) + 1));
-    placedLooks.add(lookKey(pick));
-    placements.push({ pos: node.pos, garmentIds: pick.garmentIds });
+    accApply(acc, node.weekIso, node.pos, pick);
   }
 }
 
@@ -2263,13 +2287,20 @@ function adjacencyCount(nodes) {
 /* Placement is randomised (weighted picks for variety), and a single local-search pass can
    get stuck, so run a few whole placements and keep the one with the fewest adjacencies —
    then, for "maximise", the best spread. Cheap and much more reliable on small wardrobes. */
-// How many times an explicit per-garment limit is exceeded across the block (the constraint
-// the user most cares about — used to rank trials ahead of spacing).
+// How badly a plan breaks the deliberate rules — explicit per-garment weekly caps, and the
+// per-subcategory maxPerWeek / minWeeksApart rules. Used to rank trials ahead of spacing so the
+// planner keeps the constraints the user set (e.g. sweatpants once a week, same pair biweekly).
 function overLimitCount(nodes) {
-  const counts = new Map();
-  nodes.forEach(n => { const hy = hydrateOutfit(n.day.outfit); if (hy) hy.garmentIds.forEach(id => counts.set(id, (counts.get(id) || 0) + 1)); });
+  const gWeek = new Map(), gWeeks = new Map(), subWeek = new Map();
+  nodes.forEach(n => {
+    const hy = hydrateOutfit(n.day.outfit); if (!hy) return; const wk = n.weekIso;
+    hy.items.forEach(g => { gWeek.set(g.id + "|" + wk, (gWeek.get(g.id + "|" + wk) || 0) + 1); if (!gWeeks.has(g.id)) gWeeks.set(g.id, new Set()); gWeeks.get(g.id).add(wk); });
+    new Set(hy.items.map(i => (i.subcategory || "").trim().toLowerCase())).forEach(sub => { if (sub) subWeek.set(sub + "|" + wk, (subWeek.get(sub + "|" + wk) || 0) + 1); });
+  });
   let v = 0;
-  for (const [id, c] of counts) { const g = getGarment(id); if (g && g.maxWeeklyRepeats != null && c > g.maxWeeklyRepeats) v += c - g.maxWeeklyRepeats; }
+  for (const [key, c] of gWeek) { const g = getGarment(key.split("|")[0]); if (g && g.maxWeeklyRepeats != null && c > g.maxWeeklyRepeats) v += c - g.maxWeeklyRepeats; }
+  for (const [key, c] of subWeek) { const rule = subcatRule(key.split("|")[0]); if (rule && rule.maxPerWeek != null && c > rule.maxPerWeek) v += c - rule.maxPerWeek; }
+  for (const [id, ws] of gWeeks) { const g = getGarment(id); const rule = g && subcatRule(g.subcategory); if (rule && rule.minWeeksApart > 1) { const arr = [...ws].sort(); for (let i = 1; i < arr.length; i++) if (weeksApart(arr[i], arr[i - 1]) < rule.minWeeksApart) v++; } }
   return v;
 }
 function bestOfPlacements(open, fixed, allNodes, scored, settings) {
@@ -2375,17 +2406,23 @@ function shuffleDay(monIso, dayIdx, blockWeekIsos) {
   if (!weeks.includes(monIso)) weeks.push(monIso);
   const nodes = buildActiveNodes(weeks);
   const targetNode = nodes.find(n => n.weekIso === monIso && n.idx === dayIdx);
-  const { counts, placedLooks, placements } = seedAccumulator(nodes.filter(n => n !== targetNode));
+  const wk = monIso;
+  const acc = seedAccumulator(nodes.filter(n => n !== targetNode));
   const cur = hydrateOutfit(target.outfit);
   const dayPool = poolForDay(scored, forecastSeason(weekDates(monIso)[dayIdx]));
   const violates = (o, relax) => {
     if (cur && o.garmentIds.join() === cur.garmentIds.join()) return true;   // force a change
-    if (placedLooks.has(lookKey(o))) return true;
-    if (relax < 3) for (const g of o.items) if (g.maxWeeklyRepeats != null && (counts.get(g.id) || 0) + 1 > g.maxWeeklyRepeats) return true;
-    if (relax < 2) for (const p of placements) if (overlapCount(o.garmentIds, p.garmentIds) > settings.overlapThreshold) return true;
+    if (acc.placedLooks.has(lookKey(o))) return true;
+    if (relax < 3) {
+      for (const g of o.items) if (g.maxWeeklyRepeats != null && (acc.gWeek.get(g.id + "|" + wk) || 0) + 1 > g.maxWeeklyRepeats) return true;
+      for (const g of o.items) { const rule = subcatRule(g.subcategory); if (rule && rule.minWeeksApart > 1) { const ws = acc.gWeeks.get(g.id); if (ws) for (const w of ws) if (weeksApart(w, wk) < rule.minWeeksApart) return true; } }
+      const subs = new Set(o.items.map(i => (i.subcategory || "").trim().toLowerCase()));
+      for (const sub of subs) { const rule = subcatRule(sub); if (rule && rule.maxPerWeek != null && (acc.subWeek.get(sub + "|" + wk) || 0) + 1 > rule.maxPerWeek) return true; }
+    }
+    if (relax < 2) for (const p of acc.placements) if (overlapCount(o.garmentIds, p.garmentIds) > settings.overlapThreshold) return true;
     if (relax < 1) {
-      for (const g of o.items) if (g.maxWeeklyRepeats == null && (counts.get(g.id) || 0) + 1 > effectiveRepeatLimit(g, o.items, settings)) return true;
-      if (settings.spacing !== "none" && targetNode) for (const p of placements) if (Math.abs(p.pos - targetNode.pos) === 1 && overlapCount(o.garmentIds, p.garmentIds) > 0) return true;
+      for (const g of o.items) if (g.maxWeeklyRepeats == null && !subcatRule(g.subcategory) && (acc.gWeek.get(g.id + "|" + wk) || 0) + 1 > effectiveRepeatLimit(g, o.items, settings)) return true;
+      if (settings.spacing !== "none" && targetNode) for (const p of acc.placements) if (Math.abs(p.pos - targetNode.pos) === 1 && overlapCount(o.garmentIds, p.garmentIds) > 0) return true;
     }
     return false;
   };
