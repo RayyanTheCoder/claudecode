@@ -4,7 +4,7 @@
    Auto-updates: the new worker skips waiting and claims clients immediately, so
    users always converge on the latest version without a manual cache clear.
    Only active when served over http(s); ignored on file://. */
-const CACHE = "wardrobe-v25";
+const CACHE = "wardrobe-v26";
 const ASSETS = ["./", "./index.html", "./wardrobe.html", "./manifest.webmanifest",
   "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 

@@ -3407,10 +3407,9 @@ function wizSummary() {
         <div class="field grow"><label>Texture</label><select onchange="wizSecondary('texture',this.value)">${TEXTURES.map(t => opt(t, TEXTURE_LBL[t], d.texture || textureFor(sub, d.category))).join("")}</select></div>
         <div class="field grow"><label>Silhouette</label><select onchange="wizSecondary('silhouette',this.value)">${SILHOUETTES.map(sl => opt(sl, SILHOUETTE_LBL[sl], d.silhouette || silhouetteFor(sub, d.fit || "slim", d.category))).join("")}</select></div>
         <div class="field grow"><label>Visibility</label><select onchange="wizSecondary('visibility',this.value)">${["high", "medium", "low"].map(v => opt(v, cap(v), d.visibility || (rules.planner.defaultVisibility[d.category] || "high"))).join("")}</select></div>
-        <div class="field grow"><label>Max times per week</label><input type="number" min="1" max="14" value="${d.maxWeeklyRepeats != null ? d.maxWeeklyRepeats : ""}" oninput="wizSecondaryText('maxWeeklyRepeats',this.value)" placeholder="category default"></div>
         ${isWishlistMode() ? "" : `<div class="field grow"><label>Cost</label><input type="number" min="0" value="${d.cost || ""}" oninput="wizSecondaryText('cost',this.value)" placeholder="0"></div>`}
       </div>
-      <div class="tiny muted" style="margin-top:8px;">Visibility drives the planner's repeat limits. <b>Max times per week</b> overrides the category default for this one piece — leave blank to use the default (branded pieces can be set tighter).</div>
+      <div class="tiny muted" style="margin-top:8px;">Visibility drives the planner's repeat limits — set a branded or distinctive piece to <b>High</b> so it repeats less often.</div>
       <div class="field" style="margin-top:10px;"><label>Notes</label><textarea oninput="wizSecondaryText('notes',this.value)" placeholder="Optional">${esc(d.notes || "")}</textarea></div>
     </div>`
     : `<button class="btn" style="margin-top:14px; width:100%;" onclick="wizToggleDetail()">Add more detail</button>
@@ -3436,12 +3435,26 @@ function wizSummary() {
     ? `<button class="btn ghost danger" style="margin-top:8px; width:100%;" onclick="wizDeleteGarment()">Delete garment</button>`
     : wizardState.mode === "edit-wishlist"
     ? `<button class="btn ghost danger" style="margin-top:8px; width:100%;" onclick="wizRemoveWishlist()">Remove from wishlist</button>` : "";
+  // per-garment planner repeat limit — surfaced here (not hidden under "More detail") so it's easy to find
+  const catDefault = (rules.planner.maxWeeklyRepeats || {})[d.category];
+  const repeatCard = isWishlistMode() ? "" : `
+    <div class="card" style="padding:12px 14px; margin-top:14px;">
+      <div class="row" style="justify-content:space-between; align-items:center; gap:12px;">
+        <div style="min-width:0;">
+          <div style="font-weight:600;">↺ Max times per week</div>
+          <div class="tiny muted">How often the planner may reuse this piece. Blank = ${CATEGORY_LBL[d.category] || "category"} default (${catDefault != null ? catDefault : 2}×).</div>
+        </div>
+        <input type="number" min="1" max="14" value="${d.maxWeeklyRepeats != null ? d.maxWeeklyRepeats : ""}" oninput="wizSecondaryText('maxWeeklyRepeats',this.value)" placeholder="default" style="width:92px; text-align:center; flex:none;">
+      </div>
+    </div>`;
+
   return `
     <div class="wiz-q">${title}</div><div class="wiz-sub">Tap anything to change it.</div>
     ${projection}
     <div class="row wrap stagger" style="gap:8px;">
       ${chips.map(([sid, label], i) => `<button class="chip btn-chip" style="animation-delay:${i * 40}ms" onclick="wizGoto('${sid}')">${esc(label)}</button>`).join("")}
     </div>
+    ${repeatCard}
     ${detail}
     <button class="btn primary" style="margin-top:18px; width:100%; min-height:52px;" onclick="wizConfirm()">${confirmLabel}</button>
     ${secondary}`;
