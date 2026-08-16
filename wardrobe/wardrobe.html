@@ -192,6 +192,7 @@
 
   .badge { font-size: 10.5px; padding: 2px 7px; border-radius: 6px; background: var(--bg-raise2); border: 1px solid var(--border); color: var(--muted); }
   .badge.warn { color: var(--warn); border-color: #4a3f22; }
+  .badge.cap { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); font-weight: 600; }
 
   /* ---------- outfit cards ---------- */
   .o-card { padding: 12px; }
@@ -1211,6 +1212,8 @@ function normalizeGarment(g) {
     // how noticeable a repeat is — drives planner repeat limits. Default by category; user can flag
     // a branded piece "high" regardless. Base worn under a layer is treated as low at plan time.
     visibility: ["high", "medium", "low"].includes(g.visibility) ? g.visibility : ((rules.planner.defaultVisibility || {})[g.category] || "high"),
+    // per-garment planner repeat cap; null = use the category default (a branded piece can be tighter)
+    maxWeeklyRepeats: (g.maxWeeklyRepeats == null || g.maxWeeklyRepeats === "") ? null : clampInt(g.maxWeeklyRepeats, 1, 14, null),
     season: g.season || "all",
     fit,
     weight: g.weight || "medium",
@@ -2173,7 +2176,9 @@ function effectiveVisibility(g, items) {
   return g.visibility || "high";
 }
 // How many times this garment may appear across the planned period, adjusted for visibility.
+// A per-garment override (g.maxWeeklyRepeats) wins over the category default entirely.
 function effectiveRepeatLimit(g, items, settings) {
+  if (g.maxWeeklyRepeats != null) return Math.max(1, g.maxWeeklyRepeats);
   const base = (settings.maxWeeklyRepeats || {})[g.category];
   const lim = (base == null) ? 2 : base;
   const vis = effectiveVisibility(g, items);
@@ -2221,9 +2226,11 @@ function placeNodes(targetNodes, contextNodes, scored, settings) {
   const topOf = cands => { const b = cands.reduce((a, x) => x.s > a.s ? x : a); return { garmentIds: b.o.garmentIds.slice(), items: b.o.items }; };
   const violates = (o, node, relax) => {
     if (placedLooks.has(lookKey(o))) return true;                                  // no outfit repeats across the block
+    // an explicit per-garment limit is a deliberate choice — protected until the very last resort
+    if (relax < 3) for (const g of o.items) if (g.maxWeeklyRepeats != null && (counts.get(g.id) || 0) + 1 > g.maxWeeklyRepeats) return true;
     if (relax < 2) for (const p of placements) if (overlapCount(o.garmentIds, p.garmentIds) > settings.overlapThreshold) return true;
     if (relax < 1) {
-      for (const g of o.items) if ((counts.get(g.id) || 0) + 1 > effectiveRepeatLimit(g, o.items, settings)) return true;
+      for (const g of o.items) if (g.maxWeeklyRepeats == null && (counts.get(g.id) || 0) + 1 > effectiveRepeatLimit(g, o.items, settings)) return true;
       if (settings.spacing !== "none") for (const p of placements) if (Math.abs(p.pos - node.pos) === 1 && overlapCount(o.garmentIds, p.garmentIds) > 0) return true;
     }
     return false;
@@ -2232,7 +2239,7 @@ function placeNodes(targetNodes, contextNodes, scored, settings) {
   for (const node of ordered) {
     const dayPool = poolForDay(scored, forecastSeason(node.date));
     let pick = null;
-    for (let relax = 0; relax <= 2 && !pick; relax++) {
+    for (let relax = 0; relax <= 3 && !pick; relax++) {
       const cands = dayPool.filter(x => !violates(x.o, node, relax));
       if (!cands.length) continue;
       pick = node.day.importance === "important" ? topOf(cands) : weightedPick(cands, {});
@@ -2256,20 +2263,28 @@ function adjacencyCount(nodes) {
 /* Placement is randomised (weighted picks for variety), and a single local-search pass can
    get stuck, so run a few whole placements and keep the one with the fewest adjacencies —
    then, for "maximise", the best spread. Cheap and much more reliable on small wardrobes. */
+// How many times an explicit per-garment limit is exceeded across the block (the constraint
+// the user most cares about — used to rank trials ahead of spacing).
+function overLimitCount(nodes) {
+  const counts = new Map();
+  nodes.forEach(n => { const hy = hydrateOutfit(n.day.outfit); if (hy) hy.garmentIds.forEach(id => counts.set(id, (counts.get(id) || 0) + 1)); });
+  let v = 0;
+  for (const [id, c] of counts) { const g = getGarment(id); if (g && g.maxWeeklyRepeats != null && c > g.maxWeeklyRepeats) v += c - g.maxWeeklyRepeats; }
+  return v;
+}
 function bestOfPlacements(open, fixed, allNodes, scored, settings) {
   if (!open.length) return;
-  const trials = settings.spacing === "none" ? 1 : 6;
-  let best = null, bestAdj = Infinity, bestSpread = -Infinity;
+  const trials = settings.spacing === "none" ? 3 : 6;
+  let best = null, bestKey = null;
   for (let t = 0; t < trials; t++) {
     open.forEach(n => { n.day.outfit = null; });
     placeNodes(open, fixed, scored, settings);
     if (settings.spacing !== "none") repairSpacing(allNodes, settings);
-    const adj = adjacencyCount(allNodes);
-    const spread = spacingObjective(allNodes, settings.spacing);
-    if (adj < bestAdj || (adj === bestAdj && spread > bestSpread)) {
-      best = open.map(n => n.day.outfit); bestAdj = adj; bestSpread = spread;
-    }
-    if (adj === 0 && settings.spacing !== "maximise") break;   // good enough for avoid-consecutive
+    // rank: fewest explicit-limit breaches first, then fewest adjacencies, then best spread
+    const key = [overLimitCount(allNodes), adjacencyCount(allNodes), -spacingObjective(allNodes, settings.spacing)];
+    const better = !bestKey || key[0] < bestKey[0] || (key[0] === bestKey[0] && (key[1] < bestKey[1] || (key[1] === bestKey[1] && key[2] < bestKey[2])));
+    if (better) { best = open.map(n => n.day.outfit); bestKey = key; }
+    if (key[0] === 0 && key[1] === 0 && settings.spacing !== "maximise") break;   // clean enough for avoid-consecutive
   }
   open.forEach((n, i) => { n.day.outfit = best[i]; });
 }
@@ -2366,15 +2381,16 @@ function shuffleDay(monIso, dayIdx, blockWeekIsos) {
   const violates = (o, relax) => {
     if (cur && o.garmentIds.join() === cur.garmentIds.join()) return true;   // force a change
     if (placedLooks.has(lookKey(o))) return true;
+    if (relax < 3) for (const g of o.items) if (g.maxWeeklyRepeats != null && (counts.get(g.id) || 0) + 1 > g.maxWeeklyRepeats) return true;
     if (relax < 2) for (const p of placements) if (overlapCount(o.garmentIds, p.garmentIds) > settings.overlapThreshold) return true;
     if (relax < 1) {
-      for (const g of o.items) if ((counts.get(g.id) || 0) + 1 > effectiveRepeatLimit(g, o.items, settings)) return true;
+      for (const g of o.items) if (g.maxWeeklyRepeats == null && (counts.get(g.id) || 0) + 1 > effectiveRepeatLimit(g, o.items, settings)) return true;
       if (settings.spacing !== "none" && targetNode) for (const p of placements) if (Math.abs(p.pos - targetNode.pos) === 1 && overlapCount(o.garmentIds, p.garmentIds) > 0) return true;
     }
     return false;
   };
   let pick = null;
-  for (let relax = 0; relax <= 2 && !pick; relax++) { const cands = dayPool.filter(x => !violates(x.o, relax)); if (cands.length) pick = weightedPick(cands, {}); }
+  for (let relax = 0; relax <= 3 && !pick; relax++) { const cands = dayPool.filter(x => !violates(x.o, relax)); if (cands.length) pick = weightedPick(cands, {}); }
   if (!pick) return [];
   target.outfit = { garmentIds: pick.garmentIds.slice() }; target.worn = false; target.carriedOver = false;
   saveToStorage();
@@ -2699,7 +2715,7 @@ function freshWizard(mode) {
     category: null, subcategory: null, subcategoryCustom: "",
     color: null, colorFamily: null, colorCustom: "", colorHex: "",
     fit: null, formality: 3, season: null, weight: null, visualWeight: null,
-    texture: null, silhouette: null, visibility: null,
+    texture: null, silhouette: null, visibility: null, maxWeeklyRepeats: "",
     name: "", imageData: null, cost: "", notes: "",
   } };
 }
@@ -2725,6 +2741,7 @@ function wizardFromItem(mode, item) {
   else { d.color = "custom"; d.colorCustom = item.color || ""; d.colorHex = item.colorHex || nameToHex(item.color) || "#3a3f47"; d.colorFamily = familyFromHex(d.colorHex); }
   d.fit = item.fit; d.formality = item.formality; d.season = item.season; d.weight = item.weight;
   d.texture = item.texture; d.silhouette = item.silhouette; d.visibility = item.visibility;
+  d.maxWeeklyRepeats = item.maxWeeklyRepeats != null ? item.maxWeeklyRepeats : "";
   d.visualWeight = item.visualWeight; d.name = item.name; d.imageData = item.imageData; d.cost = item.cost || ""; d.notes = item.notes || "";
   return w;
 }
@@ -2794,6 +2811,7 @@ function renderWardrobe() {
       <button class="btn sm" onclick="bulkAction('formality')" ${selected.size ? "" : "disabled"}>Formality</button>
       <button class="btn sm" onclick="bulkAction('weight')" ${selected.size ? "" : "disabled"}>Weight</button>
       <button class="btn sm" onclick="bulkAction('colorFamily')" ${selected.size ? "" : "disabled"}>Colour</button>
+      <button class="btn sm" onclick="bulkAction('maxWeeklyRepeats')" ${selected.size ? "" : "disabled"}>Repeat limit</button>
       <button class="btn sm danger" onclick="bulkAction('delete')" ${selected.size ? "" : "disabled"}>Delete</button>
       <button class="btn sm ghost" onclick="exitSelect()">Done</button>
     </div>` : "";
@@ -2850,6 +2868,7 @@ function garmentCard(g) {
         <span class="badge">${CATEGORY_LBL[g.category]}</span>
         <span class="badge">F${g.formality}</span>
         <span class="badge">${cap(g.season)}</span>
+        ${g.maxWeeklyRepeats != null ? `<span class="badge cap" title="Custom planner limit: at most ${g.maxWeeklyRepeats}× per week">↺ ${g.maxWeeklyRepeats}/wk</span>` : ""}
         <span>${worn}</span>
         ${perWear != null ? `<span>· ${money(perWear)}/wear</span>` : ""}
         ${staleBadge}
@@ -2898,11 +2917,12 @@ function bulkOptions(field) {
     case "formality": return [1,2,3,4,5].map(n => [n, `F${n} · ${WIZ_FORM[n-1]}`]);
     case "weight": return WEIGHTS.map(w => [w, cap(w)]);
     case "colorFamily": return COLOR_FAMILIES.map(f => [f, FAMILY_LBL[f]]);
+    case "maxWeeklyRepeats": return [["", "Category default"], [1, "1× / week"], [2, "2× / week"], [3, "3× / week"], [4, "4× / week"], [5, "5× / week"], [6, "6× / week"], [7, "7× / week"]];
   }
   return [];
 }
 window.openBulkPicker = function (field) {
-  const title = { season: "Set season", formality: "Set formality", weight: "Set weight", colorFamily: "Set colour family" }[field];
+  const title = { season: "Set season", formality: "Set formality", weight: "Set weight", colorFamily: "Set colour family", maxWeeklyRepeats: "Set max times per week" }[field];
   const el = document.createElement("div"); el.className = "overlay"; el.id = "bulk-overlay";
   el.onclick = e => { if (e.target === el) el.remove(); };
   el.innerHTML = `<div class="sheet">
@@ -2917,6 +2937,7 @@ window.bulkApply = function (field, value) {
   // colorFamily is derived from the hex now, so a family choice maps to a representative shade
   const patch = field === "colorFamily" ? { colorHex: FAMILY_TO_HEX[value] || "#3a3f47" }
     : field === "formality" ? { formality: parseInt(value, 10) }
+    : field === "maxWeeklyRepeats" ? { maxWeeklyRepeats: value === "" ? null : parseInt(value, 10) }
     : { [field]: value };
   ids.forEach(id => updateGarment(id, patch));
   const o = document.getElementById("bulk-overlay"); if (o) o.remove();
@@ -3022,6 +3043,17 @@ function garmentAttrFieldsHTML(g) {
       <div class="field grow">
         <label>Cost</label>
         <input type="number" name="cost" min="0" step="1" value="${g.cost != null && g.cost !== "" ? g.cost : ""}" placeholder="0" />
+      </div>
+    </div>
+    <div class="row wrap" style="gap:12px;">
+      <div class="field grow">
+        <label>Visibility</label>
+        <select name="visibility">${["high", "medium", "low"].map(v => opt(v, cap(v), g.visibility || (rules.planner.defaultVisibility[g.category] || "high"))).join("")}</select>
+      </div>
+      <div class="field grow">
+        <label>Max times per week</label>
+        <input type="number" name="maxWeeklyRepeats" min="1" max="14" step="1" value="${g.maxWeeklyRepeats != null ? g.maxWeeklyRepeats : ""}" placeholder="category default" />
+        <div class="tiny muted" style="margin-top:4px;">Leave blank to use the category default.</div>
       </div>
     </div>`;
 }
@@ -3375,9 +3407,10 @@ function wizSummary() {
         <div class="field grow"><label>Texture</label><select onchange="wizSecondary('texture',this.value)">${TEXTURES.map(t => opt(t, TEXTURE_LBL[t], d.texture || textureFor(sub, d.category))).join("")}</select></div>
         <div class="field grow"><label>Silhouette</label><select onchange="wizSecondary('silhouette',this.value)">${SILHOUETTES.map(sl => opt(sl, SILHOUETTE_LBL[sl], d.silhouette || silhouetteFor(sub, d.fit || "slim", d.category))).join("")}</select></div>
         <div class="field grow"><label>Visibility</label><select onchange="wizSecondary('visibility',this.value)">${["high", "medium", "low"].map(v => opt(v, cap(v), d.visibility || (rules.planner.defaultVisibility[d.category] || "high"))).join("")}</select></div>
+        <div class="field grow"><label>Max times per week</label><input type="number" min="1" max="14" value="${d.maxWeeklyRepeats != null ? d.maxWeeklyRepeats : ""}" oninput="wizSecondaryText('maxWeeklyRepeats',this.value)" placeholder="category default"></div>
         ${isWishlistMode() ? "" : `<div class="field grow"><label>Cost</label><input type="number" min="0" value="${d.cost || ""}" oninput="wizSecondaryText('cost',this.value)" placeholder="0"></div>`}
       </div>
-      <div class="tiny muted" style="margin-top:8px;">Visibility drives the planner's repeat limits — set a branded or distinctive piece to <b>High</b> so it repeats less often.</div>
+      <div class="tiny muted" style="margin-top:8px;">Visibility drives the planner's repeat limits. <b>Max times per week</b> overrides the category default for this one piece — leave blank to use the default (branded pieces can be set tighter).</div>
       <div class="field" style="margin-top:10px;"><label>Notes</label><textarea oninput="wizSecondaryText('notes',this.value)" placeholder="Optional">${esc(d.notes || "")}</textarea></div>
     </div>`
     : `<button class="btn" style="margin-top:14px; width:100%;" onclick="wizToggleDetail()">Add more detail</button>
@@ -3527,6 +3560,7 @@ function wizSpec() {
     formality: d.formality || 3,                // → dressiness/casualness derive in normalizeGarment
     texture: d.texture || null, silhouette: d.silhouette || null,   // null → derived from subcategory/fit
     visibility: d.visibility || null,               // null → default by category
+    maxWeeklyRepeats: (d.maxWeeklyRepeats === "" || d.maxWeeklyRepeats == null) ? null : d.maxWeeklyRepeats,
     season: d.season || "all", fit: d.fit || "slim", weight: d.weight || "medium",
     visualWeight: d.category === "shoe" ? (d.visualWeight || "standard") : null,
     cost: Number(d.cost) || 0, imageData: d.imageData || null, notes: (d.notes || "").trim(),
