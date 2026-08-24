@@ -110,6 +110,33 @@
   .nudge{display:flex;gap:9px;align-items:center;background:var(--panel);border:1px solid var(--line-2);border-radius:13px;padding:10px 12px;font-size:12.5px}
   .nudge b{font-weight:750}
 
+  /* What-if scratchpad */
+  .planhero{background:radial-gradient(420px 180px at 88% -30%, rgba(232,196,119,.2), transparent 62%),linear-gradient(165deg,#1d1609,#120d07 70%);
+    border:1px solid var(--line);border-radius:24px;padding:18px 20px 16px;box-shadow:0 16px 40px rgba(0,0,0,.4), inset 0 1px 0 rgba(232,196,119,.08)}
+  .planhero .label{color:var(--gold);font-size:12px;letter-spacing:.7px;text-transform:uppercase}
+  .planhero .big{font-family:var(--display);font-size:42px;font-weight:800;letter-spacing:-1.4px;margin:5px 0 4px;line-height:1.02;
+    background:var(--gold-grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .planhero .big.neg{background:none;color:var(--red);-webkit-text-fill-color:var(--red)}
+  .planline{font-size:12px;color:var(--ink-dim);min-height:15px}
+  .pmoney{display:flex;align-items:center;gap:2px;border:1px solid var(--line);background:var(--panel-2);border-radius:12px;padding:0 11px;transition:border-color .15s, box-shadow .15s}
+  .pmoney:focus-within{border-color:var(--gold);box-shadow:0 0 0 3px rgba(232,196,119,.14)}
+  .pmoney span{color:var(--ink-faint);font-weight:600}
+  .pmoney input{border:none;background:transparent;padding:11px 0 11px 4px;font:inherit;outline:none;box-shadow:none;width:100%;font-variant-numeric:tabular-nums}
+  .pmoney input:focus{box-shadow:none}
+  .pmoney.big-in input{font-size:17px;font-weight:700}
+  .pitem{display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--line-2);border-radius:13px;padding:8px 10px;animation:riseIn .24s both;transition:opacity .18s}
+  .pitem.off{opacity:.42}
+  .ptoggle{width:36px;height:22px;border-radius:12px;background:rgba(255,255,255,.12);border:1px solid var(--line);position:relative;cursor:pointer;flex:none;padding:0;transition:background .18s, border-color .18s}
+  .ptoggle:before{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--ink-dim);transition:transform .18s, background .18s}
+  .ptoggle.on{background:var(--gold-grad);border-color:transparent}
+  .ptoggle.on:before{transform:translateX(14px);background:#1a1305}
+  .pname{flex:1;min-width:0;border:1px solid var(--line-2);background:var(--panel-2);border-radius:9px;padding:8px 9px;font:inherit;font-weight:600;color:var(--ink);outline:none}
+  .pname:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(232,196,119,.12)}
+  .pprice{display:flex;align-items:center;gap:1px;border:1px solid var(--line-2);background:var(--panel-2);border-radius:9px;padding:0 8px;flex:none}
+  .pprice span{color:var(--ink-faint);font-size:13px}
+  .pprice input{width:66px;text-align:right;border:none;background:transparent;padding:8px 0;font:inherit;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);outline:none}
+  .pprice:focus-within{border-color:var(--gold)}
+
   .sec{margin:22px 2px 10px; display:flex; align-items:center; justify-content:space-between}
   .sec h2{font-family:var(--display);font-size:17px; margin:0; color:var(--ink); font-weight:750; letter-spacing:-.3px}
   .link{color:var(--gold); font-size:13px; cursor:pointer; background:none;border:none;padding:0;transition:opacity .15s}
@@ -399,14 +426,42 @@
         <label class="fld"><span class="lb">Recent items shown on Home</span>
           <select id="setRecent"><option>3</option><option>5</option><option>7</option><option>10</option></select></label>
         <label class="fld"><span class="lb">Default tab on open</span>
-          <select id="setTab"><option value="home">Home</option><option value="insights">Insights</option><option value="history">History</option></select></label>
+          <select id="setTab"><option value="home">Home</option><option value="plan">What if</option><option value="insights">Insights</option><option value="history">History</option></select></label>
         <div class="btnrow"><button class="btn danger sm block" id="signOutHist">Sign out</button></div>
       </div>
+    </div>
+
+    <!-- ============ WHAT-IF (scratchpad) ============ -->
+    <div class="body hidden" id="planView">
+      <div class="row spread">
+        <div><div class="date">Scratchpad · nothing here is saved as real</div><h1 class="page">What if…</h1></div>
+        <div class="userchip"><div class="avatar" id="avatarPlan">J</div></div>
+      </div>
+
+      <div class="planhero">
+        <span class="label">You'd have left</span>
+        <div class="big" id="planLeft">$0</div>
+        <div class="planline" id="planLine">Start with an amount, then add things you're thinking about.</div>
+      </div>
+
+      <label class="fld" style="margin-top:14px"><span class="lb">Starting amount</span>
+        <div class="pmoney big-in"><span>$</span><input id="planStart" type="number" inputmode="decimal" placeholder="e.g. 900" /></div>
+      </label>
+
+      <div class="sec"><h2>Things you might buy</h2><button class="link" id="planWipe">Wipe</button></div>
+      <div class="list" id="planList"></div>
+
+      <div class="btnrow" style="margin-top:12px">
+        <button class="btn sm block" id="planAdd">＋ Add item</button>
+        <button class="btn ghost sm block" id="planExample">Try an example</button>
+      </div>
+      <p style="font-size:11.5px;color:var(--ink-faint);margin:12px 2px 0">Flip an item off with its switch to see “what if I skip this?” — no need to delete it.</p>
     </div>
 
     <button class="fab" id="fab" title="Add entry">+</button>
     <nav class="nav">
       <button data-tab="home" class="on" id="navHome"><span class="ni">🏠</span>Home</button>
+      <button data-tab="plan" id="navPlan"><span class="ni">🧮</span>What if</button>
       <button data-tab="insights" id="navInsights"><span class="ni">📊</span>Insights</button>
       <button data-tab="history" id="navHistory"><span class="ni">🧾</span>History</button>
     </nav>
@@ -486,10 +541,11 @@
   const hash = s => { let h=5381; for(const c of s) h=((h<<5)+h+c.charCodeAt(0))>>>0; return "h"+h.toString(16); };
 
   let session=null, state=null;
-  function defaultState(){ return {entries:[], adjustment:0, budgets:{}, meta:{toured:false}, settings:{recentCount:5, defaultTab:"home"}}; }
+  function defaultState(){ return {entries:[], adjustment:0, budgets:{}, scenario:{start:0,items:[]}, meta:{toured:false}, settings:{recentCount:5, defaultTab:"home"}}; }
   function loadState(email){
     let st; try{ st=Object.assign(defaultState(), JSON.parse(localStorage.getItem(dataKey(email)))||{}); }catch{ st=defaultState(); }
     st.budgets=st.budgets||{}; st.meta=st.meta||{toured:false}; st.settings=Object.assign({recentCount:5,defaultTab:"home"}, st.settings||{});
+    st.scenario=st.scenario||{start:0,items:[]}; if(!Array.isArray(st.scenario.items)) st.scenario.items=[];
     st.entries=(st.entries||[]).map(e=> e.type==="expense" ? Object.assign({category:"other"}, e) : e);
     return st;
   }
@@ -768,15 +824,15 @@
   function defaultTypeForContext(){ if(activeTab==="history"&&filter!=="all") return filter; if(activeTab==="insights") return "expense"; return "salary"; }
 
   // ---------------- Nav ----------------
-  const VIEWS={home:"#homeView",insights:"#insightsView",history:"#historyView"};
+  const VIEWS={home:"#homeView",plan:"#planView",insights:"#insightsView",history:"#historyView"};
   function switchTab(tab){
     activeTab=tab;
     Object.entries(VIEWS).forEach(([k,sel])=>$(sel).classList.toggle("hidden",k!==tab));
     const show=$(VIEWS[tab]); show.classList.remove("view-enter"); void show.offsetWidth; show.classList.add("view-enter");
-    $("#navHome").classList.toggle("on",tab==="home");
-    $("#navInsights").classList.toggle("on",tab==="insights");
-    $("#navHistory").classList.toggle("on",tab==="history");
+    $$(".nav button").forEach(b=>b.classList.toggle("on", b.dataset.tab===tab));
+    $("#fab").classList.toggle("hidden", tab==="plan"); // Plan has its own Add item button
     if(tab==="history") requestAnimationFrame(positionThumb);
+    if(tab==="plan") renderPlan();
   }
   function positionThumb(){
     const seg=$("#filterSeg"), thumb=$("#segThumb"), on=seg.querySelector("button.on");
@@ -848,9 +904,67 @@
     scrim.querySelector(".xDl").onclick=()=>{ if(!tryDownload(json)) flash("Download blocked here — use Copy instead", true); };
   }
 
+  // ---------------- What-if scratchpad ----------------
+  const planActiveSum = () => state.scenario.items.filter(i=>i.on).reduce((a,i)=>a+(Number(i.price)||0),0);
+  function updatePlanTotals(){
+    const start=Number(state.scenario.start)||0, spend=planActiveSum(), left=start-spend;
+    const el=$("#planLeft"); el.classList.toggle("neg", left<0); animateNumber(el, left);
+    const onCount=state.scenario.items.filter(i=>i.on).length, total=state.scenario.items.length;
+    $("#planLine").textContent = total
+      ? `From ${fmt(start)} · spending ${fmt(spend)} on ${onCount} of ${total} item${total===1?"":"s"}`
+      : "Start with an amount, then add things you're thinking about.";
+    saveState();
+  }
+  function makePlanRow(item){
+    const row=document.createElement("div"); row.className="pitem"+(item.on?"":" off");
+    row.innerHTML=`
+      <button class="ptoggle ${item.on?"on":""}" role="switch" aria-checked="${item.on}" title="Include / skip"></button>
+      <input class="pname" value="${escapeHtml(item.name)}" placeholder="What is it?" />
+      <label class="pprice"><span>$</span><input type="number" inputmode="decimal" value="${item.price!==""&&item.price!=null?item.price:""}" placeholder="0" /></label>
+      <button class="del" title="Remove">✕</button>`;
+    const toggle=row.querySelector(".ptoggle"), name=row.querySelector(".pname"), price=row.querySelector(".pprice input"), del=row.querySelector(".del");
+    toggle.onclick=()=>{ item.on=!item.on; toggle.classList.toggle("on",item.on); toggle.setAttribute("aria-checked",item.on); row.classList.toggle("off",!item.on); buzz(8); updatePlanTotals(); };
+    name.addEventListener("input",()=>{ item.name=name.value; saveState(); });
+    price.addEventListener("input",()=>{ item.price=price.value===""?"":Math.max(0,parseFloat(price.value)||0); updatePlanTotals(); });
+    del.onclick=()=>{ const i=state.scenario.items.indexOf(item); if(i>-1) state.scenario.items.splice(i,1); row.remove(); buzz(14); updatePlanTotals(); if(!state.scenario.items.length) renderPlan(); };
+    return row;
+  }
+  function renderPlan(){
+    if(!state) return;
+    $("#planStart").value = state.scenario.start || "";
+    const list=$("#planList"); list.innerHTML="";
+    if(!state.scenario.items.length){
+      const d=document.createElement("div"); d.className="empty"; d.textContent="No items yet — add what you're thinking about buying.";
+      list.appendChild(d);
+    } else state.scenario.items.forEach(it=>list.appendChild(makePlanRow(it)));
+    updatePlanTotals();
+  }
+  function addPlanItem(name="", price=""){
+    const item={id:uid(),name,price,on:true}; state.scenario.items.push(item);
+    const list=$("#planList"); const empty=list.querySelector(".empty"); if(empty) list.innerHTML="";
+    const row=makePlanRow(item); list.appendChild(row); updatePlanTotals();
+    const nm=row.querySelector(".pname"); if(nm && !name) setTimeout(()=>nm.focus(),30);
+  }
+  function wipePlan(){
+    if(!state.scenario.items.length && !state.scenario.start) return;
+    state.scenario={start:0,items:[]}; renderPlan(); flash("Scratchpad wiped");
+  }
+  function loadPlanExample(){
+    state.scenario={start:900,items:[
+      {id:uid(),name:"Jeans",price:220,on:true},
+      {id:uid(),name:"Sweats",price:60,on:true},
+      {id:uid(),name:"Protein",price:35,on:true},
+    ]};
+    renderPlan(); flash("Example loaded — flip items on/off to compare");
+  }
+
   // ---------------- Wire ----------------
   function wireApp(){
-    $("#fab").onclick=()=>openSheet(null);
+    $("#fab").onclick=()=>{ if(activeTab==="plan"){ addPlanItem(); } else openSheet(null); };
+    $("#planStart").addEventListener("input",e=>{ state.scenario.start=e.target.value===""?0:Math.max(0,parseFloat(e.target.value)||0); updatePlanTotals(); });
+    $("#planAdd").onclick=()=>addPlanItem();
+    $("#planWipe").onclick=wipePlan;
+    $("#planExample").onclick=loadPlanExample;
     $$(".nav button").forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
     $("#seeAll").onclick=()=>switchTab("history");
     $$(".source").forEach(b=>b.onclick=()=>{ openSheet(null); sheetType=b.dataset.add;
@@ -894,6 +1008,7 @@
         if(e.type==="expense") o.category=CATMAP[e.category]?e.category:"other"; return o; }).filter(e=>["salary","commission","expense"].includes(e.type));
       state.adjustment=Number(d.adjustment)||0;
       if(d.budgets&&typeof d.budgets==="object") state.budgets=d.budgets;
+      if(d.scenario&&Array.isArray(d.scenario.items)) state.scenario={start:Number(d.scenario.start)||0, items:d.scenario.items.map(i=>({id:i.id||uid(),name:String(i.name||""),price:i.price===""||i.price==null?"":Number(i.price)||0,on:i.on!==false}))};
       if(d.settings) state.settings=Object.assign(state.settings,d.settings);
       render(); flash("Data imported ✓");
     }catch{ flash("Couldn't read that JSON", true); }
@@ -914,7 +1029,7 @@
     session=user; localStorage.setItem(SESSION_KEY,JSON.stringify(user)); state=loadState(user.email);
     ["#moneyLeft","#totalMoney","#expensesTotal","#salaryAmt","#commissionAmt","#insIncome","#insSpent","#insNet"].forEach(s=>{ const el=$(s); if(el) el.__val=undefined; });
     const initial=(user.name||user.email||"?").trim().charAt(0).toUpperCase();
-    [$("#avatarHome"),$("#avatarIns"),$("#avatarHist")].forEach(a=>{ if(a) a.innerHTML=user.picture?`<img src="${user.picture}" alt="">`:initial; });
+    [$("#avatarHome"),$("#avatarPlan"),$("#avatarIns"),$("#avatarHist")].forEach(a=>{ if(a) a.innerHTML=user.picture?`<img src="${user.picture}" alt="">`:initial; });
     $("#authView").classList.add("hidden");
     filter="all"; $$("#filterSeg button").forEach(x=>x.classList.toggle("on",x.dataset.f==="all"));
     switchTab(state.settings.defaultTab||"home"); render();
