@@ -30,6 +30,10 @@
     --frame:#cfe4f5; --frame-2:#bcd8ee; --spine:rgba(70,120,165,.16);
     --shadow:0 18px 42px -20px rgba(60,105,150,.5); --shadow-sm:0 8px 20px -12px rgba(60,105,150,.4);
     --grain:.5;
+    /* notebook */
+    --cover1:#9cc6ea; --cover2:#7db0dd; --cover-edge:#6ba0d0; --cover-in:rgba(255,255,255,.5);
+    --paper-a:#fdfeff; --paper-b:#eef5fd; --paper-tint:rgba(120,170,215,.10);
+    --edge-l:#e9f2fb; --edge-d:#cadff0; --binding:rgba(55,95,140,.34); --margin:rgba(228,150,150,.5);
   }
   /* ---------- Night (blue-tinted dark) ---------- */
   html[data-theme="dark"] {
@@ -42,6 +46,10 @@
     --frame:#1b2a38; --frame-2:#22394b; --spine:rgba(0,0,0,.4);
     --shadow:0 20px 46px -18px rgba(0,0,0,.7); --shadow-sm:0 8px 22px -12px rgba(0,0,0,.6);
     --grain:.3;
+    /* notebook */
+    --cover1:#2f4a63; --cover2:#243a4f; --cover-edge:#1a2c3d; --cover-in:rgba(150,190,225,.22);
+    --paper-a:#212f3c; --paper-b:#1a2632; --paper-tint:rgba(120,170,215,.06);
+    --edge-l:#26384a; --edge-d:#16232f; --binding:rgba(0,0,0,.5); --margin:rgba(210,140,140,.35);
   }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html, body { margin:0; height:100%; }
@@ -74,7 +82,12 @@
   .month-head { position:relative; margin:6px 4px 14px; }
   .month-head .mname { font-family:var(--round); font-size:27px; font-weight:800; letter-spacing:.3px; color:var(--accent-deep); }
   .month-head .myear { font-family:var(--round); font-size:16px; font-weight:700; color:var(--ink-faint); margin-left:8px; }
-  .month-head .doodle { position:absolute; right:6px; top:-2px; font-size:17px; opacity:.9; letter-spacing:3px; }
+  .month-head .doodle { position:absolute; right:2px; top:-6px; display:flex; gap:7px; align-items:center; }
+  .month-head .doodle svg { width:30px; height:30px; }
+  .month-head .doodle .mini svg { width:17px; height:17px; }
+  .doodle svg { stroke:var(--accent); fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; opacity:.92; }
+  .doodle svg .f { fill:var(--accent-soft); }
+  .doodle svg .fs { fill:var(--accent); stroke:none; }
   .dow { display:grid; grid-template-columns:repeat(7,1fr); gap:7px; margin:0 2px 7px; }
   .dow span { text-align:center; font-family:var(--round); font-size:11px; font-weight:700; letter-spacing:.03em;
     text-transform:lowercase; color:var(--accent); }
@@ -123,28 +136,52 @@
   .daynav { display:flex; align-items:center; gap:6px; }
 
   .reader { display:flex; flex-direction:column; align-items:center; }
-  .book-wrap { width:100%; overflow:hidden; padding:16px 0 10px; }
-  .book { position:relative; display:flex; align-items:stretch; margin:0 auto;
+  .book-wrap { width:100%; overflow:hidden; padding:18px 0 12px; }
+  /* .book is the hardcover; it holds the open pages inside its padding (the visible cover border) */
+  .book { position:relative; margin:0 auto; box-sizing:border-box;
+    padding:13px 14px 17px; border-radius:16px;
+    background:linear-gradient(150deg, var(--cover1), var(--cover2));
+    box-shadow:var(--shadow), inset 0 1px 0 var(--cover-in), inset 0 0 24px rgba(0,0,0,.14);
     transition:transform .5s cubic-bezier(.22,.61,.28,1); }
-  .leaf { position:relative; flex:0 0 auto; background:var(--paper); border:1px solid var(--paper-edge);
-    padding:20px 17px; transition:opacity .4s, filter .4s; }
-  .leaf:first-child { border-radius:12px 4px 4px 12px; box-shadow:-10px 14px 34px -20px rgba(50,90,130,.55); }
-  .leaf:last-child { border-radius:4px 12px 12px 4px; box-shadow:10px 14px 34px -20px rgba(50,90,130,.55); }
-  .leaf.dim { opacity:.5; filter:saturate(.8); }
-  .leaf::after { content:""; position:absolute; inset:0; pointer-events:none; opacity:calc(var(--grain)*.045); border-radius:inherit;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
-  .spine { flex:0 0 auto; width:16px; align-self:stretch; border-radius:2px;
-    background:linear-gradient(90deg, var(--spine), rgba(0,0,0,0) 45%, rgba(0,0,0,0) 55%, var(--spine)); }
-  .window { position:relative; overflow:hidden; border-radius:3px;
+  .book::after { /* endpaper keyline just inside the cover */
+    content:""; position:absolute; inset:6px; border-radius:11px; pointer-events:none;
+    border:1px solid var(--cover-in); opacity:.6; }
+  .pages { position:relative; display:flex; align-items:stretch; border-radius:7px;
+    background:linear-gradient(180deg, var(--paper-a), var(--paper-b));
+    box-shadow:
+      0 2px 0 -0.5px var(--edge-l), 0 4px 0 -1px var(--edge-d), 0 6px 0 -1.5px var(--edge-l), 0 8px 10px -4px var(--binding),
+      -4px 3px 0 -2px var(--edge-l), 4px 3px 0 -2px var(--edge-l); }
+  .pages::before, .pages::after { /* stacked page edges on the fore-edges */
+    content:""; position:absolute; top:5px; bottom:-2px; width:7px; pointer-events:none;
+    background:repeating-linear-gradient(to bottom, var(--edge-d) 0 1px, var(--edge-l) 1px 3.5px); }
+  .pages::before { left:-6px; border-radius:4px 0 0 4px; box-shadow:-1px 1px 2px rgba(0,0,0,.06); }
+  .pages::after  { right:-6px; border-radius:0 4px 4px 0; box-shadow:1px 1px 2px rgba(0,0,0,.06); }
+  .leaf { position:relative; flex:0 0 auto; padding:18px 16px; transition:opacity .4s, filter .4s; overflow:hidden; }
+  .leaf:first-child { border-radius:7px 0 0 7px; }
+  .leaf:last-child  { border-radius:0 7px 7px 0; }
+  .leaf::before { /* page tint + soft gutter shading */
+    content:""; position:absolute; inset:0; pointer-events:none; }
+  .leaf:first-child::before { background:linear-gradient(90deg, rgba(255,255,255,.28), transparent 22%, transparent 78%, var(--binding)); }
+  .leaf:last-child::before  { background:linear-gradient(270deg, rgba(255,255,255,.28), transparent 22%, transparent 78%, var(--binding)); }
+  .leaf.dim { opacity:.62; }
+  .gutter { position:absolute; top:0; bottom:0; left:50%; width:26px; transform:translateX(-50%); pointer-events:none; z-index:3;
+    background:linear-gradient(90deg, transparent, var(--binding) 42%, rgba(0,0,0,.06) 50%, var(--binding) 58%, transparent);
+    border-radius:2px; }
+  .gutter::after { content:""; position:absolute; left:50%; top:0; bottom:0; width:1px; transform:translateX(-50%); background:rgba(255,255,255,.16); }
+  .window { position:relative; overflow:hidden; border-radius:2px;
     background-image:repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--lh) - 1px), var(--paper-line) calc(var(--lh) - 1px), var(--paper-line) var(--lh)); }
+  .window::before { /* red/pink margin rule, like a real notebook */
+    content:""; position:absolute; top:0; bottom:0; left:2px; width:1.5px; background:var(--margin); opacity:.6; z-index:2; }
+  .leaf:last-child .window::before { left:auto; right:2px; }
   .sheet, .static { position:absolute; top:0; left:0; width:100%; margin:0; border:0; outline:none; resize:none; background:transparent;
-    font-family:var(--serif); font-size:17px; line-height:var(--lh); color:var(--ink); padding:0;
+    font-family:var(--serif); font-size:17px; line-height:var(--lh); color:var(--ink); padding:0 0 0 14px;
     white-space:pre-wrap; overflow-wrap:break-word; overflow:hidden; will-change:transform; }
+  .leaf:last-child .sheet, .leaf:last-child .static { padding:0 14px 0 0; }
   .sheet::placeholder { color:var(--ink-ghost); font-style:italic; opacity:1; }
   .static { pointer-events:none; }
-  .pnum { position:absolute; bottom:6px; font-family:var(--serif); font-style:italic; font-size:12px; color:var(--ink-faint); }
-  .leaf:first-child .pnum { left:18px; } .leaf:last-child .pnum { right:18px; }
-  .page-date { position:absolute; top:10px; left:0; right:0; text-align:center; z-index:2; pointer-events:none; }
+  .pnum { position:absolute; bottom:7px; font-family:var(--serif); font-style:italic; font-size:12px; color:var(--ink-faint); z-index:2; }
+  .leaf:first-child .pnum { left:16px; } .leaf:last-child .pnum { right:16px; }
+  .page-date { position:absolute; top:9px; left:0; right:0; text-align:center; z-index:4; pointer-events:none; }
   .page-date .wd { font-family:var(--serif); font-style:italic; font-size:12.5px; color:var(--accent); }
   .page-date .bg { font-family:var(--round); font-size:16px; font-weight:800; color:var(--ink-soft); }
 
@@ -232,7 +269,21 @@
   var MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
   var MON3=MONTHS.map(function(m){return m.slice(0,3);});
   var WD=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  var DOODLES=['✦ ⋆','☁︎ ✦','⋆ ☾','✿ ✦','☕︎ ⋆','✦ ⋆','☾ ✦','⋆ ✿','✦ ☁︎','⋆ ✦','☾ ⋆','✦ ✿'];
+  // hand-drawn line doodles (inherit accent colour); one themed doodle + a little sparkle per month
+  var DOODLE_SVGS=[
+    /*0 sun*/     '<circle cx="13" cy="13" r="4.6"/><path d="M13 3.2v3.2M13 19.6v3.2M3.2 13h3.2M19.6 13h3.2M6 6l2.1 2.1M17.9 17.9l2.1 2.1M20 6l-2.1 2.1M6 20l2.1-2.1"/>',
+    /*1 cloud*/   '<path d="M6.5 17.5 A4 4 0 0 1 7 9.6 A5.6 5.6 0 0 1 17.4 9.8 A3.7 3.7 0 0 1 18 17.5 Z"/>',
+    /*2 moon*/    '<path d="M17.5 5.5 A8.4 8.4 0 1 0 17.5 20.5 A6.6 6.6 0 1 1 17.5 5.5 Z"/><circle class="fs" cx="7.5" cy="7" r="1"/>',
+    /*3 heart*/   '<path d="M13 21 C4.2 15.2 5.2 7.6 9.6 7.6 C11.7 7.6 13 9.7 13 9.7 C13 9.7 14.3 7.6 16.4 7.6 C20.8 7.6 21.8 15.2 13 21 Z"/>',
+    /*4 daisy*/   '<circle cx="13" cy="6.6" r="2.5"/><circle cx="19" cy="11.1" r="2.5"/><circle cx="16.7" cy="18.2" r="2.5"/><circle cx="9.3" cy="18.2" r="2.5"/><circle cx="7" cy="11.1" r="2.5"/><circle class="fs" cx="13" cy="13" r="2.1"/>',
+    /*5 teacup*/  '<path d="M6 11.5h11v3.5a4 4 0 0 1-4 4h-3a4 4 0 0 1-4-4z"/><path d="M17 12.4a2.8 2.8 0 0 1 0 5"/><path d="M4.5 21h13"/><path d="M9 8.6q1.1-1.5 0-3M13 8.6q1.1-1.5 0-3"/>',
+    /*6 sprig*/   '<path d="M13 22c0-8 0-13 0-17"/><path d="M13 10.5c-4-1-6 1-6 1s2 2 6 1Z" class="f"/><path d="M13 14.5c4-1 6 1 6 1s-2 2-6 1Z" class="f"/>',
+    /*7 rainbow*/ '<path d="M4 18.5a9 9 0 0 1 18 0"/><path d="M7 18.5a6 6 0 0 1 12 0"/><path d="M10 18.5a3 3 0 0 1 6 0"/>',
+    /*8 star*/    '<path class="f" d="M13 3.4c.8 6.3 3.3 8.8 9.6 9.6-6.3.8-8.8 3.3-9.6 9.6-.8-6.3-3.3-8.8-9.6-9.6 6.3-.8 8.8-3.3 9.6-9.6Z"/>'
+  ];
+  var MONTH_DOODLE=[8,1,7,4,6,0,0,5,6,3,2,8]; // Jan..Dec
+  function sparkle(){ return '<span class="mini"><svg viewBox="0 0 26 26"><path class="fs" d="M13 5c.5 4.4 2.6 6.5 7 7-4.4.5-6.5 2.6-7 7-.5-4.4-2.6-6.5-7-7 4.4-.5 6.5-2.6 7-7Z"/></svg></span>'; }
+  function doodleFor(m){ return '<span class="doodle"><svg viewBox="0 0 26 26">'+DOODLE_SVGS[MONTH_DOODLE[m%12]]+'</svg>'+sparkle()+'</span>'; }
   function pad(n){return (n<10?'0':'')+n;}
   function iso(y,m,d){return y+'-'+pad(m+1)+'-'+pad(d);}
   function isoDate(dt){return iso(dt.getFullYear(),dt.getMonth(),dt.getDate());}
@@ -298,9 +349,8 @@
       var tick = showTick ? '<span class="tick'+(has?' on':'')+'"><svg viewBox="0 0 12 12"><path d="M2.5 6.3 L5 8.6 L9.5 3.4"/></svg></span>' : '';
       cells+='<div class="'+cls+'" data-k="'+k+'"><span class="n">'+d+'</span>'+tick+'</div>';
     }
-    var doodle=DOODLES[m%DOODLES.length];
     return '<div class="month-block" data-ym="'+y+'-'+m+'"'+((y===new Date().getFullYear()&&m===new Date().getMonth())?' data-current="1"':'')+'>'+
-      '<div class="month-head"><span class="mname">'+MONTHS[m]+'</span><span class="myear">'+y+'</span><span class="doodle">'+doodle+'</span></div>'+
+      '<div class="month-head"><span class="mname">'+MONTHS[m]+'</span><span class="myear">'+y+'</span>'+doodleFor(m)+'</div>'+
       '<div class="dow">'+dowRow+'</div><div class="grid">'+cells+'</div></div>';
   }
   function renderCalendar(){
@@ -344,7 +394,7 @@
   }
 
   // ------------------------------------------------------------ notebook (open book)
-  var sheetEl, staticEl, winL, winR, leafL, leafR, bookEl, bookWrap, pageH, leafW, spineW=16;
+  var sheetEl, staticEl, winL, winR, leafL, leafR, bookEl, bookWrap, pageH, leafW, coverPadX=14;
   function openEntry(s){ st.view='entry'; st.date=s; st.page=0; st.focusMode=false; render(); }
   function shiftDay(delta){ var dt=parseIso(st.date); dt.setDate(dt.getDate()+delta); openEntry(isoDate(dt)); }
 
@@ -360,11 +410,11 @@
         '<button class="icobtn" id="entryMenu" style="margin-left:8px">⋯</button>'+
       '</div>'+
       '<div class="reader">'+
-        '<div class="book-wrap" id="bookWrap"><div class="book" id="book">'+
+        '<div class="book-wrap" id="bookWrap"><div class="book" id="book"><div class="pages" id="pages">'+
           '<div class="leaf" id="leafL"><div class="page-date" id="pdL"></div><div class="window" id="winL"></div><div class="pnum" id="pnumL"></div></div>'+
-          '<div class="spine"></div>'+
           '<div class="leaf" id="leafR"><div class="page-date" id="pdR"></div><div class="window" id="winR"></div><div class="pnum" id="pnumR"></div></div>'+
-        '</div></div>'+
+          '<div class="gutter"></div>'+
+        '</div></div></div>'+
         '<div class="book-foot"><span class="pageno" id="pageno">Page 1</span><span class="spacer"></span>'+
           '<button class="chip" id="modeToggle" style="margin-right:8px">✎ Write</button>'+
           '<button class="flip" id="flipPrev">‹</button><button class="flip" id="flipNext">›</button></div>'+
@@ -414,9 +464,9 @@
   function layoutBook(){
     pageH=getLH()*getLPP();
     var VW=bookWrap.clientWidth||360;
-    leafW=Math.min(Math.round(VW*0.86), 460);
+    leafW=Math.min(Math.round((VW-coverPadX*2)*0.84), 440);
     leafL.style.width=leafR.style.width=leafW+'px';
-    bookEl.style.width=(leafW*2+spineW)+'px';
+    bookEl.style.width=(leafW*2+coverPadX*2)+'px';
     winL.style.height=winR.style.height=pageH+'px';
     // date header shows on the spread; give windows top room for it
     winL.style.marginTop=winR.style.marginTop='30px';
@@ -457,11 +507,11 @@
   }
   function applyView(){
     var VW=bookWrap.clientWidth||360;
-    var bookW=leafW*2+spineW;
-    var focusScale=Math.min(1.22, (0.92*VW)/leafW);
-    var fitScale=Math.min(1, (VW-10)/bookW);
+    var bookW=leafW*2+coverPadX*2;
+    var focusScale=Math.min(1.18, (0.94*VW)/leafW);
+    var fitScale=Math.min(1, (VW-8)/bookW);
     var sc, tx;
-    if(st.focusMode){ sc=focusScale; var ax=(st.page%2===0)?0:(leafW+spineW); tx=VW/2-(ax+leafW/2)*sc; }
+    if(st.focusMode){ sc=focusScale; var ax=coverPadX+((st.page%2===0)?0:leafW); tx=VW/2-(ax+leafW/2)*sc; }
     else { sc=fitScale; tx=(VW-bookW*sc)/2; }
     var lh=leafL.offsetHeight||500; var H=lh*focusScale+6; var ty=Math.max(0,(H-lh*sc)/2);
     bookEl.style.transformOrigin='0 0';
