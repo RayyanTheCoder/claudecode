@@ -1,6 +1,6 @@
 /* Pocket service worker — cache-first, precaches the app shell for full offline use.
    Bump CACHE on every deploy so clients pick up the new version. */
-const CACHE = "pocket-v3";
+const CACHE = "pocket-v4";
 const ASSETS = [
   "./",
   "./index.html",
