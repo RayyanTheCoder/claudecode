@@ -34,6 +34,9 @@
     --cover1:#9cc6ea; --cover2:#7db0dd; --cover-edge:#6ba0d0; --cover-in:rgba(255,255,255,.5);
     --paper-a:#fdfeff; --paper-b:#eef5fd; --paper-tint:rgba(120,170,215,.10);
     --edge-l:#e9f2fb; --edge-d:#cadff0; --binding:rgba(55,95,140,.34); --margin:rgba(228,150,150,.5);
+    --stitch:rgba(255,255,255,.6); --cover-corner:#6ea6d6; --cover-corner2:#5b95c8;
+    --elastic:rgba(48,70,98,.5); --ribbon:#ef9080; --ribbon-l:#f8b6a8; --ribbon-d:#d5715f;
+    --decor:rgba(90,169,220,.5);
   }
   /* ---------- Night (blue-tinted dark) ---------- */
   html[data-theme="dark"] {
@@ -50,6 +53,9 @@
     --cover1:#2f4a63; --cover2:#243a4f; --cover-edge:#1a2c3d; --cover-in:rgba(150,190,225,.22);
     --paper-a:#212f3c; --paper-b:#1a2632; --paper-tint:rgba(120,170,215,.06);
     --edge-l:#26384a; --edge-d:#16232f; --binding:rgba(0,0,0,.5); --margin:rgba(210,140,140,.35);
+    --stitch:rgba(160,195,225,.3); --cover-corner:#1c2f41; --cover-corner2:#152433;
+    --elastic:rgba(8,15,22,.6); --ribbon:#d98576; --ribbon-l:#e8a99b; --ribbon-d:#b5624f;
+    --decor:rgba(120,170,215,.34);
   }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html, body { margin:0; height:100%; }
@@ -88,6 +94,13 @@
   .doodle svg { stroke:var(--accent); fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; opacity:.92; }
   .doodle svg .f { fill:var(--accent-soft); }
   .doodle svg .fs { fill:var(--accent); stroke:none; }
+  .cal-scene { display:flex; justify-content:center; align-items:center; margin:0 4px 10px; }
+  .cal-scene svg.scene { width:min(280px,74%); height:auto; }
+  .scene .star { fill:var(--accent); stroke:none; opacity:.85; }
+  .scene .dot { fill:var(--accent); opacity:.55; }
+  .scene .moon { fill:var(--accent-soft); stroke:var(--accent-line); stroke-width:1.4; }
+  .scene .cat { fill:none; stroke:var(--accent-deep); stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+  .scene .catf { fill:var(--accent-deep); stroke:none; }
   .dow { display:grid; grid-template-columns:repeat(7,1fr); gap:7px; margin:0 2px 7px; }
   .dow span { text-align:center; font-family:var(--round); font-size:11px; font-weight:700; letter-spacing:.03em;
     text-transform:lowercase; color:var(--accent); }
@@ -143,19 +156,44 @@
     background:linear-gradient(150deg, var(--cover1), var(--cover2));
     box-shadow:var(--shadow), inset 0 1px 0 var(--cover-in), inset 0 0 24px rgba(0,0,0,.14);
     transition:transform .5s cubic-bezier(.22,.61,.28,1); }
-  .book::after { /* endpaper keyline just inside the cover */
-    content:""; position:absolute; inset:6px; border-radius:11px; pointer-events:none;
-    border:1px solid var(--cover-in); opacity:.6; }
-  .pages { position:relative; display:flex; align-items:stretch; border-radius:7px;
+  .book::after { /* stitched thread just inside the cover edge */
+    content:""; position:absolute; inset:7px; border-radius:11px; pointer-events:none;
+    border:1.5px dashed var(--stitch); opacity:.7; }
+  .book .cover-tex { position:absolute; inset:0; border-radius:16px; pointer-events:none; overflow:hidden; z-index:1;
+    background:linear-gradient(118deg, rgba(255,255,255,.20), transparent 26%, transparent 72%, rgba(0,0,0,.12)); }
+  .book .cover-tex::before { content:""; position:absolute; inset:0; opacity:.5; mix-blend-mode:soft-light;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='c'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23c)'/%3E%3C/svg%3E"); background-size:150px; }
+  .book .corner { position:absolute; width:30px; height:30px; z-index:4; pointer-events:none;
+    background:linear-gradient(135deg, var(--cover-corner), var(--cover-corner2)); box-shadow:inset 0 0 4px rgba(0,0,0,.25); }
+  .corner.tl { top:0; left:0; border-radius:16px 0 0 0; clip-path:polygon(0 0,100% 0,0 100%); }
+  .corner.tr { top:0; right:0; border-radius:0 16px 0 0; clip-path:polygon(0 0,100% 0,100% 100%); }
+  .corner.bl { bottom:0; left:0; border-radius:0 0 0 16px; clip-path:polygon(0 0,0 100%,100% 100%); }
+  .corner.br { bottom:0; right:0; border-radius:0 0 16px 0; clip-path:polygon(100% 0,100% 100%,0 100%); }
+  .book .elastic { position:absolute; top:-2px; bottom:-2px; right:5px; width:11px; z-index:5; pointer-events:none; border-radius:3px;
+    background:linear-gradient(90deg, rgba(0,0,0,.25), var(--elastic) 35%, var(--elastic) 65%, rgba(0,0,0,.25));
+    box-shadow:0 0 5px rgba(0,0,0,.28), inset 0 0 3px rgba(255,255,255,.14); }
+  .book .ribbon { position:absolute; top:1px; left:calc(50% - 5px); width:11px; height:calc(100% + 14px); z-index:7; pointer-events:none;
+    background:linear-gradient(90deg, var(--ribbon-d), var(--ribbon) 42%, var(--ribbon-l) 56%, var(--ribbon-d));
+    box-shadow:0 2px 4px rgba(0,0,0,.28); }
+  .book .ribbon::after { content:""; position:absolute; left:0; right:0; bottom:-9px; height:12px;
+    background:linear-gradient(90deg, var(--ribbon-d), var(--ribbon) 42%, var(--ribbon-l) 56%, var(--ribbon-d));
+    clip-path:polygon(0 0,100% 0,100% 100%,50% 55%,0 100%); }
+  .pages { position:relative; display:flex; align-items:stretch; border-radius:7px; z-index:2;
     background:linear-gradient(180deg, var(--paper-a), var(--paper-b));
     box-shadow:
-      0 2px 0 -0.5px var(--edge-l), 0 4px 0 -1px var(--edge-d), 0 6px 0 -1.5px var(--edge-l), 0 8px 10px -4px var(--binding),
-      -4px 3px 0 -2px var(--edge-l), 4px 3px 0 -2px var(--edge-l); }
+      0 2px 0 -0.5px var(--edge-l), 0 4px 0 -1px var(--edge-d), 0 6px 0 -1.5px var(--edge-l),
+      0 8px 0 -2px var(--edge-d), 0 10px 0 -2.5px var(--edge-l), 0 13px 14px -5px var(--binding),
+      -5px 4px 0 -3px var(--edge-l), 5px 4px 0 -3px var(--edge-l),
+      -7px 7px 0 -4px var(--edge-d), 7px 7px 0 -4px var(--edge-d); }
   .pages::before, .pages::after { /* stacked page edges on the fore-edges */
-    content:""; position:absolute; top:5px; bottom:-2px; width:7px; pointer-events:none;
-    background:repeating-linear-gradient(to bottom, var(--edge-d) 0 1px, var(--edge-l) 1px 3.5px); }
-  .pages::before { left:-6px; border-radius:4px 0 0 4px; box-shadow:-1px 1px 2px rgba(0,0,0,.06); }
-  .pages::after  { right:-6px; border-radius:0 4px 4px 0; box-shadow:1px 1px 2px rgba(0,0,0,.06); }
+    content:""; position:absolute; top:4px; bottom:-4px; width:9px; pointer-events:none;
+    background:repeating-linear-gradient(to bottom, var(--edge-d) 0 1px, var(--edge-l) 1px 3px); }
+  .pages::before { left:-8px; border-radius:5px 0 0 5px; box-shadow:inset 2px 0 3px rgba(0,0,0,.05), -1px 1px 2px rgba(0,0,0,.08); }
+  .pages::after  { right:-8px; border-radius:0 5px 5px 0; box-shadow:inset -2px 0 3px rgba(0,0,0,.05), 1px 1px 2px rgba(0,0,0,.08); }
+  .page-decor { position:absolute; z-index:3; pointer-events:none; width:22px; height:22px; opacity:.8; }
+  .page-decor svg { width:100%; height:100%; stroke:var(--decor); fill:none; stroke-width:1.4; stroke-linecap:round; stroke-linejoin:round; }
+  .page-decor svg .f, .page-decor svg .fs { fill:var(--decor); stroke:none; }
+  .page-decor.a { top:9px; left:12px; } .page-decor.b { top:9px; right:12px; }
   .leaf { position:relative; flex:0 0 auto; padding:18px 16px; transition:opacity .4s, filter .4s; overflow:hidden; }
   .leaf:first-child { border-radius:7px 0 0 7px; }
   .leaf:last-child  { border-radius:0 7px 7px 0; }
@@ -174,9 +212,9 @@
     content:""; position:absolute; top:0; bottom:0; left:2px; width:1.5px; background:var(--margin); opacity:.6; z-index:2; }
   .leaf:last-child .window::before { left:auto; right:2px; }
   .sheet, .static { position:absolute; top:0; left:0; width:100%; margin:0; border:0; outline:none; resize:none; background:transparent;
-    font-family:var(--serif); font-size:17px; line-height:var(--lh); color:var(--ink); padding:0 0 0 14px;
+    font-family:var(--serif); font-size:17px; line-height:var(--lh); color:var(--ink); padding:0 20px 0 14px;
     white-space:pre-wrap; overflow-wrap:break-word; overflow:hidden; will-change:transform; }
-  .leaf:last-child .sheet, .leaf:last-child .static { padding:0 14px 0 0; }
+  .leaf:last-child .sheet, .leaf:last-child .static { padding:0 14px 0 20px; }
   .sheet::placeholder { color:var(--ink-ghost); font-style:italic; opacity:1; }
   .static { pointer-events:none; }
   .pnum { position:absolute; bottom:7px; font-family:var(--serif); font-style:italic; font-size:12px; color:var(--ink-faint); z-index:2; }
@@ -284,6 +322,26 @@
   var MONTH_DOODLE=[8,1,7,4,6,0,0,5,6,3,2,8]; // Jan..Dec
   function sparkle(){ return '<span class="mini"><svg viewBox="0 0 26 26"><path class="fs" d="M13 5c.5 4.4 2.6 6.5 7 7-4.4.5-6.5 2.6-7 7-.5-4.4-2.6-6.5-7-7 4.4-.5 6.5-2.6 7-7Z"/></svg></span>'; }
   function doodleFor(m){ return '<span class="doodle"><svg viewBox="0 0 26 26">'+DOODLE_SVGS[MONTH_DOODLE[m%12]]+'</svg>'+sparkle()+'</span>'; }
+  var PAGE_IDX=[8,3,1,2,0]; // star, heart, cloud, moon, sun — the ones that read well tiny
+  function pageDoodle(off){ var dn=st.date?parseIso(st.date).getDate():1; return DOODLE_SVGS[PAGE_IDX[(dn+off)%PAGE_IDX.length]]; }
+  // a little sitting-cat + moon + stars scene for the calendar header
+  var CAT_SCENE='<svg viewBox="0 0 120 48" class="scene">'+
+    '<path class="star" d="M13 12c.4 3 1.6 4.2 4.6 4.6-3 .4-4.2 1.6-4.6 4.6-.4-3-1.6-4.2-4.6-4.6 3-.4 4.2-1.6 4.6-4.6Z"/>'+
+    '<path class="star" d="M112 30c.3 2.2 1.2 3.1 3.4 3.4-2.2.3-3.1 1.2-3.4 3.4-.3-2.2-1.2-3.1-3.4-3.4 2.2-.3 3.1-1.2 3.4-3.4Z"/>'+
+    '<circle class="dot" cx="60" cy="9" r="1"/><circle class="dot" cx="97" cy="8" r="1.1"/><circle class="dot" cx="72" cy="14" r="1"/>'+
+    '<path class="moon" d="M100 14a14 14 0 1 0 0 24 11.5 11.5 0 1 1 0-24Z"/>'+
+    // sitting cat (left)
+    '<path class="cat" d="M33 15l-2.4-6 6.2 3.8"/>'+                 // left ear
+    '<path class="cat" d="M47 15l2.4-6-6.2 3.8"/>'+                 // right ear
+    '<path class="cat" d="M31.8 14a9 9 0 0 1 16.4 0"/>'+           // top of head
+    '<path class="cat" d="M31 21a9 9 0 0 0 18 0"/>'+               // chin
+    '<path class="cat" d="M32 22c-3.4 3-5 8-3.8 14 .8 3.8 22 3.8 22.8 0 1.2-6-.4-11-3.8-14"/>'+ // body
+    '<path class="cat" d="M50.5 38c4.5 1.4 6.4-2.6 4.6-6"/>'+       // curled tail
+    '<path class="catf" d="M37 20a1.1 1.1 0 1 0 .01 0"/><path class="catf" d="M43 20a1.1 1.1 0 1 0 .01 0"/>'+ // eyes
+    '<path class="cat" d="M40 22.4l-1.2 1.4h2.4Z" fill="none"/>'+   // nose
+    '<path class="cat" d="M40 23.8v1.4M36.8 24.6c1 .8 2.4.6 3.2-.4M43.2 24.6c-1 .8-2.4.6-3.2-.4"/>'+ // mouth
+    '<path class="cat" d="M30 22.5l-6-1.2M30 24.5l-6 .6M50 22.5l6-1.2M50 24.5l6 .6"/>'+ // whiskers
+    '</svg>';
   function pad(n){return (n<10?'0':'')+n;}
   function iso(y,m,d){return y+'-'+pad(m+1)+'-'+pad(d);}
   function isoDate(dt){return iso(dt.getFullYear(),dt.getMonth(),dt.getDate());}
@@ -359,6 +417,7 @@
     app.innerHTML=
       '<div class="cal-top"><a class="link" id="importLink">＋ Import past journals</a>'+
         '<button class="chip today-btn" id="jumpToday">Today</button></div>'+
+      '<div class="cal-scene">'+CAT_SCENE+'</div>'+
       '<div class="cal-scroll" id="calScroll">'+months.map(function(o){return monthHTML(o.y,o.m);}).join('')+'</div>';
     var scroll=document.getElementById('calScroll');
     // size scroll area to fill viewport
@@ -410,11 +469,16 @@
         '<button class="icobtn" id="entryMenu" style="margin-left:8px">⋯</button>'+
       '</div>'+
       '<div class="reader">'+
-        '<div class="book-wrap" id="bookWrap"><div class="book" id="book"><div class="pages" id="pages">'+
-          '<div class="leaf" id="leafL"><div class="page-date" id="pdL"></div><div class="window" id="winL"></div><div class="pnum" id="pnumL"></div></div>'+
-          '<div class="leaf" id="leafR"><div class="page-date" id="pdR"></div><div class="window" id="winR"></div><div class="pnum" id="pnumR"></div></div>'+
-          '<div class="gutter"></div>'+
-        '</div></div></div>'+
+        '<div class="book-wrap" id="bookWrap"><div class="book" id="book">'+
+          '<div class="cover-tex"></div>'+
+          '<span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>'+
+          '<div class="pages" id="pages">'+
+            '<div class="leaf" id="leafL"><span class="page-decor a"><svg viewBox="0 0 26 26">'+pageDoodle(0)+'</svg></span><div class="page-date" id="pdL"></div><div class="window" id="winL"></div><div class="pnum" id="pnumL"></div></div>'+
+            '<div class="leaf" id="leafR"><span class="page-decor b"><svg viewBox="0 0 26 26">'+pageDoodle(5)+'</svg></span><div class="page-date" id="pdR"></div><div class="window" id="winR"></div><div class="pnum" id="pnumR"></div></div>'+
+            '<div class="gutter"></div>'+
+          '</div>'+
+          '<div class="elastic"></div><div class="ribbon"></div>'+
+        '</div></div>'+
         '<div class="book-foot"><span class="pageno" id="pageno">Page 1</span><span class="spacer"></span>'+
           '<button class="chip" id="modeToggle" style="margin-right:8px">✎ Write</button>'+
           '<button class="flip" id="flipPrev">‹</button><button class="flip" id="flipNext">›</button></div>'+
@@ -434,7 +498,6 @@
     sheetEl.addEventListener('input', onInput);
     sheetEl.addEventListener('keyup', maybeFollow);
     sheetEl.addEventListener('click', maybeFollow);
-    sheetEl.addEventListener('focus', maybeFollow);
 
     document.getElementById('backCal').onclick=function(){ saveNow(); st.view=(store.settings.view==='list'?'list':'calendar'); render(); };
     document.getElementById('prevDay').onclick=function(){ saveNow(); shiftDay(-1); };
@@ -478,6 +541,7 @@
   function pageCount(){ return Math.max(1, Math.ceil((st.contentH||pageH)/pageH)); }
 
   function layoutSpread(){
+    if(st._laying) return; st._laying=true;
     var pages=pageCount();
     if(st.page>pages-1) st.page=Math.max(0,pages-1);
     var spread=Math.floor(st.page/2), leftIdx=spread*2, rightIdx=leftIdx+1;
@@ -503,6 +567,7 @@
     applyView();
     // restore caret/focus
     if(selA[2]){ sheetEl.focus(); try{ sheetEl.setSelectionRange(selA[0],selA[1]); }catch(e){} }
+    st._laying=false;
     updateFoot();
   }
   function applyView(){
@@ -532,7 +597,7 @@
     if(st.focusMode){ setPage(st.page+dir); if(document.activeElement!==sheetEl) sheetEl.focus(); }
     else { var t=Math.min(pages-1, Math.max(0,(spread+dir)*2)); setPage(t); }
   }
-  function enterFocus(){ st.focusMode=true; layoutSpread(); sheetEl.focus(); }
+  function enterFocus(){ st.focusMode=true; sheetEl.focus(); var p=caretPageIndex(); st.page=p; layoutSpread(); }
   function exitFocus(){ st.focusMode=false; try{ sheetEl.blur(); }catch(e){} layoutSpread(); }
   function onBookTap(e){ if(st.focusMode) return; if(e && e.target && e.target.closest('.book-foot')) return; enterFocus(); }
   function updateFoot(){
@@ -560,9 +625,10 @@
   function caretTop(){
     if(!mirror){ mirror=document.createElement('div'); document.body.appendChild(mirror); }
     var cs=getComputedStyle(sheetEl);
-    mirror.style.cssText='position:absolute;visibility:hidden;left:-9999px;top:0;white-space:pre-wrap;overflow-wrap:break-word;box-sizing:border-box;'+
+    var contentW=sheetEl.clientWidth-parseFloat(cs.paddingLeft||0)-parseFloat(cs.paddingRight||0);
+    mirror.style.cssText='position:absolute;visibility:hidden;left:-9999px;top:0;white-space:pre-wrap;overflow-wrap:break-word;box-sizing:content-box;'+
       'font-family:'+cs.fontFamily+';font-size:'+cs.fontSize+';font-weight:'+cs.fontWeight+';line-height:'+cs.lineHeight+';letter-spacing:'+cs.letterSpacing+';'+
-      'padding:0;width:'+sheetEl.clientWidth+'px;';
+      'padding:0;width:'+contentW+'px;';
     mirror.textContent=sheetEl.value.slice(0, sheetEl.selectionEnd);
     var span=document.createElement('span'); span.textContent='​'; mirror.appendChild(span);
     return span.offsetTop;
