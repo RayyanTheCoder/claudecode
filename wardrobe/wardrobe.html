@@ -2848,7 +2848,6 @@ function renderWardrobe() {
       <button class="btn sm" onclick="bulkAction('formality')" ${selected.size ? "" : "disabled"}>Formality</button>
       <button class="btn sm" onclick="bulkAction('weight')" ${selected.size ? "" : "disabled"}>Weight</button>
       <button class="btn sm" onclick="bulkAction('colorFamily')" ${selected.size ? "" : "disabled"}>Colour</button>
-      <button class="btn sm" onclick="bulkAction('maxWeeklyRepeats')" ${selected.size ? "" : "disabled"}>Repeat limit</button>
       <button class="btn sm danger" onclick="bulkAction('delete')" ${selected.size ? "" : "disabled"}>Delete</button>
       <button class="btn sm ghost" onclick="exitSelect()">Done</button>
     </div>` : "";
@@ -3086,11 +3085,6 @@ function garmentAttrFieldsHTML(g) {
       <div class="field grow">
         <label>Visibility</label>
         <select name="visibility">${["high", "medium", "low"].map(v => opt(v, cap(v), g.visibility || (rules.planner.defaultVisibility[g.category] || "high"))).join("")}</select>
-      </div>
-      <div class="field grow">
-        <label>Max times per week</label>
-        <input type="number" name="maxWeeklyRepeats" min="1" max="14" step="1" value="${g.maxWeeklyRepeats != null ? g.maxWeeklyRepeats : ""}" placeholder="category default" />
-        <div class="tiny muted" style="margin-top:4px;">Leave blank to use the category default.</div>
       </div>
     </div>`;
 }
@@ -3472,26 +3466,12 @@ function wizSummary() {
     ? `<button class="btn ghost danger" style="margin-top:8px; width:100%;" onclick="wizDeleteGarment()">Delete garment</button>`
     : wizardState.mode === "edit-wishlist"
     ? `<button class="btn ghost danger" style="margin-top:8px; width:100%;" onclick="wizRemoveWishlist()">Remove from wishlist</button>` : "";
-  // per-garment planner repeat limit — surfaced here (not hidden under "More detail") so it's easy to find
-  const catDefault = (rules.planner.maxWeeklyRepeats || {})[d.category];
-  const repeatCard = isWishlistMode() ? "" : `
-    <div class="card" style="padding:12px 14px; margin-top:14px;">
-      <div class="row" style="justify-content:space-between; align-items:center; gap:12px;">
-        <div style="min-width:0;">
-          <div style="font-weight:600;">↺ Max times per week</div>
-          <div class="tiny muted">How often the planner may reuse this piece. Blank = ${CATEGORY_LBL[d.category] || "category"} default (${catDefault != null ? catDefault : 2}×).</div>
-        </div>
-        <input type="number" min="1" max="14" value="${d.maxWeeklyRepeats != null ? d.maxWeeklyRepeats : ""}" oninput="wizSecondaryText('maxWeeklyRepeats',this.value)" placeholder="default" style="width:92px; text-align:center; flex:none;">
-      </div>
-    </div>`;
-
   return `
     <div class="wiz-q">${title}</div><div class="wiz-sub">Tap anything to change it.</div>
     ${projection}
     <div class="row wrap stagger" style="gap:8px;">
       ${chips.map(([sid, label], i) => `<button class="chip btn-chip" style="animation-delay:${i * 40}ms" onclick="wizGoto('${sid}')">${esc(label)}</button>`).join("")}
     </div>
-    ${repeatCard}
     ${detail}
     <button class="btn primary" style="margin-top:18px; width:100%; min-height:52px;" onclick="wizConfirm()">${confirmLabel}</button>
     ${secondary}`;
@@ -4882,6 +4862,23 @@ window.openPlannerSettings = function () {
   const horizonSeg = `<div class="seg sm">${[1, 2, 3, 4].map(n =>
     `<button class="seg-btn ${s.horizon === n ? "on" : ""}" onclick="plSetDefHorizon(${n})">${n}</button>`).join("")}</div>`;
 
+  // per-item overrides — set a specific garment's weekly cap here in the planner (not on its edit screen)
+  const capped = getGarments().filter(g => g.maxWeeklyRepeats != null)
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const uncapped = getGarments().filter(g => g.maxWeeklyRepeats == null)
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const itemRows = capped.length ? capped.map(g => `<div class="pl-set-row">
+      <div class="grow" style="min-width:0;"><div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(g.name || "Untitled")}</div><div class="tiny muted">${CATEGORY_LBL[g.category] || g.category}${g.subcategory ? " · " + esc(g.subcategory) : ""}</div></div>
+      <div class="pl-stepper"><button class="btn sm" onclick="plSetItem('${g.id}',-1)">−</button><b>${g.maxWeeklyRepeats}</b><button class="btn sm" onclick="plSetItem('${g.id}',1)">+</button></div>
+      <button class="btn sm ghost" onclick="plClearItem('${g.id}')" title="Remove this item's limit" style="margin-left:6px;">✕</button>
+    </div>`).join("") : `<div class="tiny muted">No per-item limits yet.</div>`;
+  const addItem = uncapped.length ? `<div style="margin-top:8px;">
+      <select class="pl-add-item" style="width:100%;" onchange="plAddItem(this.value); this.value='';">
+        <option value="">＋ Give a specific item its own limit…</option>
+        ${uncapped.map(g => `<option value="${g.id}">${esc(g.name || "Untitled")}${g.subcategory ? " · " + esc(g.subcategory) : ""}</option>`).join("")}
+      </select>
+    </div>` : (capped.length ? "" : `<div class="tiny muted" style="margin-top:6px;">Add garments to your wardrobe to set per-item limits.</div>`);
+
   const el = document.createElement("div");
   el.className = "overlay"; el.id = "plset-overlay";
   el.innerHTML = `<div class="sheet" style="max-height:88vh; overflow:auto;">
@@ -4891,6 +4888,11 @@ window.openPlannerSettings = function () {
     <div class="sectitle" style="margin:14px 0 6px;">Max weekly appearances per category</div>
     <div class="tiny muted" style="margin-bottom:6px;">Some categories tolerate more repetition — a base under a hoodie is barely seen; a distinctive shoe is noticed.</div>
     ${["base", "mid", "outer", "bottom", "shoe"].map(catRow).join("")}
+
+    <div class="sectitle" style="margin:16px 0 6px;">Per-item weekly limits</div>
+    <div class="tiny muted" style="margin-bottom:6px;">Cap a specific piece harder than its category default above — e.g. a signature jacket only once a week.</div>
+    ${itemRows}
+    ${addItem}
 
     <div class="sectitle" style="margin:16px 0 6px;">Combination overlap</div>
     ${numRow("Max shared garments between two days", "overlapThreshold", s.overlapThreshold, 0, 4, "Two days that differ only by a shoe (share 3) read as the same outfit.")}
@@ -4917,6 +4919,10 @@ window.closePlannerSettings = function () { const o = document.getElementById("p
 function plSave() { saveToStorage(); }
 function plReopen() { closePlannerSettings(); openPlannerSettings(); }
 window.plSetCat = function (c, d) { const s = plannerSettings(); s.maxWeeklyRepeats[c] = Math.min(14, Math.max(1, s.maxWeeklyRepeats[c] + d)); plSave(); haptic(6); plReopen(); };
+// per-item weekly cap, managed here in the planner (updateGarment persists it on the garment)
+window.plAddItem = function (id) { if (!id) return; updateGarment(id, { maxWeeklyRepeats: 2 }); haptic(8); plReopen(); };
+window.plSetItem = function (id, d) { const g = getGarment(id); if (!g) return; const cur = g.maxWeeklyRepeats != null ? g.maxWeeklyRepeats : 2; updateGarment(id, { maxWeeklyRepeats: Math.min(14, Math.max(1, cur + d)) }); haptic(6); plReopen(); };
+window.plClearItem = function (id) { updateGarment(id, { maxWeeklyRepeats: null }); haptic(6); plReopen(); };
 window.plSetNum = function (key, d, min, max) { const s = plannerSettings(); s[key] = Math.min(max, Math.max(min, s[key] + d)); plSave(); haptic(6); plReopen(); };
 window.plSetSpacing = function (v) { plannerSettings().spacing = v; plSave(); haptic(8); plReopen(); };
 window.plToggleLowVis = function () { const s = plannerSettings(); s.lowVisibilityExempt = !s.lowVisibilityExempt; plSave(); haptic(8); plReopen(); };
