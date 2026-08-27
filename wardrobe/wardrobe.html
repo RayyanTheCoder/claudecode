@@ -2101,7 +2101,7 @@ function normalizePlanner(p) {
   if (p && p.weeks && typeof p.weeks === "object") {
     for (const k of Object.keys(p.weeks)) {
       const days = Array.isArray(p.weeks[k] && p.weeks[k].days) ? p.weeks[k].days : [];
-      out.weeks[k] = { days: Array.from({ length: 7 }, (_, i) => {
+      out.weeks[k] = { limits: normalizeWeekLimits(p.weeks[k] && p.weeks[k].limits), days: Array.from({ length: 7 }, (_, i) => {
         const d = days[i] || {};
         return {
           outfit: (d.outfit && Array.isArray(d.outfit.garmentIds)) ? { garmentIds: d.outfit.garmentIds.slice() } : null,
@@ -2114,10 +2114,25 @@ function normalizePlanner(p) {
   }
   return out;
 }
+function normalizeWeekLimits(obj) {
+  const out = {};
+  if (obj && typeof obj === "object") for (const id of Object.keys(obj)) {
+    const v = clampInt(obj[id], 0, 14, null);   // 0 = "don't use this piece this week"
+    if (v != null) out[id] = v;
+  }
+  return out;
+}
 function getWeek(monIso) {
   if (!state.planner.weeks[monIso]) state.planner.weeks[monIso] = emptyWeek();
+  if (!state.planner.weeks[monIso].limits) state.planner.weeks[monIso].limits = {};
   return state.planner.weeks[monIso];
 }
+// Per-week item limits (0..14) the user sets for a specific week / auto-plan block.
+function weekLimits(iso) { return getWeek(iso).limits; }
+// While a plan runs, this holds the anchor week's limits; the enforcement below reads it.
+let activePlanLimits = null;
+// The explicit weekly cap for a garment in the current plan (or null = use category default).
+function planItemLimit(g) { return (activePlanLimits && activePlanLimits[g.id] != null) ? activePlanLimits[g.id] : null; }
 // stored { garmentIds } → { garmentIds, items }; returns null if any garment was since deleted
 function hydrateOutfit(o) {
   if (!o || !Array.isArray(o.garmentIds) || !o.garmentIds.length) return null;
@@ -2127,7 +2142,8 @@ function hydrateOutfit(o) {
 }
 
 function plannerPool() {
-  const { outfits } = generateOutfits(getGarments(), { store: OUTFIT_STORE });
+  const usable = getGarments().filter(g => planItemLimit(g) !== 0);   // 0 = benched for this week's plan
+  const { outfits } = generateOutfits(usable, { store: OUTFIT_STORE });
   return outfits.map(o => ({ o, s: Math.max(0.15, scoreOutfit(o.items)) }));
 }
 function lookKey(o) { return o.garmentIds.slice().sort().join(","); }   // whole-look identity (distinct from outfitKey(ids))
@@ -2182,10 +2198,9 @@ function effectiveVisibility(g, items) {
   if (g.category === "base") return items.some(i => i.category === "mid" || i.category === "outer") ? "low" : "high";
   return g.visibility || "high";
 }
-// How many times this garment may appear across the planned period, adjusted for visibility.
-// A per-garment override (g.maxWeeklyRepeats) wins over the category default entirely.
+// Category default cap for a garment, adjusted for visibility. Used only when the garment
+// has no explicit per-week limit (a per-week limit, set in the planner, wins entirely).
 function effectiveRepeatLimit(g, items, settings) {
-  if (g.maxWeeklyRepeats != null) return Math.max(1, g.maxWeeklyRepeats);
   const base = (settings.maxWeeklyRepeats || {})[g.category];
   const lim = (base == null) ? 2 : base;
   const vis = effectiveVisibility(g, items);
@@ -2248,15 +2263,15 @@ function placeNodes(targetNodes, contextNodes, scored, settings) {
   const topOf = cands => { const b = cands.reduce((a, x) => x.s > a.s ? x : a); return { garmentIds: b.o.garmentIds.slice(), items: b.o.items }; };
   const violates = (o, node, relax) => {
     if (acc.placedLooks.has(lookKey(o))) return true;                              // no outfit repeats across the block
-    if (relax < 3) {                                                               // explicit + subcategory rules
-      for (const g of o.items) if (g.maxWeeklyRepeats != null && (acc.gWeek.get(g.id + "|" + node.weekIso) || 0) + 1 > g.maxWeeklyRepeats) return true;
+    if (relax < 3) {                                                               // per-week limits + subcategory rules
+      for (const g of o.items) { const lim = planItemLimit(g); if (lim != null && (acc.gWeek.get(g.id + "|" + node.weekIso) || 0) + 1 > lim) return true; }
       for (const g of o.items) { const rule = subcatRule(g.subcategory); if (rule && rule.minWeeksApart > 1) { const ws = acc.gWeeks.get(g.id); if (ws) for (const w of ws) if (weeksApart(w, node.weekIso) < rule.minWeeksApart) return true; } }
       const subs = new Set(o.items.map(i => (i.subcategory || "").trim().toLowerCase()));
       for (const sub of subs) { const rule = subcatRule(sub); if (rule && rule.maxPerWeek != null && (acc.subWeek.get(sub + "|" + node.weekIso) || 0) + 1 > rule.maxPerWeek) return true; }
     }
     if (relax < 2) for (const p of acc.placements) if (overlapCount(o.garmentIds, p.garmentIds) > settings.overlapThreshold) return true;
     if (relax < 1) {
-      for (const g of o.items) if (g.maxWeeklyRepeats == null && !subcatRule(g.subcategory) && (acc.gWeek.get(g.id + "|" + node.weekIso) || 0) + 1 > effectiveRepeatLimit(g, o.items, settings)) return true;
+      for (const g of o.items) if (planItemLimit(g) == null && !subcatRule(g.subcategory) && (acc.gWeek.get(g.id + "|" + node.weekIso) || 0) + 1 > effectiveRepeatLimit(g, o.items, settings)) return true;
       if (settings.spacing !== "none") for (const p of acc.placements) if (Math.abs(p.pos - node.pos) === 1 && overlapCount(o.garmentIds, p.garmentIds) > 0) return true;
     }
     return false;
@@ -2298,7 +2313,7 @@ function overLimitCount(nodes) {
     new Set(hy.items.map(i => (i.subcategory || "").trim().toLowerCase())).forEach(sub => { if (sub) subWeek.set(sub + "|" + wk, (subWeek.get(sub + "|" + wk) || 0) + 1); });
   });
   let v = 0;
-  for (const [key, c] of gWeek) { const g = getGarment(key.split("|")[0]); if (g && g.maxWeeklyRepeats != null && c > g.maxWeeklyRepeats) v += c - g.maxWeeklyRepeats; }
+  for (const [key, c] of gWeek) { const g = getGarment(key.split("|")[0]); const lim = g && planItemLimit(g); if (lim != null && c > lim) v += c - lim; }
   for (const [key, c] of subWeek) { const rule = subcatRule(key.split("|")[0]); if (rule && rule.maxPerWeek != null && c > rule.maxPerWeek) v += c - rule.maxPerWeek; }
   for (const [id, ws] of gWeeks) { const g = getGarment(id); const rule = g && subcatRule(g.subcategory); if (rule && rule.minWeeksApart > 1) { const arr = [...ws].sort(); for (let i = 1; i < arr.length; i++) if (weeksApart(arr[i], arr[i - 1]) < rule.minWeeksApart) v++; } }
   return v;
@@ -2323,16 +2338,19 @@ function bestOfPlacements(open, fixed, allNodes, scored, settings) {
 /* Plan a whole block of `weeksCount` weeks in one pass (part 6). Constraints span the
    full period; locked/worn days are kept and seed the constraints. */
 function planHorizon(startMonIso, weeksCount) {
-  const scored = plannerPool();
-  if (!scored.length) return false;
-  const settings = plannerSettings();
-  const nodes = buildActiveNodes(horizonWeeks(startMonIso, weeksCount));
-  if (!nodes.length) return false;
-  const fixed = nodes.filter(n => dayFixed(n.day));
-  const open = nodes.filter(n => !dayFixed(n.day));
-  bestOfPlacements(open, fixed, nodes, scored, settings);
-  saveToStorage();
-  return true;
+  activePlanLimits = weekLimits(startMonIso);   // the block anchor's limits apply across the whole block
+  try {
+    const scored = plannerPool();
+    if (!scored.length) return false;
+    const settings = plannerSettings();
+    const nodes = buildActiveNodes(horizonWeeks(startMonIso, weeksCount));
+    if (!nodes.length) return false;
+    const fixed = nodes.filter(n => dayFixed(n.day));
+    const open = nodes.filter(n => !dayFixed(n.day));
+    bestOfPlacements(open, fixed, nodes, scored, settings);
+    saveToStorage();
+    return true;
+  } finally { activePlanLimits = null; }
 }
 
 /* Maximum-spacing pass (part 3): swap outfits between non-fixed active days to push
@@ -2375,18 +2393,21 @@ function repairSpacing(nodes, settings) {
 /* Regenerate just one week's non-fixed days, keeping every other week's plan (and all
    locked days everywhere) as fixed context (part 6). */
 function regenerateWeek(weekIso, blockWeekIsos) {
-  const scored = plannerPool();
-  if (!scored.length) return false;
-  const settings = plannerSettings();
-  const weeks = (blockWeekIsos && blockWeekIsos.length) ? blockWeekIsos : [weekIso];
-  if (!weeks.includes(weekIso)) weeks.push(weekIso);
-  const nodes = buildActiveNodes(weeks);
-  const target = nodes.filter(n => n.weekIso === weekIso && !dayFixed(n.day));
-  const context = nodes.filter(n => !target.includes(n));   // other weeks + this week's fixed days
-  if (!target.length) return false;
-  bestOfPlacements(target, context, nodes, scored, settings);
-  saveToStorage();
-  return true;
+  activePlanLimits = weekLimits((blockWeekIsos && blockWeekIsos[0]) || weekIso);
+  try {
+    const scored = plannerPool();
+    if (!scored.length) return false;
+    const settings = plannerSettings();
+    const weeks = (blockWeekIsos && blockWeekIsos.length) ? blockWeekIsos : [weekIso];
+    if (!weeks.includes(weekIso)) weeks.push(weekIso);
+    const nodes = buildActiveNodes(weeks);
+    const target = nodes.filter(n => n.weekIso === weekIso && !dayFixed(n.day));
+    const context = nodes.filter(n => !target.includes(n));   // other weeks + this week's fixed days
+    if (!target.length) return false;
+    bestOfPlacements(target, context, nodes, scored, settings);
+    saveToStorage();
+    return true;
+  } finally { activePlanLimits = null; }
 }
 
 // Backward-compatible single-week plan.
@@ -2397,6 +2418,8 @@ function autoPlanWeek(monIso) { return planHorizon(monIso, 1); }
   the rest of the block (part 6). Returns the day index for the flash highlight.
 */
 function shuffleDay(monIso, dayIdx, blockWeekIsos) {
+  activePlanLimits = weekLimits((blockWeekIsos && blockWeekIsos[0]) || monIso);
+  try {
   const scored = plannerPool();
   if (!scored.length) return [];
   const settings = plannerSettings();
@@ -2414,14 +2437,14 @@ function shuffleDay(monIso, dayIdx, blockWeekIsos) {
     if (cur && o.garmentIds.join() === cur.garmentIds.join()) return true;   // force a change
     if (acc.placedLooks.has(lookKey(o))) return true;
     if (relax < 3) {
-      for (const g of o.items) if (g.maxWeeklyRepeats != null && (acc.gWeek.get(g.id + "|" + wk) || 0) + 1 > g.maxWeeklyRepeats) return true;
+      for (const g of o.items) { const lim = planItemLimit(g); if (lim != null && (acc.gWeek.get(g.id + "|" + wk) || 0) + 1 > lim) return true; }
       for (const g of o.items) { const rule = subcatRule(g.subcategory); if (rule && rule.minWeeksApart > 1) { const ws = acc.gWeeks.get(g.id); if (ws) for (const w of ws) if (weeksApart(w, wk) < rule.minWeeksApart) return true; } }
       const subs = new Set(o.items.map(i => (i.subcategory || "").trim().toLowerCase()));
       for (const sub of subs) { const rule = subcatRule(sub); if (rule && rule.maxPerWeek != null && (acc.subWeek.get(sub + "|" + wk) || 0) + 1 > rule.maxPerWeek) return true; }
     }
     if (relax < 2) for (const p of acc.placements) if (overlapCount(o.garmentIds, p.garmentIds) > settings.overlapThreshold) return true;
     if (relax < 1) {
-      for (const g of o.items) if (g.maxWeeklyRepeats == null && !subcatRule(g.subcategory) && (acc.gWeek.get(g.id + "|" + wk) || 0) + 1 > effectiveRepeatLimit(g, o.items, settings)) return true;
+      for (const g of o.items) if (planItemLimit(g) == null && !subcatRule(g.subcategory) && (acc.gWeek.get(g.id + "|" + wk) || 0) + 1 > effectiveRepeatLimit(g, o.items, settings)) return true;
       if (settings.spacing !== "none" && targetNode) for (const p of acc.placements) if (Math.abs(p.pos - targetNode.pos) === 1 && overlapCount(o.garmentIds, p.garmentIds) > 0) return true;
     }
     return false;
@@ -2432,6 +2455,7 @@ function shuffleDay(monIso, dayIdx, blockWeekIsos) {
   target.outfit = { garmentIds: pick.garmentIds.slice() }; target.worn = false; target.carriedOver = false;
   saveToStorage();
   return [dayIdx];
+  } finally { activePlanLimits = null; }
 }
 
 /*
@@ -2904,7 +2928,6 @@ function garmentCard(g) {
         <span class="badge">${CATEGORY_LBL[g.category]}</span>
         <span class="badge">F${g.formality}</span>
         <span class="badge">${cap(g.season)}</span>
-        ${g.maxWeeklyRepeats != null ? `<span class="badge cap" title="Custom planner limit: at most ${g.maxWeeklyRepeats}× per week">↺ ${g.maxWeeklyRepeats}/wk</span>` : ""}
         <span>${worn}</span>
         ${perWear != null ? `<span>· ${money(perWear)}/wear</span>` : ""}
         ${staleBadge}
@@ -4621,6 +4644,7 @@ function renderWeekPlanner(garments, seg) {
   const controls = `<div class="row wrap" style="gap:8px; margin:12px 0 2px;">
     <button class="btn sm primary" onclick="autoPlanUI()">${planLabel}</button>
     ${plannerHorizon > 1 ? `<button class="btn sm" onclick="regenWeekUI()">↻ This week</button>` : ""}
+    <button class="btn sm" onclick="openWeekLimits()">🎚 Item limits</button>
     ${blockFilled ? `<button class="btn sm" onclick="clearWeekUI()">Clear week</button>` : ""}
     <button class="btn sm ghost" onclick="togglePlannerHistory()">History</button>
   </div>`;
@@ -4862,23 +4886,6 @@ window.openPlannerSettings = function () {
   const horizonSeg = `<div class="seg sm">${[1, 2, 3, 4].map(n =>
     `<button class="seg-btn ${s.horizon === n ? "on" : ""}" onclick="plSetDefHorizon(${n})">${n}</button>`).join("")}</div>`;
 
-  // per-item overrides — set a specific garment's weekly cap here in the planner (not on its edit screen)
-  const capped = getGarments().filter(g => g.maxWeeklyRepeats != null)
-    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-  const uncapped = getGarments().filter(g => g.maxWeeklyRepeats == null)
-    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-  const itemRows = capped.length ? capped.map(g => `<div class="pl-set-row">
-      <div class="grow" style="min-width:0;"><div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(g.name || "Untitled")}</div><div class="tiny muted">${CATEGORY_LBL[g.category] || g.category}${g.subcategory ? " · " + esc(g.subcategory) : ""}</div></div>
-      <div class="pl-stepper"><button class="btn sm" onclick="plSetItem('${g.id}',-1)">−</button><b>${g.maxWeeklyRepeats}</b><button class="btn sm" onclick="plSetItem('${g.id}',1)">+</button></div>
-      <button class="btn sm ghost" onclick="plClearItem('${g.id}')" title="Remove this item's limit" style="margin-left:6px;">✕</button>
-    </div>`).join("") : `<div class="tiny muted">No per-item limits yet.</div>`;
-  const addItem = uncapped.length ? `<div style="margin-top:8px;">
-      <select class="pl-add-item" style="width:100%;" onchange="plAddItem(this.value); this.value='';">
-        <option value="">＋ Give a specific item its own limit…</option>
-        ${uncapped.map(g => `<option value="${g.id}">${esc(g.name || "Untitled")}${g.subcategory ? " · " + esc(g.subcategory) : ""}</option>`).join("")}
-      </select>
-    </div>` : (capped.length ? "" : `<div class="tiny muted" style="margin-top:6px;">Add garments to your wardrobe to set per-item limits.</div>`);
-
   const el = document.createElement("div");
   el.className = "overlay"; el.id = "plset-overlay";
   el.innerHTML = `<div class="sheet" style="max-height:88vh; overflow:auto;">
@@ -4888,11 +4895,6 @@ window.openPlannerSettings = function () {
     <div class="sectitle" style="margin:14px 0 6px;">Max weekly appearances per category</div>
     <div class="tiny muted" style="margin-bottom:6px;">Some categories tolerate more repetition — a base under a hoodie is barely seen; a distinctive shoe is noticed.</div>
     ${["base", "mid", "outer", "bottom", "shoe"].map(catRow).join("")}
-
-    <div class="sectitle" style="margin:16px 0 6px;">Per-item weekly limits</div>
-    <div class="tiny muted" style="margin-bottom:6px;">Cap a specific piece harder than its category default above — e.g. a signature jacket only once a week.</div>
-    ${itemRows}
-    ${addItem}
 
     <div class="sectitle" style="margin:16px 0 6px;">Combination overlap</div>
     ${numRow("Max shared garments between two days", "overlapThreshold", s.overlapThreshold, 0, 4, "Two days that differ only by a shoe (share 3) read as the same outfit.")}
@@ -4919,10 +4921,53 @@ window.closePlannerSettings = function () { const o = document.getElementById("p
 function plSave() { saveToStorage(); }
 function plReopen() { closePlannerSettings(); openPlannerSettings(); }
 window.plSetCat = function (c, d) { const s = plannerSettings(); s.maxWeeklyRepeats[c] = Math.min(14, Math.max(1, s.maxWeeklyRepeats[c] + d)); plSave(); haptic(6); plReopen(); };
-// per-item weekly cap, managed here in the planner (updateGarment persists it on the garment)
-window.plAddItem = function (id) { if (!id) return; updateGarment(id, { maxWeeklyRepeats: 2 }); haptic(8); plReopen(); };
-window.plSetItem = function (id, d) { const g = getGarment(id); if (!g) return; const cur = g.maxWeeklyRepeats != null ? g.maxWeeklyRepeats : 2; updateGarment(id, { maxWeeklyRepeats: Math.min(14, Math.max(1, cur + d)) }); haptic(6); plReopen(); };
-window.plClearItem = function (id) { updateGarment(id, { maxWeeklyRepeats: null }); haptic(6); plReopen(); };
+
+/* ----- per-week item limits: every garment listed, adjustable 0..14, applied to this
+   week (and the whole block when you Auto-plan N weeks). 0 = benched for this plan. ----- */
+function wlAnchor() { return plannerBlockList()[0] || currentMonday(); }
+function wlCatDefault(g) { const s = plannerSettings(); const b = (s.maxWeeklyRepeats || {})[g.category]; return b == null ? 2 : b; }
+function wlValue(g, lim) { return lim[g.id] != null ? lim[g.id] : wlCatDefault(g); }
+window.openWeekLimits = function () {
+  const anchor = wlAnchor();
+  const lim = weekLimits(anchor);
+  const gs = getGarments().slice().sort((a, b) =>
+    (a.category || "").localeCompare(b.category || "") || (a.name || "").localeCompare(b.name || ""));
+  const scopeNote = plannerHorizon > 1
+    ? `Applies to this ${plannerHorizon}-week plan when you Auto-plan.`
+    : `Applies to this week. If you Auto-plan several weeks, it covers the whole block.`;
+  const rows = gs.length ? gs.map(g => {
+    const v = wlValue(g, lim); const off = v === 0;
+    return `<div class="pl-set-row" data-id="${g.id}">
+      <div class="grow" style="min-width:0;"><div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(g.name || "Untitled")}</div><div class="tiny muted">${CATEGORY_LBL[g.category] || g.category}${g.subcategory ? " · " + esc(g.subcategory) : ""}</div></div>
+      <div class="pl-stepper"><button class="btn sm" onclick="wlStep('${g.id}',-1)">−</button><b id="wl-v-${g.id}" style="min-width:26px; text-align:center; ${off ? "color:#e0574f;" : ""}">${off ? "off" : v}</b><button class="btn sm" onclick="wlStep('${g.id}',1)">+</button></div>
+    </div>`;
+  }).join("") : `<div class="tiny muted">Add garments to your wardrobe first.</div>`;
+  const hasOverride = Object.keys(lim).length > 0;
+
+  const el = document.createElement("div");
+  el.className = "overlay"; el.id = "wl-overlay";
+  el.innerHTML = `<div class="sheet" style="max-height:88vh; overflow:auto;">
+    <div class="row" style="justify-content:space-between; align-items:center;"><b style="font-size:16px;">Item limits</b><button class="btn sm ghost" onclick="closeWeekLimits()">Done</button></div>
+    <div class="tiny muted" style="margin:4px 0 6px;">How many days each piece may appear. <b>0 = don't use it</b> this plan. ${scopeNote}</div>
+    ${hasOverride ? `<div style="margin:6px 0 10px;"><button class="btn sm ghost" onclick="wlResetAll()">Reset all to defaults</button></div>` : ""}
+    <div>${rows}</div>
+  </div>`;
+  el.addEventListener("click", e => { if (e.target === el) closeWeekLimits(); });
+  document.body.appendChild(el); haptic(8);
+};
+window.closeWeekLimits = function () { const o = document.getElementById("wl-overlay"); if (o) o.remove(); };
+window.wlStep = function (id, d) {
+  const g = getGarment(id); if (!g) return;
+  const lim = weekLimits(wlAnchor());
+  const cur = lim[id] != null ? lim[id] : wlCatDefault(g);
+  const next = Math.min(14, Math.max(0, cur + d));
+  lim[id] = next; saveToStorage(); haptic(4);
+  const v = document.getElementById("wl-v-" + id);
+  if (v) { v.textContent = next === 0 ? "off" : next; v.style.color = next === 0 ? "#e0574f" : ""; }
+  // keep the "Reset all" button in sync without disturbing scroll
+  if (!document.querySelector('#wl-overlay [onclick="wlResetAll()"]')) { closeWeekLimits(); openWeekLimits(); }
+};
+window.wlResetAll = function () { getWeek(wlAnchor()).limits = {}; saveToStorage(); haptic(10); closeWeekLimits(); openWeekLimits(); };
 window.plSetNum = function (key, d, min, max) { const s = plannerSettings(); s[key] = Math.min(max, Math.max(min, s[key] + d)); plSave(); haptic(6); plReopen(); };
 window.plSetSpacing = function (v) { plannerSettings().spacing = v; plSave(); haptic(8); plReopen(); };
 window.plToggleLowVis = function () { const s = plannerSettings(); s.lowVisibilityExempt = !s.lowVisibilityExempt; plSave(); haptic(8); plReopen(); };
