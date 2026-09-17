@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0c0e" />
+<title>Split Test</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A7%AA%3C/text%3E%3C/svg%3E" />
+<!--
+  Split Test — product split-testing tracker. Single-file, local-storage only.
+  Log which hook / format / platform lands with a one-tap rating. No metrics,
+  no calculations. Data is per-device; CSV export/import bridges devices.
+  Theme matches the wardrobe app / Apps launcher (shared dark palette).
+-->
+<style>
+  :root{
+    --bg:#0b0c0e; --surface:#14161b; --surface-2:#191c22; --border:#262a31; --border-2:#333843;
+    --text:#e7e9ee; --muted:#8b909b; --accent:#7c8dff;
+    --low:#8b909b; --mid:#e0a458; --good:#4bbf87; --viral:#c58cff;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji",sans-serif;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased;
+    display:flex;flex-direction:column;min-height:100dvh}
+  input,select,textarea,button{font-family:inherit}
+
+  /* layout */
+  .top{position:sticky;top:0;z-index:10;background:rgba(11,12,14,.86);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--border);padding:calc(12px + env(safe-area-inset-top)) 16px 12px}
+  .top h1{margin:0;font-size:18px;letter-spacing:-.3px;display:flex;align-items:center;gap:8px}
+  .top .sub{margin:2px 0 0;color:var(--muted);font-size:12px}
+  main{flex:1;width:100%;max-width:600px;margin:0 auto;padding:16px 16px 92px}
+  .nav{position:sticky;bottom:0;z-index:10;background:rgba(11,12,14,.92);backdrop-filter:blur(12px);
+    border-top:1px solid var(--border);display:flex;padding-bottom:env(safe-area-inset-bottom)}
+  .nav button{flex:1;background:none;border:none;color:var(--muted);cursor:pointer;padding:9px 4px 11px;
+    display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:600}
+  .nav button .ic{font-size:19px}
+  .nav button.on{color:var(--accent)}
+
+  /* generic */
+  .hidden{display:none !important}
+  label.f{display:block;margin-bottom:14px}
+  label.f .lb{display:block;font-size:12px;color:var(--muted);margin:0 0 6px 2px;font-weight:600;letter-spacing:.2px}
+  input[type=text],input[type=date],select,textarea{
+    width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);
+    border-radius:var(--radius);padding:13px 13px;font-size:15px;outline:none;transition:border-color .15s}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+  textarea{resize:vertical;min-height:52px}
+  select{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%238b909b' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:34px}
+  .row{display:flex;gap:8px}
+  .row>*{flex:1}
+  .btn{border:none;border-radius:var(--radius);padding:13px 14px;font-size:15px;font-weight:700;cursor:pointer;
+    color:#fff;background:var(--accent);transition:filter .15s, transform .06s}
+  .btn:active{transform:scale(.98)} .btn:hover{filter:brightness(1.08)}
+  .btn.block{width:100%}
+  .btn.ghost{background:var(--surface);border:1px solid var(--border);color:var(--text)}
+  .btn.sm{padding:9px 12px;font-size:13px}
+  .btn.danger{background:transparent;border:1px solid #6b3238;color:#ff8891}
+  .link{background:none;border:none;color:var(--accent);cursor:pointer;font-size:13px;font-weight:600;padding:0}
+  .muted{color:var(--muted)}
+  .empty{text-align:center;color:var(--muted);padding:36px 12px;font-size:14px;line-height:1.5}
+
+  /* platform segmented */
+  .seg{display:flex;gap:6px}
+  .seg button{flex:1;background:var(--surface);border:1px solid var(--border);color:var(--muted);
+    border-radius:var(--radius);padding:12px 4px;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+  .seg button.on{border-color:var(--accent);color:var(--text);background:var(--surface-2)}
+
+  /* performance buttons */
+  .perf-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
+  .perf{border:1.5px solid var(--border-2);background:var(--surface);border-radius:16px;padding:18px 10px;
+    cursor:pointer;color:var(--text);font-weight:800;font-size:17px;display:flex;flex-direction:column;align-items:center;gap:5px;
+    transition:transform .06s, border-color .15s, background .15s}
+  .perf .dot{width:12px;height:12px;border-radius:50%}
+  .perf:active{transform:scale(.97)}
+  .perf.sel{background:var(--surface-2)}
+  .perf.low.sel{border-color:var(--low)} .perf.mid.sel{border-color:var(--mid)}
+  .perf.good.sel{border-color:var(--good)} .perf.viral.sel{border-color:var(--viral)}
+  .p-hint{text-align:center;color:var(--muted);font-size:12px;margin:10px 0 0}
+
+  /* perf pill/badge */
+  .pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;
+    border:1px solid var(--border-2);background:var(--surface-2)}
+  .pill .dot{width:8px;height:8px;border-radius:50%}
+  .pill.low{color:#c3c7cf} .pill.mid{color:#e0a458} .pill.good{color:#4bbf87} .pill.viral{color:#c58cff}
+
+  /* cards / list */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:13px 14px}
+  .list{display:flex;flex-direction:column;gap:9px}
+  .test{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 13px;cursor:pointer;transition:border-color .12s}
+  .test:hover{border-color:var(--border-2)}
+  .test .r1{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .test .hook{font-weight:600;font-size:15px;margin:7px 0 4px;line-height:1.35;word-break:break-word}
+  .test .meta{color:var(--muted);font-size:12px;display:flex;flex-wrap:wrap;gap:4px 10px}
+  .test .notes{color:var(--muted);font-size:12.5px;margin-top:6px;font-style:italic;line-height:1.4}
+
+  /* filters */
+  .filters{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+  .filters select{padding:10px 30px 10px 11px;font-size:13px}
+  .filterbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .count{color:var(--muted);font-size:12px}
+
+  /* groups */
+  .grouphdr{display:flex;align-items:center;justify-content:space-between;margin:20px 2px 9px}
+  .grouphdr:first-child{margin-top:4px}
+  .grouphdr h3{margin:0;font-size:15px;display:flex;align-items:center;gap:8px}
+  .grouphdr .c{color:var(--muted);font-size:12px}
+  .subseg{display:flex;gap:6px;margin-bottom:14px}
+  .subseg button{flex:1;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:10px;padding:9px 4px;font-size:13px;font-weight:600;cursor:pointer}
+  .subseg button.on{border-color:var(--accent);color:var(--text);background:var(--surface-2)}
+  .distro{display:flex;gap:5px;flex-wrap:wrap;margin-top:2px}
+  .tick{font-size:11px;color:var(--muted);display:inline-flex;align-items:center;gap:4px}
+  .tick .dot{width:7px;height:7px;border-radius:50%}
+
+  /* settings list */
+  .editrow{display:flex;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px 10px;margin-bottom:8px}
+  .editrow input{border:none;background:transparent;padding:6px 2px;flex:1}
+  .editrow input:focus{border:none}
+  .iconbtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:6px;border-radius:8px}
+  .iconbtn:hover{color:var(--text);background:var(--surface-2)}
+  .iconbtn.del:hover{color:#ff8891}
+  .addline{display:flex;gap:8px;margin-top:4px}
+  .sechead{font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.4px;text-transform:uppercase;margin:22px 2px 10px}
+  .sechead:first-child{margin-top:2px}
+
+  /* modal */
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(3px);z-index:50;display:flex;align-items:flex-end;justify-content:center}
+  .sheet{width:100%;max-width:600px;background:var(--surface);border:1px solid var(--border);border-bottom:none;
+    border-radius:20px 20px 0 0;padding:16px 16px calc(20px + env(safe-area-inset-bottom));max-height:92dvh;overflow:auto;
+    animation:up .28s cubic-bezier(.2,.8,.2,1)}
+  @keyframes up{from{transform:translateY(100%)}to{transform:none}}
+  .sheet h2{margin:2px 0 16px;font-size:18px}
+  .grab{width:40px;height:4px;border-radius:4px;background:var(--border-2);margin:0 auto 14px}
+
+  /* toast */
+  #toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);background:var(--surface-2);
+    border:1px solid var(--border-2);color:var(--text);padding:10px 16px;border-radius:12px;font-size:13px;font-weight:600;
+    z-index:80;opacity:0;transition:opacity .25s;pointer-events:none;box-shadow:0 10px 30px rgba(0,0,0,.5);max-width:90vw;text-align:center}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+  <div class="top">
+    <h1><span>🧪</span> <span id="topTitle">Add test</span></h1>
+    <p class="sub" id="topSub">Log a split test in ten seconds</p>
+  </div>
+
+  <main id="view"></main>
+
+  <nav class="nav">
+    <button data-tab="add" class="on"><span class="ic">＋</span>Add</button>
+    <button data-tab="all"><span class="ic">📋</span>All tests</button>
+    <button data-tab="group"><span class="ic">📊</span>Groups</button>
+    <button data-tab="settings"><span class="ic">⚙️</span>Settings</button>
+  </nav>
+
+  <div id="toast"></div>
+
+<script>
+"use strict";
+(function(){
+  const $=(s,r=document)=>r.querySelector(s);
+  const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+  const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const uid=()=>"t"+Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-3);
+  const todayISO=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;};
+  const fmtDate=iso=>{const d=new Date(iso+"T00:00:00");return isNaN(d)?iso:d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});};
+
+  const PERF=[
+    {k:"low",label:"Low",color:"var(--low)"},
+    {k:"mid",label:"Mid",color:"var(--mid)"},
+    {k:"good",label:"Good",color:"var(--good)"},
+    {k:"viral",label:"Viral",color:"var(--viral)"},
+  ];
+  const PERF_ORDER=["viral","good","mid","low"]; // best first
+  const PERF_LABEL=Object.fromEntries(PERF.map(p=>[p.k,p.label]));
+  const PLAT=[{k:"tiktok",label:"TikTok",ic:"🎵"},{k:"instagram",label:"Instagram",ic:"📸"},{k:"both",label:"Both",ic:"🔁"}];
+  const PLAT_LABEL=Object.fromEntries(PLAT.map(p=>[p.k,p.label]));
+
+  // ---------- state ----------
+  const KEY="splittest_v1";
+  let state=load();
+  function load(){
+    try{const s=JSON.parse(localStorage.getItem(KEY)); if(s&&Array.isArray(s.entries)) return normalize(s);}catch{}
+    return {entries:[], products:[], videoTypes:["Talking head","Demo","UGC","Voiceover","Skit"]};
+  }
+  function normalize(s){
+    s.entries=s.entries||[]; s.products=s.products||[]; s.videoTypes=s.videoTypes||[];
+    return s;
+  }
+  function save(){ try{localStorage.setItem(KEY,JSON.stringify(state));}catch{} }
+
+  let toastT=null;
+  function toast(msg){ const el=$("#toast"); el.textContent=msg; el.style.opacity="1"; clearTimeout(toastT); toastT=setTimeout(()=>el.style.opacity="0",1900); }
+
+  // ---------- navigation ----------
+  let tab="add";
+  const TITLES={add:["Add test","Log a split test in ten seconds"],all:["All tests","Every test you've logged"],
+    group:["Groups","See what lands, grouped"],settings:["Settings","Products, formats & data"]};
+  function go(t){ tab=t; $$(".nav button").forEach(b=>b.classList.toggle("on",b.dataset.tab===t));
+    $("#topTitle").textContent=TITLES[t][0]; $("#topSub").textContent=TITLES[t][1]; render(); window.scrollTo(0,0); }
+  $$(".nav button").forEach(b=>b.onclick=()=>go(b.dataset.tab));
+
+  function render(){ const v=$("#view"); v.innerHTML="";
+    if(tab==="add") renderAdd(v);
+    else if(tab==="all") renderAll(v);
+    else if(tab==="group") renderGroup(v);
+    else renderSettings(v);
+  }
+
+  // ---------- shared: option dropdown with inline "add new" ----------
+  function fillSelect(sel, items, current, placeholder){
+    sel.innerHTML="";
+    const ph=document.createElement("option"); ph.value=""; ph.textContent=placeholder; sel.appendChild(ph);
+    items.forEach(it=>{const o=document.createElement("option");o.value=it;o.textContent=it;if(it===current)o.selected=true;sel.appendChild(o);});
+    const add=document.createElement("option"); add.value="__add"; add.textContent="＋ Add new…"; sel.appendChild(add);
+    if(current&&!items.includes(current)){ const o=document.createElement("option");o.value=current;o.textContent=current;o.selected=true;sel.insertBefore(o,add); }
+  }
+
+  // ---------- ADD ----------
+  const draft={date:todayISO(),product:"",hook:"",videoType:"",platform:"both"};
+  function renderAdd(v){
+    v.innerHTML=`
+      <label class="f"><span class="lb">Date</span><input type="date" id="aDate" value="${esc(draft.date)}"></label>
+      <label class="f"><span class="lb">Product</span><select id="aProduct"></select>
+        <div id="aProductNew" class="addline hidden"><input type="text" placeholder="New product name" id="aProductInput"><button class="btn sm" id="aProductSave">Add</button></div></label>
+      <label class="f"><span class="lb">Hook</span><textarea id="aHook" placeholder="The opening line / hook you're testing">${esc(draft.hook)}</textarea></label>
+      <label class="f"><span class="lb">Video type</span><select id="aType"></select>
+        <div id="aTypeNew" class="addline hidden"><input type="text" placeholder="New video type" id="aTypeInput"><button class="btn sm" id="aTypeSave">Add</button></div></label>
+      <label class="f"><span class="lb">Platform</span>
+        <div class="seg" id="aPlat">${PLAT.map(p=>`<button data-p="${p.k}" class="${draft.platform===p.k?"on":""}"><span>${p.ic}</span>${p.label}</button>`).join("")}</div></label>
+      <label class="f"><span class="lb">Notes (optional)</span><textarea id="aNotes" placeholder=""></textarea></label>
+      <div class="lb" style="font-size:12px;color:var(--muted);margin:2px 2px 6px 2px;font-weight:600">Performance — tap to save</div>
+      <div class="perf-grid" id="aPerf">${PERF.map(p=>`<button class="perf ${p.k}" data-k="${p.k}"><span class="dot" style="background:${p.color}"></span>${p.label}</button>`).join("")}</div>
+      <p class="p-hint">Tapping a rating saves the test instantly.</p>`;
+
+    const prodSel=$("#aProduct",v), typeSel=$("#aType",v);
+    fillSelect(prodSel, state.products, draft.product, "— pick a product —");
+    fillSelect(typeSel, state.videoTypes, draft.videoType, "— pick a video type —");
+
+    $("#aDate",v).onchange=e=>draft.date=e.target.value;
+    $("#aHook",v).oninput=e=>draft.hook=e.target.value;
+    $("#aNotes",v); // read on save
+
+    wireAddNew(prodSel, $("#aProductNew",v), $("#aProductInput",v), $("#aProductSave",v), "products", val=>{draft.product=val;});
+    wireAddNew(typeSel, $("#aTypeNew",v), $("#aTypeInput",v), $("#aTypeSave",v), "videoTypes", val=>{draft.videoType=val;});
+    prodSel.addEventListener("change",()=>{ if(prodSel.value!=="__add") draft.product=prodSel.value; });
+    typeSel.addEventListener("change",()=>{ if(typeSel.value!=="__add") draft.videoType=typeSel.value; });
+
+    $$("#aPlat button",v).forEach(b=>b.onclick=()=>{ draft.platform=b.dataset.p; $$("#aPlat button",v).forEach(x=>x.classList.toggle("on",x===b)); });
+    $$("#aPerf button",v).forEach(b=>b.onclick=()=>saveEntry(b.dataset.k));
+  }
+  function wireAddNew(sel, wrap, input, btn, listKey, setDraft){
+    sel.addEventListener("change",()=>{
+      if(sel.value==="__add"){ wrap.classList.remove("hidden"); input.focus(); }
+      else wrap.classList.add("hidden");
+    });
+    const commit=()=>{ const val=input.value.trim(); if(!val){wrap.classList.add("hidden");return;}
+      if(!state[listKey].includes(val)){ state[listKey].push(val); state[listKey].sort((a,b)=>a.localeCompare(b)); save(); }
+      setDraft(val); fillSelect(sel, state[listKey], val, sel.options[0].textContent); wrap.classList.add("hidden"); input.value=""; };
+    btn.onclick=commit;
+    input.onkeydown=e=>{ if(e.key==="Enter"){e.preventDefault();commit();} };
+  }
+  function saveEntry(perf){
+    if(!draft.product){ toast("Pick a product first"); return; }
+    if(!draft.hook.trim()){ toast("Enter a hook first"); $("#aHook")&&$("#aHook").focus(); return; }
+    const notes=($("#aNotes")&&$("#aNotes").value.trim())||"";
+    state.entries.push({id:uid(),date:draft.date||todayISO(),product:draft.product,hook:draft.hook.trim(),
+      videoType:draft.videoType||"",platform:draft.platform||"both",performance:perf,notes});
+    save();
+    toast(`Saved · ${PERF_LABEL[perf]} ✓`);
+    // keep product/type/platform/date for fast repeat; clear hook + notes
+    draft.hook=""; renderAdd($("#view"));
+  }
+
+  // ---------- perf helpers ----------
+  const pill=k=>`<span class="pill ${k}"><span class="dot" style="background:var(--${k})"></span>${PERF_LABEL[k]}</span>`;
+  function distro(entries){
+    const c={low:0,mid:0,good:0,viral:0}; entries.forEach(e=>c[e.performance]!=null&&c[e.performance]++);
+    return `<span class="distro">${PERF_ORDER.filter(k=>c[k]).map(k=>`<span class="tick"><span class="dot" style="background:var(--${k})"></span>${c[k]} ${PERF_LABEL[k]}</span>`).join("")}</span>`;
+  }
+  function testCard(e){
+    return `<div class="test" data-id="${e.id}">
+      <div class="r1"><span class="muted" style="font-size:12px">${esc(fmtDate(e.date))}</span>${pill(e.performance)}</div>
+      <div class="hook">${esc(e.hook)||'<span class="muted">(no hook)</span>'}</div>
+      <div class="meta"><span>📦 ${esc(e.product)||"—"}</span>${e.videoType?`<span>🎬 ${esc(e.videoType)}</span>`:""}<span>${PLAT_LABEL[e.platform]||"—"}</span></div>
+      ${e.notes?`<div class="notes">${esc(e.notes)}</div>`:""}
+    </div>`;
+  }
+  function bindCards(v){ $$(".test",v).forEach(c=>c.onclick=()=>openEdit(c.dataset.id)); }
+
+  // ---------- ALL ----------
+  const allFilter={product:"",videoType:"",platform:"",performance:"",sort:"desc"};
+  function renderAll(v){
+    if(!state.entries.length){ v.innerHTML=`<div class="empty">No tests yet.<br>Tap <b>Add</b> to log your first one.</div>`; return; }
+    const optList=(items,cur,ph)=>`<option value="">${ph}</option>`+items.map(i=>`<option value="${esc(i)}" ${i===cur?"selected":""}>${esc(i)}</option>`).join("");
+    v.innerHTML=`
+      <div class="filters">
+        <select id="fProduct">${optList([...new Set(state.entries.map(e=>e.product))].sort(),allFilter.product,"All products")}</select>
+        <select id="fType">${optList([...new Set(state.entries.map(e=>e.videoType).filter(Boolean))].sort(),allFilter.videoType,"All video types")}</select>
+        <select id="fPlat"><option value="">All platforms</option>${PLAT.map(p=>`<option value="${p.k}" ${allFilter.platform===p.k?"selected":""}>${p.label}</option>`).join("")}</select>
+        <select id="fPerf"><option value="">All performance</option>${PERF_ORDER.map(k=>`<option value="${k}" ${allFilter.performance===k?"selected":""}>${PERF_LABEL[k]}</option>`).join("")}</select>
+      </div>
+      <div class="filterbar"><span class="count" id="allCount"></span>
+        <button class="link" id="sortBtn">Date ${allFilter.sort==="desc"?"↓ newest":"↑ oldest"}</button></div>
+      <div class="list" id="allList"></div>`;
+    const draw=()=>{
+      let rows=state.entries.filter(e=>
+        (!allFilter.product||e.product===allFilter.product)&&
+        (!allFilter.videoType||e.videoType===allFilter.videoType)&&
+        (!allFilter.platform||e.platform===allFilter.platform)&&
+        (!allFilter.performance||e.performance===allFilter.performance));
+      rows.sort((a,b)=>{const d=(a.date+a.id).localeCompare(b.date+b.id);return allFilter.sort==="desc"?-d:d;});
+      $("#allCount",v).textContent=`${rows.length} test${rows.length===1?"":"s"}`;
+      $("#allList",v).innerHTML=rows.length?rows.map(testCard).join(""):`<div class="empty">No tests match these filters.</div>`;
+      bindCards(v);
+    };
+    $("#fProduct",v).onchange=e=>{allFilter.product=e.target.value;draw();};
+    $("#fType",v).onchange=e=>{allFilter.videoType=e.target.value;draw();};
+    $("#fPlat",v).onchange=e=>{allFilter.platform=e.target.value;draw();};
+    $("#fPerf",v).onchange=e=>{allFilter.performance=e.target.value;draw();};
+    $("#sortBtn",v).onclick=()=>{allFilter.sort=allFilter.sort==="desc"?"asc":"desc";
+      $("#sortBtn",v).textContent=`Date ${allFilter.sort==="desc"?"↓ newest":"↑ oldest"}`;draw();};
+    draw();
+  }
+
+  // ---------- GROUPS ----------
+  let groupMode="product", selProduct="";
+  function renderGroup(v){
+    v.innerHTML=`<div class="subseg" id="gseg">
+        <button data-m="product" class="${groupMode==="product"?"on":""}">By product</button>
+        <button data-m="hook" class="${groupMode==="hook"?"on":""}">By hook</button>
+        <button data-m="type" class="${groupMode==="type"?"on":""}">By video type</button>
+      </div><div id="gbody"></div>`;
+    $$("#gseg button",v).forEach(b=>b.onclick=()=>{groupMode=b.dataset.m;$$("#gseg button",v).forEach(x=>x.classList.toggle("on",x===b));drawGroup();});
+    drawGroup();
+  }
+  function drawGroup(){
+    const box=$("#gbody"); if(!box) return;
+    if(!state.entries.length){ box.innerHTML=`<div class="empty">No tests yet.</div>`; return; }
+    if(groupMode==="product") drawByProduct(box);
+    else if(groupMode==="hook") drawByHook(box);
+    else drawByType(box);
+  }
+  function drawByProduct(box){
+    const prods=[...new Set(state.entries.map(e=>e.product))].sort();
+    if(!selProduct||!prods.includes(selProduct)) selProduct=prods[0];
+    box.innerHTML=`<label class="f"><span class="lb">Product</span>
+      <select id="gProd">${prods.map(p=>`<option value="${esc(p)}" ${p===selProduct?"selected":""}>${esc(p)}</option>`).join("")}</select></label>
+      <div id="gProdBody"></div>`;
+    $("#gProd").onchange=e=>{selProduct=e.target.value;paintProd();};
+    paintProd();
+    function paintProd(){
+      const body=$("#gProdBody");
+      const rows=state.entries.filter(e=>e.product===selProduct);
+      let html="";
+      PERF_ORDER.forEach(k=>{
+        const g=rows.filter(e=>e.performance===k).sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+        if(!g.length) return;
+        html+=`<div class="grouphdr"><h3>${pill(k)}</h3><span class="c">${g.length}</span></div><div class="list">${g.map(testCard).join("")}</div>`;
+      });
+      body.innerHTML=html||`<div class="empty">No tests for ${esc(selProduct)} yet.</div>`;
+      bindCards(body);
+    }
+  }
+  function drawByHook(box){
+    const groups={};
+    state.entries.forEach(e=>{const key=e.hook.trim().toLowerCase();if(!key)return;(groups[key]=groups[key]||{label:e.hook.trim(),items:[]}).items.push(e);});
+    const arr=Object.values(groups).sort((a,b)=>b.items.length-a.items.length||b.items.length-a.items.length);
+    if(!arr.length){ box.innerHTML=`<div class="empty">No hooks logged yet.</div>`; return; }
+    box.innerHTML=arr.map(g=>{
+      const items=g.items.slice().sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+      return `<div class="grouphdr"><h3>“${esc(g.label)}”</h3><span class="c">${items.length}×</span></div>
+        <div class="card" style="margin-bottom:6px">${distro(items)}</div>
+        <div class="list">${items.map(testCard).join("")}</div>`;
+    }).join("");
+    bindCards(box);
+  }
+  function drawByType(box){
+    const groups={};
+    state.entries.forEach(e=>{const key=e.videoType||"(no type)";(groups[key]=groups[key]||[]).push(e);});
+    const keys=Object.keys(groups).sort((a,b)=>groups[b].length-groups[a].length);
+    box.innerHTML=keys.map(k=>{
+      const items=groups[k].slice().sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+      return `<div class="grouphdr"><h3>🎬 ${esc(k)}</h3><span class="c">${items.length}</span></div>
+        <div class="card" style="margin-bottom:6px">${distro(items)}</div>
+        <div class="list">${items.map(testCard).join("")}</div>`;
+    }).join("");
+    bindCards(box);
+  }
+
+  // ---------- EDIT MODAL ----------
+  function openEdit(id){
+    const e=state.entries.find(x=>x.id===id); if(!e) return;
+    const scrim=document.createElement("div"); scrim.className="scrim";
+    scrim.innerHTML=`<div class="sheet"><div class="grab"></div><h2>Edit test</h2>
+      <label class="f"><span class="lb">Date</span><input type="date" id="eDate" value="${esc(e.date)}"></label>
+      <label class="f"><span class="lb">Product</span><select id="eProduct"></select></label>
+      <label class="f"><span class="lb">Hook</span><textarea id="eHook">${esc(e.hook)}</textarea></label>
+      <label class="f"><span class="lb">Video type</span><select id="eType"></select></label>
+      <label class="f"><span class="lb">Platform</span><div class="seg" id="ePlat">${PLAT.map(p=>`<button data-p="${p.k}" class="${e.platform===p.k?"on":""}"><span>${p.ic}</span>${p.label}</button>`).join("")}</div></label>
+      <label class="f"><span class="lb">Performance</span><div class="perf-grid" id="ePerf">${PERF.map(p=>`<button class="perf ${p.k} ${e.performance===p.k?"sel":""}" data-k="${p.k}"><span class="dot" style="background:${p.color}"></span>${p.label}</button>`).join("")}</div></label>
+      <label class="f"><span class="lb">Notes</span><textarea id="eNotes">${esc(e.notes)}</textarea></label>
+      <div class="row"><button class="btn ghost" id="eCancel">Cancel</button><button class="btn" id="eSave">Save</button></div>
+      <button class="btn danger block" id="eDelete" style="margin-top:10px">Delete test</button>
+    </div>`;
+    document.body.appendChild(scrim);
+    const prodSel=$("#eProduct",scrim), typeSel=$("#eType",scrim);
+    fillSelectPlain(prodSel, state.products, e.product);
+    fillSelectPlain(typeSel, state.videoTypes, e.videoType);
+    let plat=e.platform, perf=e.performance;
+    $$("#ePlat button",scrim).forEach(b=>b.onclick=()=>{plat=b.dataset.p;$$("#ePlat button",scrim).forEach(x=>x.classList.toggle("on",x===b));});
+    $$("#ePerf button",scrim).forEach(b=>b.onclick=()=>{perf=b.dataset.k;$$("#ePerf button",scrim).forEach(x=>x.classList.toggle("sel",x===b));});
+    const close=()=>scrim.remove();
+    scrim.addEventListener("click",ev=>{if(ev.target===scrim)close();});
+    $("#eCancel",scrim).onclick=close;
+    $("#eSave",scrim).onclick=()=>{
+      e.date=$("#eDate",scrim).value||e.date; e.product=prodSel.value; e.hook=$("#eHook",scrim).value.trim();
+      e.videoType=typeSel.value; e.platform=plat; e.performance=perf; e.notes=$("#eNotes",scrim).value.trim();
+      save(); close(); toast("Updated ✓"); render();
+    };
+    $("#eDelete",scrim).onclick=()=>{ if(!confirm("Delete this test?"))return; state.entries=state.entries.filter(x=>x.id!==e.id); save(); close(); toast("Deleted"); render(); };
+  }
+  function fillSelectPlain(sel, items, current){
+    const list=items.includes(current)||!current?items:[current,...items];
+    sel.innerHTML=list.map(i=>`<option value="${esc(i)}" ${i===current?"selected":""}>${esc(i)}</option>`).join("")
+      || `<option value="">(none)</option>`;
+  }
+
+  // ---------- SETTINGS ----------
+  function renderSettings(v){
+    v.innerHTML=`
+      <div class="sechead">Products</div>
+      <div id="prodList"></div>
+      <div class="addline"><input type="text" id="newProd" placeholder="Add a product"><button class="btn sm" id="addProd">Add</button></div>
+      <div class="sechead">Video types</div>
+      <div id="typeList"></div>
+      <div class="addline"><input type="text" id="newType" placeholder="Add a video type"><button class="btn sm" id="addType">Add</button></div>
+      <div class="sechead">Data</div>
+      <div class="row"><button class="btn ghost" id="exportBtn">⬇ Export CSV</button><button class="btn ghost" id="importBtn">⬆ Import CSV</button></div>
+      <input type="file" id="importFile" accept=".csv,text/csv" class="hidden">
+      <p class="muted" style="font-size:12px;margin:12px 2px 0;line-height:1.5">Data is stored only on this device. Export a CSV to move it to another phone, then Import there. ${state.entries.length} test${state.entries.length===1?"":"s"} stored.</p>
+      <button class="btn danger block" id="wipeBtn" style="margin-top:16px">Clear all data</button>`;
+    drawEditable($("#prodList",v),"products");
+    drawEditable($("#typeList",v),"videoTypes");
+    const addTo=(key,inp)=>{const val=inp.value.trim();if(!val)return;if(!state[key].includes(val)){state[key].push(val);state[key].sort((a,b)=>a.localeCompare(b));save();} inp.value="";render();};
+    $("#addProd",v).onclick=()=>addTo("products",$("#newProd",v));
+    $("#newProd",v).onkeydown=e=>{if(e.key==="Enter")addTo("products",$("#newProd",v));};
+    $("#addType",v).onclick=()=>addTo("videoTypes",$("#newType",v));
+    $("#newType",v).onkeydown=e=>{if(e.key==="Enter")addTo("videoTypes",$("#newType",v));};
+    $("#exportBtn",v).onclick=exportCSV;
+    $("#importBtn",v).onclick=()=>$("#importFile",v).click();
+    $("#importFile",v).onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{importCSV(r.result);e.target.value="";};r.readAsText(f);};
+    $("#wipeBtn",v).onclick=()=>{if(!confirm("Delete ALL tests, products and video types on this device? This cannot be undone."))return;
+      state={entries:[],products:[],videoTypes:[]};save();toast("All data cleared");render();};
+  }
+  function drawEditable(box,key){
+    if(!state[key].length){ box.innerHTML=`<p class="muted" style="font-size:13px;margin:0 2px 8px">None yet.</p>`; return; }
+    box.innerHTML=state[key].map((name,i)=>`<div class="editrow"><input type="text" value="${esc(name)}" data-i="${i}"><button class="iconbtn del" data-i="${i}" title="Remove">🗑</button></div>`).join("");
+    $$(".editrow input",box).forEach(inp=>{
+      const i=+inp.dataset.i, old=state[key][i];
+      inp.onchange=()=>{const val=inp.value.trim();if(!val){inp.value=old;return;}
+        state[key][i]=val;
+        // cascade rename into entries
+        const field=key==="products"?"product":"videoType";
+        state.entries.forEach(e=>{if(e[field]===old)e[field]=val;});
+        save();toast("Renamed");};
+    });
+    $$(".iconbtn.del",box).forEach(btn=>btn.onclick=()=>{const i=+btn.dataset.i;const name=state[key][i];
+      state[key].splice(i,1);save();toast(`Removed “${name}”`);render();});
+  }
+
+  // ---------- CSV ----------
+  const CSV_COLS=["date","product","hook","video_type","platform","performance","notes"];
+  const csvCell=v=>{const s=String(v==null?"":v);return /[",\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+  function exportCSV(){
+    const rows=[CSV_COLS.join(",")];
+    state.entries.slice().sort((a,b)=>(a.date+a.id).localeCompare(b.date+b.id)).forEach(e=>{
+      rows.push([e.date,e.product,e.hook,e.videoType,PLAT_LABEL[e.platform]||e.platform,PERF_LABEL[e.performance]||e.performance,e.notes].map(csvCell).join(","));
+    });
+    const csv=rows.join("\r\n");
+    const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`split-tests-${todayISO()}.csv`;
+    document.body.appendChild(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(a.href);},800);
+    toast("CSV exported");
+  }
+  function parseCSV(text){
+    const rows=[];let row=[],cell="",q=false;text=text.replace(/^﻿/,"");
+    for(let i=0;i<text.length;i++){const c=text[i];
+      if(q){ if(c==='"'){ if(text[i+1]==='"'){cell+='"';i++;} else q=false; } else cell+=c; }
+      else { if(c==='"')q=true; else if(c===","){row.push(cell);cell="";}
+        else if(c==="\n"){row.push(cell);rows.push(row);row=[];cell="";}
+        else if(c==="\r"){} else cell+=c; } }
+    if(cell.length||row.length){row.push(cell);rows.push(row);}
+    return rows.filter(r=>r.length&&!(r.length===1&&r[0]===""));
+  }
+  const normPlat=v=>{v=(v||"").toLowerCase().trim();if(/tik|tt/.test(v)&&/insta|ig|both/.test(v))return"both";if(v==="both")return"both";if(/tik|^tt$/.test(v))return"tiktok";if(/insta|^ig$/.test(v))return"instagram";return"both";};
+  const normPerf=v=>{v=(v||"").toLowerCase().trim();if(v.startsWith("vir"))return"viral";if(v.startsWith("goo"))return"good";if(v.startsWith("mid")||v.startsWith("med"))return"mid";if(v.startsWith("low"))return"low";return"mid";};
+  function normDate(v){v=(v||"").trim();if(/^\d{4}-\d{2}-\d{2}$/.test(v))return v;const d=new Date(v);if(!isNaN(d))return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;return todayISO();}
+  function importCSV(text){
+    try{
+      const rows=parseCSV(text); if(rows.length<1){toast("Empty CSV");return;}
+      let start=0; const head=rows[0].map(h=>h.toLowerCase().trim());
+      const idx={}; const known=["date","product","hook","video_type","videotype","video type","type","platform","performance","perf","rating","notes","note"];
+      if(head.some(h=>known.includes(h))){ start=1; head.forEach((h,i)=>{idx[h]=i;}); }
+      const col=(r,names,def="")=>{for(const n of names){if(idx[n]!=null&&r[idx[n]]!=null)return r[idx[n]];}return def;};
+      let added=0;
+      for(let i=start;i<rows.length;i++){
+        const r=rows[i]; if(!r.length||r.every(c=>!c||!c.trim()))continue;
+        let date,product,hook,vtype,plat,perf,notes;
+        if(start===1){ date=col(r,["date"]);product=col(r,["product"]);hook=col(r,["hook"]);
+          vtype=col(r,["video_type","videotype","video type","type"]);plat=col(r,["platform"]);
+          perf=col(r,["performance","perf","rating"]);notes=col(r,["notes","note"]); }
+        else { [date,product,hook,vtype,plat,perf,notes]=[r[0],r[1],r[2],r[3],r[4],r[5],r[6]]; }
+        product=(product||"").trim(); hook=(hook||"").trim(); vtype=(vtype||"").trim();
+        if(!product&&!hook)continue;
+        state.entries.push({id:uid(),date:normDate(date),product:product||"(unknown)",hook,videoType:vtype,
+          platform:normPlat(plat),performance:normPerf(perf),notes:(notes||"").trim()});
+        if(product&&!state.products.includes(product))state.products.push(product);
+        if(vtype&&!state.videoTypes.includes(vtype))state.videoTypes.push(vtype);
+        added++;
+      }
+      state.products.sort((a,b)=>a.localeCompare(b)); state.videoTypes.sort((a,b)=>a.localeCompare(b));
+      save(); toast(`Imported ${added} test${added===1?"":"s"}`); render();
+    }catch(err){ toast("Couldn't read that CSV"); }
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
