@@ -17,7 +17,7 @@ Mix them freely — one line each, all handled in one run.
 
 ## Setup & run (macOS)
 
-Open **Terminal**, then:
+Requires **Python 3.10+**. Open **Terminal**, then:
 
 ```bash
 cd yt-transcripts          # the folder this README is in

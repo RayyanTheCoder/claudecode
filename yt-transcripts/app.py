@@ -38,12 +38,19 @@ except Exception:
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
     try:
-        from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
+        from youtube_transcript_api import TranscriptsDisabled, NoTranscriptFound
     except Exception:
-        class TranscriptsDisabled(Exception): ...
-        class NoTranscriptFound(Exception): ...
+        try:
+            from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
+        except Exception:
+            class TranscriptsDisabled(Exception): ...
+            class NoTranscriptFound(Exception): ...
 except Exception:
     _MISSING.append("youtube-transcript-api")
+
+
+class NoCaptions(Exception):
+    """Raised when a video simply has no usable transcript (treated as 'skipped')."""
 
 if _MISSING:
     print("\n[!] Missing packages: " + ", ".join(_MISSING))
@@ -111,6 +118,12 @@ def _video_url(vid):
     return f"https://www.youtube.com/watch?v={vid}"
 
 
+def extract_video_id(url):
+    """Pull an 11-char video id straight out of a URL (watch?v=, youtu.be, shorts, embed)."""
+    m = re.search(r"(?:youtu\.be/|[?&]v=|/shorts/|/embed/|/v/)([A-Za-z0-9_-]{11})", url or "")
+    return m.group(1) if m else None
+
+
 def _entry_channel(e):
     return (e.get("channel") or e.get("uploader") or "").strip()
 
@@ -149,6 +162,18 @@ def resolve_source(line, kind, max_n):
     if kind == "search":
         return _ytdlp_entries(f"ytsearch1:{line.strip()}", 1)[:1]
     if kind == "video":
+        # Take the id straight from the URL so a yt-dlp hiccup never blocks the
+        # transcript. yt-dlp is only used (best-effort) to enrich the title.
+        vid = extract_video_id(line.strip())
+        if vid:
+            title, channel = "", ""
+            try:
+                ents = _ytdlp_entries(line.strip(), 1)
+                if ents:
+                    title, channel = ents[0]["title"], ents[0]["channel"]
+            except Exception:
+                pass
+            return [{"id": vid, "title": title or vid, "url": _video_url(vid), "channel": channel}]
         return _ytdlp_entries(line.strip(), 1)[:1]
     target = line.strip()
     if kind == "channel" and not re.search(r"/(videos|streams|shorts)(/|\?|$)", target.lower()):
@@ -194,39 +219,59 @@ def search_videos(query, n):
     return out
 
 
-# ---- transcripts -------------------------------------------------------------
+# ---- transcripts (youtube-transcript-api >= 1.2.4, instance API) -------------
 def fetch_transcript(video_id, lang):
-    tl = YouTubeTranscriptApi.list_transcripts(video_id)
-    for finder, note in ((lambda: tl.find_manually_created_transcript([lang]), "manual"),
-                         (lambda: tl.find_generated_transcript([lang]), "auto")):
-        try:
-            return finder().fetch(), note
-        except Exception:
-            pass
-    transcripts = list(tl)
-    if not transcripts:
-        raise NoTranscriptFound(video_id, [lang], [])
-    transcripts.sort(key=lambda t: 0 if not getattr(t, "is_generated", False) else 1)
-    t = transcripts[0]
+    """Return (FetchedTranscript, note). Manual captions first, then auto, then translation."""
+    api = YouTubeTranscriptApi()
+    tl = api.list(video_id)  # raises TranscriptsDisabled / NoTranscriptFound if unavailable
+
+    transcript, note = None, None
     try:
-        langs = [x["language_code"] for x in (t.translation_languages or [])]
-        if getattr(t, "is_translatable", False) and lang in langs:
-            return t.translate(lang).fetch(), f"translated→{lang}"
+        transcript = tl.find_manually_created_transcript([lang]); note = "manual"
     except Exception:
-        pass
-    return t.fetch(), f"other lang ({getattr(t, 'language_code', '?')})"
+        try:
+            transcript = tl.find_generated_transcript([lang]); note = "auto"
+        except Exception:
+            transcript = None
+
+    if transcript is None:
+        available = list(tl)
+        if not available:
+            raise NoCaptions("no transcript available")
+        available.sort(key=lambda t: 0 if not getattr(t, "is_generated", False) else 1)
+        base = available[0]
+        try:
+            codes = [getattr(x, "language_code", None) for x in (base.translation_languages or [])]
+            if getattr(base, "is_translatable", False) and lang in codes:
+                transcript = base.translate(lang); note = f"translated→{lang}"
+        except Exception:
+            transcript = None
+        if transcript is None:
+            transcript = base
+            note = f"other lang ({getattr(base, 'language_code', '?')})"
+
+    return transcript.fetch(), note
 
 
-def format_transcript(segments, strip_timestamps):
+def _snip(snip, key, default=None):
+    """Read a field from a snippet whether it's a 1.x object or a legacy dict."""
+    if hasattr(snip, key):
+        return getattr(snip, key)
+    if isinstance(snip, dict):
+        return snip.get(key, default)
+    return default
+
+
+def format_transcript(fetched, strip_timestamps):
     lines = []
-    for seg in segments:
-        text = (seg.get("text") or "").replace("\n", " ").strip()
+    for snip in fetched:  # FetchedTranscript is iterable of snippets
+        text = (_snip(snip, "text", "") or "").replace("\n", " ").strip()
         if not text:
             continue
         if strip_timestamps:
             lines.append(text)
         else:
-            s = int(seg.get("start", 0))
+            s = int(_snip(snip, "start", 0) or 0)
             h, m, sec = s // 3600, (s % 3600) // 60, s % 60
             stamp = f"[{h:02d}:{m:02d}:{sec:02d}]" if h else f"[{m:02d}:{sec:02d}]"
             lines.append(f"{stamp} {text}")
@@ -298,10 +343,11 @@ def run_job(lines, max_n, lang, strip_timestamps):
                     item["status"], item["note"] = "found", note
                     item["words"] = len(text.split())
                     found.append(item.copy() | {"text": text})
-            except (TranscriptsDisabled, NoTranscriptFound):
+            except (TranscriptsDisabled, NoTranscriptFound, NoCaptions):
                 item["status"], item["note"] = "skipped", "no transcript"
             except Exception as e:
-                msg = str(e).splitlines()[0][:120] if str(e) else e.__class__.__name__
+                raw = str(e).strip()
+                msg = (raw.splitlines()[0] if raw else e.__class__.__name__)[:200]
                 item["status"], item["note"] = "failed", msg
             done_ct += 1
             with LOCK:
