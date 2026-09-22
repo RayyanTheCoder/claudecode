@@ -21,6 +21,7 @@ import io
 import csv
 import sys
 import time
+import random
 import threading
 import webbrowser
 from datetime import datetime
@@ -64,7 +65,9 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(BASE, "transcripts")
 COMBINED_PATH = os.path.join(OUT_DIR, "youtube_transcripts.txt")
 CSV_PATH = os.path.join(OUT_DIR, "youtube_transcripts.csv")
-REQUEST_DELAY = 1.2          # seconds between transcript fetches (be gentle)
+DELAY_MIN = 3.0             # seconds between transcript fetches (randomized, be gentle)
+DELAY_MAX = 5.0
+BLOCK_STREAK_LIMIT = 3      # stop the batch after this many blocked videos in a row
 PORT = int(os.environ.get("PORT", "7654"))
 
 app = Flask(__name__)
@@ -72,22 +75,27 @@ app = Flask(__name__)
 # ---- shared job state --------------------------------------------------------
 LOCK = threading.Lock()
 JOB = {"running": False, "phase": "Idle", "items": [], "done": False,
-       "summary": {}, "combined": False, "csv": False, "error": ""}
+       "summary": {}, "combined": False, "csv": False, "error": "",
+       "blocked": False, "block_msg": "", "sources": 0, "lang": "en", "strip": True}
 
 
 def reset_job():
     with LOCK:
         JOB.update(running=True, phase="Reading your links…", items=[], done=False,
-                   summary={}, combined=False, csv=False, error="")
+                   summary={}, combined=False, csv=False, error="",
+                   blocked=False, block_msg="", sources=0)
 
 
 def snapshot():
     with LOCK:
+        items = [{k: v for k, v in i.items() if k != "text"} for i in JOB["items"]]
         return {
             "running": JOB["running"], "phase": JOB["phase"], "done": JOB["done"],
             "summary": dict(JOB["summary"]), "combined": JOB["combined"],
             "csv": JOB["csv"], "error": JOB["error"],
-            "items": [dict(i) for i in JOB["items"]],
+            "blocked": JOB.get("blocked", False), "block_msg": JOB.get("block_msg", ""),
+            "retryable": any(i["status"] == "failed" and i.get("id") for i in JOB["items"]),
+            "items": items,
         }
 
 
@@ -285,12 +293,127 @@ def sanitize(name):
 
 
 # ---- worker ------------------------------------------------------------------
+def _clean_message(e):
+    """Full human reason from a transcript-api error (don't cut at 'caused by:')."""
+    msg = str(e).strip()
+    if "This is most likely caused by:" in msg:
+        after = msg.split("This is most likely caused by:", 1)[1]
+        after = re.split(r"If you are sure|If you are using", after)[0]
+        after = " ".join(after.split()).strip(" :.-")
+        if after:
+            return after[:300]
+    return (" ".join(msg.split())[:300]) or type(e).__name__
+
+
+def describe_error(e):
+    """Return (status, message, is_block) for a failed/skipped fetch."""
+    name = type(e).__name__
+    low = str(e).lower()
+    is_block = name in ("IpBlocked", "RequestBlocked", "YouTubeRequestFailed") \
+        or "blocking requests" in low or "too many requests" in low \
+        or "http error 429" in low or "ip belonging to a cloud provider" in low
+    if name == "TranscriptsDisabled":
+        return "skipped", "subtitles disabled", False
+    if name in ("NoTranscriptFound", "NoCaptions"):
+        return "skipped", "no transcript found", False
+    if is_block:
+        return "failed", "YouTube is blocking requests from your IP", True
+    if name in ("VideoUnavailable", "VideoUnplayable"):
+        return "failed", "video unavailable", False
+    if name == "AgeRestricted":
+        return "failed", "age-restricted video", False
+    if name == "InvalidVideoId":
+        return "failed", "invalid video id", False
+    return "failed", _clean_message(e), False
+
+
+BLOCK_MSG = ("YouTube is temporarily blocking your connection. "
+             "Wait a few hours or switch networks, then retry.")
+
+
+def _process_videos(videos, lang, strip_timestamps):
+    """Fetch transcripts for the given items (mutated in place). Stops the batch if
+    BLOCK_STREAK_LIMIT videos fail in a row due to blocking."""
+    # filenames already used by found items (so retries don't clobber siblings)
+    claimed = {sanitize(i["title"]).lower(): i["id"]
+               for i in JOB["items"] if i["status"] == "found" and i.get("id") and i not in videos}
+    total, done, streak = len(videos), 0, 0
+    for idx, item in enumerate(videos):
+        item["status"] = "working"
+        with LOCK:
+            JOB["phase"] = f"Fetching transcripts… ({done}/{total})"
+        try:
+            fetched, note = fetch_transcript(item["id"], lang)
+            text = format_transcript(fetched, strip_timestamps)
+            if not text.strip():
+                item.update(status="skipped", note="empty transcript", text="", words=0)
+                streak = 0
+            else:
+                name = sanitize(item["title"])
+                if name.lower() in claimed and claimed[name.lower()] != item["id"]:
+                    name = f"{name} [{item['id']}]"
+                claimed[name.lower()] = item["id"]
+                with open(os.path.join(OUT_DIR, name + ".txt"), "w", encoding="utf-8") as fh:
+                    fh.write(f"{item['title']}\n{item['url']}\n\n{text}\n")
+                item.update(status="found", note=note, text=text, words=len(text.split()))
+                streak = 0
+        except Exception as e:
+            status, msg, is_block = describe_error(e)
+            item.update(status=status, note=msg, text="", words=0)
+            streak = streak + 1 if is_block else 0
+        done += 1
+        with LOCK:
+            JOB["phase"] = f"Fetching transcripts… ({done}/{total})"
+        if streak >= BLOCK_STREAK_LIMIT:
+            with LOCK:
+                JOB["blocked"] = True
+                JOB["block_msg"] = BLOCK_MSG
+            for rem in videos[idx + 1:]:
+                if rem["status"] in ("pending", "working"):
+                    rem.update(status="failed", note="not attempted — batch stopped (blocking)",
+                               text="", words=0)
+            break
+        time.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
+
+
+def write_outputs(sources_count):
+    """(Re)write the combined .txt and CSV from whatever is in JOB now."""
+    videos = [i for i in JOB["items"] if i.get("id")]
+    found = [i for i in videos if i["status"] == "found"]
+    n_found, n_skip = len(found), sum(1 for i in videos if i["status"] == "skipped")
+    n_fail = sum(1 for i in videos if i["status"] == "failed")
+    header = [
+        "YouTube transcripts",
+        datetime.now().strftime("Generated %Y-%m-%d %H:%M"),
+        f"Found: {n_found}   Skipped: {n_skip}   Failed: {n_fail}   "
+        f"(from {sources_count} line{'s' if sources_count != 1 else ''}, "
+        f"{len(videos)} video{'s' if len(videos) != 1 else ''})",
+        "=" * 60, "",
+    ]
+    parts = ["\n".join(header)]
+    for f in found:
+        parts.append(f"### {f['title']}\n{f['url']}\n\n{f.get('text','')}\n\n{'-'*60}\n")
+    with open(COMBINED_PATH, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(parts))
+    with open(CSV_PATH, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["title", "channel", "url", "status", "word_count"])
+        for it in videos:
+            w.writerow([it["title"], it.get("channel", ""), it["url"],
+                        it["status"], it.get("words", 0)])
+    with LOCK:
+        JOB["summary"] = {"found": n_found, "skipped": n_skip, "failed": n_fail,
+                          "sources": sources_count, "videos": len(videos)}
+        JOB["combined"] = n_found > 0
+        JOB["csv"] = len(videos) > 0
+
+
 def run_job(lines, max_n, lang, strip_timestamps):
     try:
         os.makedirs(OUT_DIR, exist_ok=True)
         sources = [l for l in lines if l.strip()]
-
         with LOCK:
+            JOB["sources"], JOB["lang"], JOB["strip"] = len(sources), lang, strip_timestamps
             JOB["phase"] = "Reading your links…"
         videos, seen = [], set()
         for line in sources:
@@ -324,67 +447,33 @@ def run_job(lines, max_n, lang, strip_timestamps):
 
         with LOCK:
             JOB["phase"] = f"Fetching transcripts… (0/{len(videos)})"
-        used_names, found, done_ct = set(), [], 0
-        for item in videos:
-            item["status"] = "working"
-            try:
-                segments, note = fetch_transcript(item["id"], lang)
-                text = format_transcript(segments, strip_timestamps)
-                if not text.strip():
-                    item["status"], item["note"] = "skipped", "empty transcript"
-                else:
-                    fname = sanitize(item["title"])
-                    if fname.lower() in used_names:
-                        fname = f"{fname} [{item['id']}]"
-                    used_names.add(fname.lower())
-                    body = f"{item['title']}\n{item['url']}\n\n{text}\n"
-                    with open(os.path.join(OUT_DIR, fname + ".txt"), "w", encoding="utf-8") as fh:
-                        fh.write(body)
-                    item["status"], item["note"] = "found", note
-                    item["words"] = len(text.split())
-                    found.append(item.copy() | {"text": text})
-            except (TranscriptsDisabled, NoTranscriptFound, NoCaptions):
-                item["status"], item["note"] = "skipped", "no transcript"
-            except Exception as e:
-                raw = str(e).strip()
-                msg = (raw.splitlines()[0] if raw else e.__class__.__name__)[:200]
-                item["status"], item["note"] = "failed", msg
-            done_ct += 1
-            with LOCK:
-                JOB["phase"] = f"Fetching transcripts… ({done_ct}/{len(videos)})"
-            time.sleep(REQUEST_DELAY)
-
-        n_found = sum(1 for i in videos if i["status"] == "found")
-        n_skip = sum(1 for i in videos if i["status"] == "skipped")
-        n_fail = sum(1 for i in videos if i["status"] == "failed")
-        header = [
-            "YouTube transcripts",
-            datetime.now().strftime("Generated %Y-%m-%d %H:%M"),
-            f"Found: {n_found}   Skipped: {n_skip}   Failed: {n_fail}   "
-            f"(from {len(sources)} line{'s' if len(sources) != 1 else ''}, "
-            f"{len(videos)} video{'s' if len(videos) != 1 else ''})",
-            "=" * 60, "",
-        ]
-        parts = ["\n".join(header)]
-        for f in found:
-            parts.append(f"### {f['title']}\n{f['url']}\n\n{f['text']}\n\n{'-'*60}\n")
-        with open(COMBINED_PATH, "w", encoding="utf-8") as fh:
-            fh.write("\n".join(parts))
-
-        # CSV: one row per video (title, channel, url, status, word_count)
-        with open(CSV_PATH, "w", newline="", encoding="utf-8") as fh:
-            w = csv.writer(fh)
-            w.writerow(["title", "channel", "url", "status", "word_count"])
-            for it in videos:
-                w.writerow([it["title"], it.get("channel", ""), it["url"],
-                            it["status"], it.get("words", 0)])
-
+        _process_videos(videos, lang, strip_timestamps)
+        write_outputs(len(sources))
         with LOCK:
-            JOB["summary"] = {"found": n_found, "skipped": n_skip, "failed": n_fail,
-                              "sources": len(sources), "videos": len(videos)}
-            JOB["combined"] = n_found > 0
-            JOB["csv"] = len(videos) > 0
-            JOB["phase"] = "Done"
+            JOB["phase"] = "Stopped — blocked" if JOB["blocked"] else "Done"
+            JOB["done"] = True
+    except Exception as e:
+        with LOCK:
+            JOB["error"] = f"{e.__class__.__name__}: {e}"
+            JOB["phase"] = "Error"
+            JOB["done"] = True
+    finally:
+        with LOCK:
+            JOB["running"] = False
+
+
+def retry_worker():
+    try:
+        with LOCK:
+            failed = [i for i in JOB["items"] if i["status"] == "failed" and i.get("id")]
+            lang, strip = JOB.get("lang", "en"), JOB.get("strip", True)
+            JOB["phase"] = f"Retrying {len(failed)} failed…"
+        for it in failed:
+            it.update(status="pending", note="retry")
+        _process_videos(failed, lang, strip)
+        write_outputs(JOB.get("sources", 0))
+        with LOCK:
+            JOB["phase"] = "Stopped — blocked" if JOB["blocked"] else "Done"
             JOB["done"] = True
     except Exception as e:
         with LOCK:
@@ -419,6 +508,19 @@ def start():
     strip_ts = bool(data.get("strip", True))
     reset_job()
     threading.Thread(target=run_job, args=(lines, max_n, lang, strip_ts), daemon=True).start()
+    return jsonify(ok=True)
+
+
+@app.route("/retry", methods=["POST"])
+def retry():
+    with LOCK:
+        if JOB["running"]:
+            return jsonify(ok=False, error="A batch is already running."), 409
+        failed = [i for i in JOB["items"] if i["status"] == "failed" and i.get("id")]
+        if not failed:
+            return jsonify(ok=False, error="No failed videos to retry."), 400
+        JOB.update(running=True, done=False, error="", blocked=False, block_msg="")
+    threading.Thread(target=retry_worker, daemon=True).start()
     return jsonify(ok=True)
 
 
@@ -500,7 +602,8 @@ PAGE = r"""<!doctype html>
   .item .ic{flex:none;width:20px;text-align:center;font-size:15px;margin-top:1px}
   .item .t{flex:1;min-width:0}
   .item .nm{font-size:14px;word-break:break-word}
-  .item .meta{font-size:12px;color:var(--muted);margin-top:2px;word-break:break-all}
+  .item .meta{font-size:12px;color:var(--muted);margin-top:2px;word-break:break-word}
+  .item .meta .reason{color:var(--fail)}
   .item.found{border-color:#295c45} .item.skipped{border-color:#5c4a29} .item.failed{border-color:#5c2f34}
   .badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;flex:none;margin-top:1px}
   .b-found{color:var(--good);background:rgba(75,191,135,.12)}
@@ -541,6 +644,9 @@ PAGE = r"""<!doctype html>
 https://www.youtube.com/@somechannel
 https://www.youtube.com/playlist?list=...
 best cold plunge review 2026"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button class="act ghost" id="clear">Clear</button>
+    </div>
     <div class="settings">
       <div class="fld"><label>Max videos / channel or playlist</label><input type="number" id="max" value="10" min="1" max="500"></div>
       <div class="fld"><label>Language</label><input type="text" id="lang" value="en"></div>
@@ -548,6 +654,7 @@ best cold plunge review 2026"></textarea>
     </div>
     <div class="row">
       <button class="act" id="go">Get Transcripts</button>
+      <button class="act" id="retry" disabled>Retry failed</button>
       <button class="act ghost" id="dl" disabled>Download combined file</button>
       <button class="act ghost" id="dlcsv" disabled>Download CSV</button>
     </div>
@@ -595,18 +702,23 @@ function switchTab(t){
 document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
 
 /* ---- transcripts ---- */
+$("#clear").onclick=()=>{$("#box").value="";$("#box").focus();};
 $("#go").onclick=async()=>{
   const text=$("#box").value;
   if(!text.trim()){alert("Paste at least one line first.");return;}
-  $("#go").disabled=true;$("#dl").disabled=true;$("#dlcsv").disabled=true;$("#summary").innerHTML="";$("#list").innerHTML="";
-  const r=await fetch("/run",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({text,max:+$("#max").value||10,lang:$("#lang").value||"en",strip:$("#strip").checked})});
+  startRun("/run",{text,max:+$("#max").value||10,lang:$("#lang").value||"en",strip:$("#strip").checked});
+};
+$("#retry").onclick=()=>startRun("/retry",{});
+$("#dl").onclick=()=>{location.href="/download";};
+$("#dlcsv").onclick=()=>{location.href="/download_csv";};
+async function startRun(endpoint,body){
+  $("#go").disabled=true;$("#retry").disabled=true;$("#dl").disabled=true;$("#dlcsv").disabled=true;
+  if(endpoint==="/run"){$("#summary").innerHTML="";$("#list").innerHTML="";}
+  const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   const j=await r.json();
   if(!j.ok){alert(j.error||"Failed to start");$("#go").disabled=false;return;}
   poll();timer=setInterval(poll,1000);
-};
-$("#dl").onclick=()=>{location.href="/download";};
-$("#dlcsv").onclick=()=>{location.href="/download_csv";};
+}
 async function poll(){
   const s=await (await fetch("/progress")).json();
   $("#phase").textContent=s.phase;
@@ -614,16 +726,19 @@ async function poll(){
     <div class="item ${it.status}">
       <span class="ic">${ICON[it.status]||"•"}</span>
       <span class="t"><div class="nm">${esc(it.title)}</div>
-        <div class="meta">${esc(it.url||it.note||"")}${it.url&&it.note?" · "+esc(it.note):""}</div></span>
+        <div class="meta">${esc(it.url||"")}${it.url&&it.note?" · ":""}<span class="${it.status==="failed"?"reason":""}">${esc(it.url?it.note:(it.note||""))}</span></div></span>
       <span class="badge b-${it.status}">${it.status}</span>
     </div>`).join("");
   if(s.done){
     clearInterval(timer);$("#go").disabled=false;
-    if(s.error){$("#summary").innerHTML=`<div class="summary err">Error: ${esc(s.error)}</div>`;}
-    else{const m=s.summary;
-      $("#summary").innerHTML=`<div class="summary"><b>${m.found}</b> found · <b>${m.skipped}</b> skipped · <b>${m.failed}</b> failed
-        <span style="color:var(--muted)">(${m.videos} videos from ${m.sources} lines)</span></div>`;
-      $("#dl").disabled=!s.combined;$("#dlcsv").disabled=!s.csv;}
+    let html="";
+    if(s.blocked){html+=`<div class="summary err">⛔ ${esc(s.block_msg)}</div>`;}
+    if(s.error){html+=`<div class="summary err">Error: ${esc(s.error)}</div>`;}
+    else{const m=s.summary||{};
+      html+=`<div class="summary"><b>${m.found||0}</b> found · <b>${m.skipped||0}</b> skipped · <b>${m.failed||0}</b> failed
+        <span style="color:var(--muted)">(${m.videos||0} videos from ${m.sources||0} lines)</span></div>`;}
+    $("#summary").innerHTML=html;
+    $("#dl").disabled=!s.combined;$("#dlcsv").disabled=!s.csv;$("#retry").disabled=!s.retryable;
   }
 }
 

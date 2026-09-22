@@ -89,6 +89,13 @@ Discover videos to transcribe without leaving the tool:
 ## Notes
 
 - Data and files stay on your machine.
+- **Rate limits:** there's a randomized **3–5s** pause between transcript fetches.
+  If **3 videos in a row** fail because YouTube is blocking your IP, the batch
+  stops and tells you to wait a few hours or switch networks. Use **Retry failed**
+  to re-run just the failed videos once you're unblocked.
+- Failed rows show the **real reason** (e.g. "subtitles disabled", "no transcript
+  found", "YouTube is blocking requests from your IP").
+- **Clear** empties the links box.
 - If a channel is huge, the **Max videos** setting caps how many it pulls.
 - If YouTube temporarily blocks requests (too many, too fast), wait a bit and
   re-run — the delay is there to avoid this.
