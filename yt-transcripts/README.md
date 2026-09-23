@@ -69,7 +69,10 @@ Discover videos to transcribe without leaving the tool:
    *Results to fetch* setting, default 30) and pulls **metadata only, no downloads**.
 2. Filter the results by **length** (any / under 10 min / 10–30 min / over 30 min),
    **minimum views**, and **upload date** (any / past month / past year); **sort** by
-   relevance, views, or upload date. Filtering is instant — no re-search needed.
+   relevance, views, or upload date. Results come back in YouTube's **relevance**
+   order (the default) and the exact query is shown above the table — date/view
+   sorting is only applied afterwards, on the matching results. Filtering is
+   instant — no re-search needed.
 3. The table shows a checkbox, thumbnail, title, channel, views, length and upload
    date, with **Select all** / **Select none**.
 4. Click **Send to Transcripts** — the checked video URLs drop into the Transcripts

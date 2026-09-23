@@ -211,18 +211,35 @@ def normalize_search_entry(e):
     }
 
 
-def search_videos(query, n):
-    """Full metadata search (no downloads) so we get views, length AND upload date."""
+def build_search_string(query, n):
+    """Return (search_string, clean_query, n) — the exact string handed to yt-dlp."""
+    q = " ".join((query or "").split())          # collapse whitespace, keep the words
     n = max(1, min(int(n), 200))
+    return f"ytsearch{n}:{q}", q, n
+
+
+def search_videos(query, n):
+    """Keyword search (no downloads) in YouTube's relevance order.
+
+    We do NOT sort here — the caller/UI applies view/date sorting afterwards, so
+    relevance is preserved as returned by YouTube.
+    """
+    search_str, q, n = build_search_string(query, n)
+    if not q:
+        raise ValueError("empty query")
+    # Log the exact string being run so it's easy to confirm the query wasn't dropped.
+    print(f"[find] yt-dlp search string: {search_str!r}", flush=True)
     opts = {"quiet": True, "no_warnings": True, "skip_download": True,
             "extract_flat": False, "playlistend": n, "ignoreerrors": True,
             "socket_timeout": 20}
     with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(f"ytsearch{n}:{query.strip()}", download=False)
+        info = ydl.extract_info(search_str, download=False)
     entries = (info or {}).get("entries") or []
     out = []
     for e in entries:
-        if e and e.get("id"):
+        # Only real videos — 11-char ids. Skips channel/playlist/shelf entries
+        # that YouTube search sometimes mixes in.
+        if e and e.get("id") and len(str(e.get("id"))) == 11:
             out.append(normalize_search_entry(e))
     return out
 
@@ -534,11 +551,12 @@ def search():
         n = max(1, min(int(data.get("n", 30)), 200))
     except Exception:
         n = 30
+    search_str, q, n = build_search_string(query, n)
     try:
         results = search_videos(query, n)
     except Exception as e:
         return jsonify(ok=False, error=f"Search failed: {e}"), 500
-    return jsonify(ok=True, results=results)
+    return jsonify(ok=True, results=results, query=q, search=search_str)
 
 
 @app.route("/progress")
@@ -627,6 +645,7 @@ PAGE = r"""<!doctype html>
   .rowsel{display:flex;gap:10px;align-items:center;margin:14px 0 4px;flex-wrap:wrap}
   .cnt{color:var(--muted);font-size:12px}
   .searching{color:var(--muted);font-size:13px;margin-top:14px}
+  .qhead{margin:16px 0 4px;font-size:15px}
   input[type=checkbox].pick{width:17px;height:17px;accent-color:var(--accent)}
   .hidden{display:none}
 </style></head>
@@ -691,7 +710,7 @@ best cold plunge review 2026"></textarea>
 <script>
 const $=s=>document.querySelector(s);
 const ICON={found:"✅",skipped:"⤬",failed:"✕",working:"…",pending:"•"};
-let timer=null, RESULTS=[];
+let timer=null, RESULTS=[], LAST_QUERY="";
 
 /* ---- tabs ---- */
 function switchTab(t){
@@ -756,7 +775,8 @@ async function doSearch(){
       body:JSON.stringify({query,n:+$("#n").value||30})});
     const j=await r.json();
     if(!j.ok){note.textContent="";note.classList.add("hidden");alert(j.error||"Search failed");return;}
-    RESULTS=j.results||[];note.classList.add("hidden");
+    RESULTS=j.results||[];LAST_QUERY=j.query||query;note.classList.add("hidden");
+    $("#fSort").value="relevance";  // fresh results always start in relevance order
     renderResults();
   }catch(e){note.textContent="";note.classList.add("hidden");alert("Search failed: "+e);}
   finally{$("#search").disabled=false;}
@@ -786,7 +806,8 @@ function currentOpts(){return {length:$("#fLen").value,minViews:+$("#fViews").va
 function renderResults(){
   const filtered=applyFilters(RESULTS,currentOpts());
   if(!RESULTS.length){$("#results").innerHTML=`<p class="hint">No results yet — run a search.</p>`;return;}
-  $("#results").innerHTML=`
+  const qhead=`<div class="qhead">Results for “<b>${esc(LAST_QUERY)}</b>” <span class="muted">· ${filtered.length} of ${RESULTS.length} shown${$("#fSort").value!=="relevance"?" · sorted by "+$("#fSort").value:""}</span></div>`;
+  $("#results").innerHTML=qhead+`
     <div class="rowsel">
       <button class="act ghost" id="selAll">Select all</button>
       <button class="act ghost" id="selNone">Select none</button>
