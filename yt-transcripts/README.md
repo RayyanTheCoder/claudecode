@@ -99,6 +99,21 @@ Discover videos to transcribe without leaving the tool:
 - Failed rows show the **real reason** (e.g. "subtitles disabled", "no transcript
   found", "YouTube is blocking requests from your IP").
 - **Clear** empties the links box.
+
+## Using a proxy (optional)
+
+If YouTube is blocking your IP, set a **Proxy URL** in the Transcripts tab
+(e.g. `http://user:pass@host:port`). When set, both **yt-dlp** and
+**youtube-transcript-api** requests route through it; leave it empty to work
+directly as before. The value is saved between sessions.
+
+- **Test proxy** fetches one known video and reports whether the connection
+  worked (via proxy or direct).
+- Every processed row shows which **connection** it used (`via direct` / `via proxy`).
+- **yt-dlp subtitle fallback:** if the transcript API is IP/Request-blocked for a
+  video, it automatically retries that video via yt-dlp's subtitle download and
+  shows `method: yt-dlp subtitles` when that path succeeds (otherwise
+  `method: youtube-transcript-api`).
 - If a channel is huge, the **Max videos** setting caps how many it pulls.
 - If YouTube temporarily blocks requests (too many, too fast), wait a bit and
   re-run — the delay is there to avoid this.

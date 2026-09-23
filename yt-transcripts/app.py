@@ -20,9 +20,11 @@ import re
 import io
 import csv
 import sys
+import json
 import time
 import random
 import threading
+import urllib.request
 import webbrowser
 from datetime import datetime
 
@@ -69,6 +71,37 @@ DELAY_MIN = 3.0             # seconds between transcript fetches (randomized, be
 DELAY_MAX = 5.0
 BLOCK_STREAK_LIMIT = 3      # stop the batch after this many blocked videos in a row
 PORT = int(os.environ.get("PORT", "7654"))
+CONFIG_PATH = os.path.join(BASE, ".yt_config.json")
+
+
+def load_config():
+    try:
+        with open(CONFIG_PATH, encoding="utf-8") as fh:
+            return json.load(fh) or {}
+    except Exception:
+        return {}
+
+
+def save_config(cfg):
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh)
+    except Exception:
+        pass
+
+
+# Current proxy URL (empty = direct). Persisted in .yt_config.json between sessions.
+PROXY = (load_config().get("proxy") or "").strip()
+
+
+def set_proxy(url):
+    global PROXY
+    PROXY = (url or "").strip()
+    save_config({"proxy": PROXY})
+
+
+def connection_label():
+    return "proxy" if PROXY else "direct"
 
 app = Flask(__name__)
 
@@ -140,6 +173,8 @@ def _ytdlp_entries(url, max_n):
     """Return normalized list of {id,title,url,channel} via flat extraction (no download)."""
     opts = {"quiet": True, "no_warnings": True, "extract_flat": True,
             "skip_download": True, "playlistend": max_n, "ignoreerrors": True}
+    if PROXY:
+        opts["proxy"] = PROXY
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
     out = []
@@ -232,6 +267,8 @@ def search_videos(query, n):
     opts = {"quiet": True, "no_warnings": True, "skip_download": True,
             "extract_flat": False, "playlistend": n, "ignoreerrors": True,
             "socket_timeout": 20}
+    if PROXY:
+        opts["proxy"] = PROXY
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(search_str, download=False)
     entries = (info or {}).get("entries") or []
@@ -245,9 +282,20 @@ def search_videos(query, n):
 
 
 # ---- transcripts (youtube-transcript-api >= 1.2.4, instance API) -------------
+def _make_api():
+    """Build a YouTubeTranscriptApi, routing through PROXY when one is set."""
+    if PROXY:
+        try:
+            from youtube_transcript_api.proxies import GenericProxyConfig
+            return YouTubeTranscriptApi(proxy_config=GenericProxyConfig(http_url=PROXY, https_url=PROXY))
+        except Exception:
+            pass
+    return YouTubeTranscriptApi()
+
+
 def fetch_transcript(video_id, lang):
     """Return (FetchedTranscript, note). Manual captions first, then auto, then translation."""
-    api = YouTubeTranscriptApi()
+    api = _make_api()
     tl = api.list(video_id)  # raises TranscriptsDisabled / NoTranscriptFound if unavailable
 
     transcript, note = None, None
@@ -309,6 +357,115 @@ def sanitize(name):
     return (name[:120].strip() or "untitled")
 
 
+# ---- yt-dlp subtitle fallback (used when the API is IP/Request blocked) -------
+def _http_get(url):
+    proxies = {"http": PROXY, "https": PROXY} if PROXY else {}
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler(proxies))
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with opener.open(req, timeout=20) as resp:
+        return resp.read().decode("utf-8", "replace")
+
+
+def _parse_json3(text):
+    data = json.loads(text)
+    out = []
+    for ev in data.get("events", []):
+        s = "".join(seg.get("utf8", "") for seg in (ev.get("segs") or [])).strip()
+        if s:
+            out.append({"text": s, "start": (ev.get("tStartMs", 0) or 0) / 1000.0})
+    return out
+
+
+def _parse_vtt(text):
+    out = []
+    for block in re.split(r"\r?\n\r?\n", text):
+        start, words = None, []
+        for line in block.splitlines():
+            s = line.strip()
+            if not s or s.upper() == "WEBVTT" or re.match(r"^\d+$", s):
+                continue
+            m = re.match(r"(\d+):(\d+):(\d+)[.,](\d+)\s*-->", s)
+            if m:
+                start = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
+                continue
+            if "-->" in s:
+                continue
+            words.append(re.sub(r"<[^>]+>", "", line))
+        joined = " ".join(w.strip() for w in words if w.strip()).strip()
+        if joined:
+            out.append({"text": joined, "start": start or 0})
+    return out
+
+
+def _parse_xml(text):
+    import html
+    out = []
+    for m in re.finditer(r'<text[^>]*\bstart="([\d.]+)"[^>]*>(.*?)</text>', text, re.S):
+        t = html.unescape(re.sub(r"<[^>]+>", "", m.group(2))).strip()
+        if t:
+            out.append({"text": t, "start": float(m.group(1))})
+    return out
+
+
+def _parse_subs(text, ext):
+    ext = (ext or "").lower()
+    t = text.lstrip()
+    if ext == "json3" or t.startswith("{"):
+        return _parse_json3(text)
+    if ext == "vtt" or t.upper().startswith("WEBVTT"):
+        return _parse_vtt(text)
+    if ext in ("srv1", "srv2", "srv3", "ttml", "xml") or t.startswith("<"):
+        return _parse_xml(text)
+    # last resort: try each
+    for parser in (_parse_json3, _parse_vtt, _parse_xml):
+        try:
+            r = parser(text)
+            if r:
+                return r
+        except Exception:
+            pass
+    return []
+
+
+def fetch_via_ytdlp(video_id, lang):
+    """Fallback: pull captions through yt-dlp's subtitle download and parse them.
+    Returns (segments, note). Raises NoCaptions if there are no subtitles."""
+    opts = {"quiet": True, "no_warnings": True, "skip_download": True,
+            "writesubtitles": True, "writeautomaticsub": True,
+            "subtitleslangs": [lang], "subtitlesformat": "json3/vtt/srv1/best",
+            "socket_timeout": 20, "ignoreerrors": True}
+    if PROXY:
+        opts["proxy"] = PROXY
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(_video_url(video_id), download=False)
+    if not info:
+        raise NoCaptions("no subtitles via yt-dlp")
+
+    def pick(d):
+        tracks = (d or {}).get(lang)
+        if not tracks and d:
+            tracks = next(iter(d.values()), None)  # any language as a last resort
+        if not tracks:
+            return None
+        for pref in ("json3", "vtt", "srv1", "srv3", "ttml"):
+            for tr in tracks:
+                if tr.get("ext") == pref and tr.get("url"):
+                    return tr
+        return next((tr for tr in tracks if tr.get("url")), None)
+
+    track = (info.get("requested_subtitles") or {}).get(lang)
+    if not track:
+        track = pick(info.get("subtitles")) or pick(info.get("automatic_captions"))
+    if not track or not track.get("url"):
+        raise NoCaptions("no subtitles via yt-dlp")
+
+    segments = _parse_subs(_http_get(track["url"]), track.get("ext", ""))
+    if not segments:
+        raise NoCaptions("empty subtitles via yt-dlp")
+    src = "manual" if (info.get("subtitles") or {}).get(lang) else "auto"
+    return segments, src
+
+
 # ---- worker ------------------------------------------------------------------
 def _clean_message(e):
     """Full human reason from a transcript-api error (don't cut at 'caused by:')."""
@@ -359,12 +516,31 @@ def _process_videos(videos, lang, strip_timestamps):
         item["status"] = "working"
         with LOCK:
             JOB["phase"] = f"Fetching transcripts… ({done}/{total})"
+        item["connection"] = connection_label()
+        segments = note = method = None
+        fail_status = fail_note = None
+        is_block = False
         try:
-            fetched, note = fetch_transcript(item["id"], lang)
-            text = format_transcript(fetched, strip_timestamps)
+            segments, note = fetch_transcript(item["id"], lang)
+            method = "youtube-transcript-api"
+        except Exception as e:
+            status, msg, blk = describe_error(e)
+            if blk:
+                # API is IP/Request blocked — try yt-dlp's subtitle download instead
+                try:
+                    segments, note = fetch_via_ytdlp(item["id"], lang)
+                    method = "yt-dlp subtitles"
+                except (TranscriptsDisabled, NoTranscriptFound, NoCaptions):
+                    fail_status, fail_note = "skipped", "no transcript"
+                except Exception as e2:
+                    fail_status, fail_note, is_block = describe_error(e2)
+            else:
+                fail_status, fail_note = status, msg
+
+        if segments is not None:
+            text = format_transcript(segments, strip_timestamps)
             if not text.strip():
-                item.update(status="skipped", note="empty transcript", text="", words=0)
-                streak = 0
+                item.update(status="skipped", note="empty transcript", method=method, text="", words=0)
             else:
                 name = sanitize(item["title"])
                 if name.lower() in claimed and claimed[name.lower()] != item["id"]:
@@ -372,11 +548,11 @@ def _process_videos(videos, lang, strip_timestamps):
                 claimed[name.lower()] = item["id"]
                 with open(os.path.join(OUT_DIR, name + ".txt"), "w", encoding="utf-8") as fh:
                     fh.write(f"{item['title']}\n{item['url']}\n\n{text}\n")
-                item.update(status="found", note=note, text=text, words=len(text.split()))
-                streak = 0
-        except Exception as e:
-            status, msg, is_block = describe_error(e)
-            item.update(status=status, note=msg, text="", words=0)
+                item.update(status="found", note=note, method=method, text=text, words=len(text.split()))
+            streak = 0
+        else:
+            item.update(status=fail_status or "failed", note=fail_note or "failed",
+                        method=method or "—", text="", words=0)
             streak = streak + 1 if is_block else 0
         done += 1
         with LOCK:
@@ -559,6 +735,34 @@ def search():
     return jsonify(ok=True, results=results, query=q, search=search_str)
 
 
+@app.route("/config", methods=["GET", "POST"])
+def config():
+    if request.method == "POST":
+        data = request.get_json(force=True, silent=True) or {}
+        set_proxy(data.get("proxy") or "")
+    return jsonify(ok=True, proxy=PROXY, connection=connection_label())
+
+
+@app.route("/test_proxy", methods=["POST"])
+def test_proxy():
+    data = request.get_json(force=True, silent=True) or {}
+    if "proxy" in data:
+        set_proxy(data.get("proxy") or "")
+    conn = connection_label()
+    vid = "dQw4w9WgXcQ"  # a well-known, always-available video
+    try:
+        fetch_transcript(vid, "en")
+        return jsonify(ok=True, connection=conn,
+                       message=f"Worked — reached YouTube via {conn} and pulled a transcript.")
+    except (TranscriptsDisabled, NoTranscriptFound, NoCaptions):
+        # We reached YouTube fine; the test video just had no matching transcript.
+        return jsonify(ok=True, connection=conn,
+                       message=f"Connection OK via {conn} (reached YouTube; test clip had no transcript).")
+    except Exception as e:
+        _st, msg, _blk = describe_error(e)
+        return jsonify(ok=False, connection=conn, message=f"Failed via {conn}: {msg}")
+
+
 @app.route("/progress")
 def progress():
     return jsonify(snapshot())
@@ -671,6 +875,14 @@ best cold plunge review 2026"></textarea>
       <div class="fld"><label>Language</label><input type="text" id="lang" value="en"></div>
       <div class="fld"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="strip" checked> Strip timestamps</label></div>
     </div>
+    <div class="fld" style="margin-bottom:10px">
+      <label>Proxy URL (optional) — routes yt-dlp &amp; transcript requests through it</label>
+      <div class="row">
+        <input type="text" id="proxy" placeholder="http://user:pass@host:port   (leave empty for a direct connection)" style="flex:1;min-width:220px">
+        <button class="act ghost" id="testProxy">Test proxy</button>
+      </div>
+      <div id="proxyStatus" class="hint"></div>
+    </div>
     <div class="row">
       <button class="act" id="go">Get Transcripts</button>
       <button class="act" id="retry" disabled>Retry failed</button>
@@ -722,6 +934,33 @@ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>switchTab(b.d
 
 /* ---- transcripts ---- */
 $("#clear").onclick=()=>{$("#box").value="";$("#box").focus();};
+
+/* ---- proxy config (persisted server-side + localStorage mirror) ---- */
+(async()=>{
+  let saved="";
+  try{saved=localStorage.getItem("yt_proxy")||"";}catch(e){}
+  $("#proxy").value=saved;
+  try{const c=await (await fetch("/config")).json(); if(typeof c.proxy==="string"){$("#proxy").value=c.proxy;}}catch(e){}
+})();
+let proxySaveT=null;
+function saveProxy(){
+  const v=$("#proxy").value.trim();
+  try{localStorage.setItem("yt_proxy",v);}catch(e){}
+  fetch("/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({proxy:v})}).catch(()=>{});
+}
+$("#proxy").addEventListener("input",()=>{clearTimeout(proxySaveT);proxySaveT=setTimeout(saveProxy,400);});
+$("#testProxy").onclick=async()=>{
+  const st=$("#proxyStatus");st.textContent="Testing…";st.style.color="var(--muted)";
+  $("#testProxy").disabled=true;
+  try{
+    const r=await fetch("/test_proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({proxy:$("#proxy").value.trim()})});
+    const j=await r.json();
+    st.textContent=(j.ok?"✅ ":"⛔ ")+j.message;
+    st.style.color=j.ok?"var(--good)":"var(--fail)";
+    try{localStorage.setItem("yt_proxy",$("#proxy").value.trim());}catch(e){}
+  }catch(e){st.textContent="⛔ Test failed: "+e;st.style.color="var(--fail)";}
+  finally{$("#testProxy").disabled=false;}
+};
 $("#go").onclick=async()=>{
   const text=$("#box").value;
   if(!text.trim()){alert("Paste at least one line first.");return;}
@@ -741,13 +980,19 @@ async function startRun(endpoint,body){
 async function poll(){
   const s=await (await fetch("/progress")).json();
   $("#phase").textContent=s.phase;
-  $("#list").innerHTML=s.items.map(it=>`
+  $("#list").innerHTML=s.items.map(it=>{
+    const bits=[];
+    if(it.url) bits.push(esc(it.url));
+    if(it.note) bits.push(`<span class="${it.status==="failed"?"reason":""}">${esc(it.note)}</span>`);
+    if(it.status==="found"&&it.method) bits.push(`method: ${esc(it.method)}`);
+    if(it.connection) bits.push(`via ${esc(it.connection)}`);
+    return `
     <div class="item ${it.status}">
       <span class="ic">${ICON[it.status]||"•"}</span>
       <span class="t"><div class="nm">${esc(it.title)}</div>
-        <div class="meta">${esc(it.url||"")}${it.url&&it.note?" · ":""}<span class="${it.status==="failed"?"reason":""}">${esc(it.url?it.note:(it.note||""))}</span></div></span>
+        <div class="meta">${bits.join(" · ")}</div></span>
       <span class="badge b-${it.status}">${it.status}</span>
-    </div>`).join("");
+    </div>`;}).join("");
   if(s.done){
     clearInterval(timer);$("#go").disabled=false;
     let html="";
